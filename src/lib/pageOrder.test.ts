@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId } from "./pageOrder";
+import { appendedSiblingId, dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId } from "./pageOrder";
+
+describe("appendedSiblingId", () => {
+  it("puts a new sibling at the end without duplicating it", () => {
+    expect(appendedSiblingId(["one", "two"], "three")).toEqual(["one", "two", "three"]);
+    expect(appendedSiblingId(["one", "three", "two"], "three")).toEqual(["one", "two", "three"]);
+  });
+});
 
 describe("reorderedSiblingIds", () => {
   it("moves a dragged page before or after a target within the same sibling list", () => {

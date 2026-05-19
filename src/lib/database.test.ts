@@ -14,6 +14,8 @@ import {
   updateDatabaseProperty,
   updateDatabaseSchemaProperty,
   updateDatabaseView,
+  deleteDatabaseBoardView,
+  isBoardViewEnabled,
 } from "./database";
 
 describe("database schema", () => {
@@ -62,6 +64,21 @@ describe("database schema", () => {
       view: "board",
       boardPropertyId: "status",
     });
+  });
+
+  it("deletes board view while preserving table data", () => {
+    const schema = deleteDatabaseBoardView({
+      properties: [{ id: "status", name: "Status", type: "select", options: ["Todo"] }],
+      view: "board",
+      boardPropertyId: "status",
+    });
+
+    expect(schema).toEqual({
+      properties: [{ id: "status", name: "Status", type: "select", options: ["Todo"] }],
+      view: "table",
+      boardViewEnabled: false,
+    });
+    expect(isBoardViewEnabled(schema)).toBe(false);
   });
 
   it("falls back when persisted select options are malformed", () => {

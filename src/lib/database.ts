@@ -18,6 +18,7 @@ export interface DatabaseSchema {
   filter?: DatabaseFilter;
   view?: DatabaseViewMode;
   boardPropertyId?: string;
+  boardViewEnabled?: boolean;
 }
 
 export type DatabaseProperties = Record<string, string | boolean>;
@@ -126,6 +127,10 @@ export function parseDatabaseSchema(value: string | null | undefined): DatabaseS
         schema.boardPropertyId = record.boardPropertyId;
       }
 
+      if (typeof record.boardViewEnabled === "boolean") {
+        schema.boardViewEnabled = record.boardViewEnabled;
+      }
+
       return schema;
     }
   } catch {
@@ -133,6 +138,21 @@ export function parseDatabaseSchema(value: string | null | undefined): DatabaseS
   }
 
   return defaultDatabaseSchema();
+}
+
+export function isBoardViewEnabled(schema: DatabaseSchema): boolean {
+  return schema.boardViewEnabled !== false || schema.view === "board";
+}
+
+export function deleteDatabaseBoardView(schema: DatabaseSchema): DatabaseSchema {
+  const nextSchema: DatabaseSchema = {
+    ...schema,
+    view: "table",
+    boardViewEnabled: false,
+  };
+
+  delete nextSchema.boardPropertyId;
+  return nextSchema;
 }
 
 export function parseDatabaseProperties(value: string | null | undefined): DatabaseProperties {
@@ -245,6 +265,9 @@ export function updateDatabaseView(
 
   if ("view" in updates && updates.view) {
     nextSchema.view = updates.view;
+    if (updates.view === "board") {
+      nextSchema.boardViewEnabled = true;
+    }
   }
 
   if ("boardPropertyId" in updates) {
