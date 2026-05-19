@@ -1,25 +1,58 @@
+import { useState } from 'react';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { useAppStore } from '../store/useAppStore';
-import { getAllPages } from '../lib/db';
-import { Moon, Sun, Monitor, Download, X } from 'lucide-react';
+import { getAllPages, importPages } from '../lib/db';
+import { buildBackup, parseBackup, prepareImportedPages } from '../lib/backup';
+import { Moon, Sun, Monitor, Download, Upload, X } from 'lucide-react';
 
 export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
-  const { theme, setTheme } = useAppStore();
+  const { theme, setTheme, fetchPages, showSuccess, showError } = useAppStore();
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleExport = async () => {
-    const pages = await getAllPages();
-    const backup = {
-      exported_at: new Date().toISOString(),
-      pages
-    };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
-    const a = document.createElement('a');
-    a.setAttribute("href", dataStr);
-    a.setAttribute("download", "opennotion_backup.json");
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    try {
+      const pages = await getAllPages();
+      const backup = buildBackup(pages);
+      const path = await save({
+        defaultPath: `opennotion-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'OpenNotion Backup', extensions: ['json'] }],
+      });
+
+      if (!path) return;
+
+      await writeTextFile(path, JSON.stringify(backup, null, 2));
+      const message = `Exported ${pages.length} pages.`;
+      setBackupStatus(message);
+      showSuccess(message);
+    } catch (error: unknown) {
+      setBackupStatus("Export failed. Please try again.");
+      showError(error);
+    }
+  };
+
+  const handleImport = async () => {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: 'OpenNotion Backup', extensions: ['json'] }],
+    });
+
+    if (!path || Array.isArray(path)) return;
+
+    try {
+      const backup = parseBackup(await readTextFile(path));
+      const importedPages = prepareImportedPages(backup.pages);
+      const importedCount = await importPages(importedPages);
+      await fetchPages();
+      const message = `Imported ${importedCount} pages as duplicates.`;
+      setBackupStatus(message);
+      showSuccess(message);
+    } catch (error: unknown) {
+      setBackupStatus(null);
+      showError(error);
+    }
   };
 
   return (
@@ -70,7 +103,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-medium mb-1">Data & Privacy</h3>
-              <p className="text-xs text-muted-foreground">Export your entire workspace as a JSON file.</p>
+              <p className="text-xs text-muted-foreground">Export or import a versioned JSON workspace backup.</p>
             </div>
             
             <button 
@@ -80,6 +113,18 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
               <Download className="w-4 h-4 mr-2" />
               Export Database Backup
             </button>
+            <button
+              onClick={() => void handleImport()}
+              className="flex items-center justify-center w-full px-4 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border rounded-md font-medium text-sm transition-colors"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Import Backup as Duplicates
+            </button>
+            {backupStatus && (
+              <div className="text-xs text-muted-foreground">
+                {backupStatus}
+              </div>
+            )}
           </div>
 
         </div>

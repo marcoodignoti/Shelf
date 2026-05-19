@@ -1,0 +1,766 @@
+import { ArrowUpDown, ChevronDown, Columns3, Copy, ListFilter, Plus, PlusCircle, Table2, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+  addDatabaseProperty,
+  DATABASE_TITLE_PROPERTY_ID,
+  databaseDataRows,
+  databaseTemplateRows,
+  groupDatabaseBoardRows,
+  DatabaseFilter,
+  DatabaseProperty,
+  DatabasePropertyType,
+  DatabaseSchema,
+  DatabaseSort,
+  defaultDatabaseSchema,
+  deleteDatabaseProperty,
+  parseDatabaseProperties,
+  parseDatabaseSchema,
+  updateDatabaseProperty,
+  updateDatabaseSchemaProperty,
+  updateDatabaseView,
+  visibleDatabaseRows,
+  selectedBoardProperty,
+} from "../lib/database";
+import { Page, updatePage } from "../lib/db";
+import { useAppStore } from "../store/useAppStore";
+import { FloatingPopover } from "./FloatingPopover";
+
+const PROPERTY_TYPES: DatabasePropertyType[] = ["text", "checkbox", "select", "date"];
+
+export function DatabaseTableView({
+  databasePage,
+  rows,
+  onSelectPage,
+}: {
+  databasePage: Page;
+  rows: Page[];
+  onSelectPage: (id: string) => void;
+}) {
+  const addPage = useAppStore((state) => state.addPage);
+  const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
+  const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
+  const [openPropertyId, setOpenPropertyId] = useState<string | null>(null);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
+  const propertyButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const templateMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const schema = parseDatabaseSchema(databasePage.database_schema ?? JSON.stringify(defaultDatabaseSchema()));
+  const viewProperties = useMemo(
+    () => [{ id: DATABASE_TITLE_PROPERTY_ID, name: "Name", type: "text" as const }, ...schema.properties],
+    [schema.properties]
+  );
+  const rowTemplates = useMemo(() => databaseTemplateRows(rows), [rows]);
+  const dataRows = useMemo(() => databaseDataRows(rows), [rows]);
+  const visibleRows = useMemo(() => visibleDatabaseRows(dataRows, schema), [dataRows, schema]);
+  const boardProperty = selectedBoardProperty(schema);
+  const boardColumns = useMemo(() => groupDatabaseBoardRows(visibleRows, schema), [visibleRows, schema]);
+  const tableGridTemplateColumns = `minmax(220px, 1.4fr) repeat(${schema.properties.length}, minmax(140px, 1fr)) 96px`;
+
+  const persistSchema = async (nextSchema: DatabaseSchema) => {
+    const database_schema = JSON.stringify(nextSchema);
+    updatePageOptimistically(databasePage.id, { database_schema });
+    await updatePage(databasePage.id, { database_schema });
+  };
+
+  const handleAddRow = async () => {
+    const row = await addPage("Untitled", databasePage.id);
+    if (row) {
+      onSelectPage(row.id);
+    }
+  };
+
+  const handleAddRowFromTemplate = async (templateId: string) => {
+    setTemplateMenuOpen(false);
+    const row = await addPageFromTemplate(templateId, databasePage.id);
+    if (row) {
+      onSelectPage(row.id);
+    }
+  };
+
+  const handlePropertyChange = async (row: Page, propertyId: string, value: string | boolean) => {
+    const properties = updateDatabaseProperty(row.properties, propertyId, value);
+    updatePageOptimistically(row.id, { properties });
+    await updatePage(row.id, { properties });
+  };
+
+  const handleAddProperty = async () => {
+    const nextSchema = addDatabaseProperty(schema, "Property", crypto.randomUUID());
+    await persistSchema(nextSchema);
+  };
+
+  const handleUpdateProperty = async (propertyId: string, updates: Partial<DatabaseProperty>) => {
+    await persistSchema(updateDatabaseSchemaProperty(schema, propertyId, updates));
+  };
+
+  const handleDeleteProperty = async (propertyId: string) => {
+    setOpenPropertyId(null);
+    await persistSchema(deleteDatabaseProperty(schema, propertyId));
+  };
+
+  const handleSortChange = async (sort: DatabaseSort | null) => {
+    await persistSchema(updateDatabaseView(schema, { sort }));
+  };
+
+  const handleFilterChange = async (filter: DatabaseFilter | null) => {
+    await persistSchema(updateDatabaseView(schema, { filter }));
+  };
+
+  const handleViewChange = async (view: "table" | "board") => {
+    await persistSchema(
+      updateDatabaseView(schema, {
+        view,
+        boardPropertyId: view === "board" ? boardProperty?.id ?? null : null,
+      })
+    );
+  };
+
+  const handleBoardPropertyChange = async (propertyId: string) => {
+    await persistSchema(updateDatabaseView(schema, { view: "board", boardPropertyId: propertyId }));
+  };
+
+  const handleAddBoardRow = async (option: string) => {
+    const row = await addPage("Untitled", databasePage.id);
+    if (row && boardProperty) {
+      const properties = updateDatabaseProperty(row.properties, boardProperty.id, option);
+      updatePageOptimistically(row.id, { properties });
+      await updatePage(row.id, { properties });
+      onSelectPage(row.id);
+    }
+  };
+
+  const handleDropBoardRow = async (rowId: string, option: string) => {
+    const row = rows.find((candidate) => candidate.id === rowId);
+    if (!row || !boardProperty) return;
+
+    await handlePropertyChange(row, boardProperty.id, option);
+    setDraggedRowId(null);
+  };
+
+  const setPropertyButtonRef = (propertyId: string, element: HTMLButtonElement | null) => {
+    if (element) {
+      propertyButtonRefs.current.set(propertyId, element);
+    } else {
+      propertyButtonRefs.current.delete(propertyId);
+    }
+  };
+
+  return (
+    <div className="mb-10 overflow-visible bg-background">
+      <DatabaseViewToolbar
+        properties={viewProperties}
+        schema={schema}
+        boardProperty={boardProperty}
+        onAddRow={handleAddRow}
+        onSortChange={handleSortChange}
+        onFilterChange={handleFilterChange}
+        onViewChange={handleViewChange}
+        onBoardPropertyChange={handleBoardPropertyChange}
+      />
+      {schema.view === "board" ? (
+        boardProperty ? (
+          <div className="flex min-h-64 gap-3 overflow-x-auto py-2">
+            {boardColumns.map((column) => (
+              <div
+                key={column.id}
+                className="flex w-64 flex-shrink-0 flex-col rounded-md bg-muted/35"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  if (draggedRowId) void handleDropBoardRow(draggedRowId, column.id);
+                }}
+              >
+                <div className="flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground">
+                  <span className="truncate">{column.name}</span>
+                  <span>{column.rows.length}</span>
+                </div>
+                <div className="flex-1 space-y-2 p-2">
+                  {column.rows.map((row) => (
+                    <button
+                      type="button"
+                      key={row.id}
+                      draggable
+                      className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background"
+                      onClick={() => onSelectPage(row.id)}
+                      onDragStart={() => setDraggedRowId(row.id)}
+                      onDragEnd={() => setDraggedRowId(null)}
+                    >
+                      <div className="truncate font-medium">{row.title || "Untitled"}</div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-b-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => void handleAddBoardRow(column.id)}
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  New
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+            Add a select property to use Board view.
+          </div>
+        )
+      ) : (
+        <>
+          <div
+            className="grid min-w-[680px] border-b border-border/80 text-sm font-medium text-muted-foreground"
+            style={{ gridTemplateColumns: tableGridTemplateColumns }}
+          >
+            <div className="flex items-center gap-2 border-r border-border/70 px-3 py-2">
+              <span className="text-base leading-none text-muted-foreground/70">Aa</span>
+              <span>Name</span>
+            </div>
+            {schema.properties.map((property) => (
+              <div key={property.id} className="border-r border-border/70 px-2 py-1.5 last:border-r-0">
+                <button
+                  ref={(element) => setPropertyButtonRef(property.id, element)}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-left hover:bg-muted hover:text-foreground"
+                  onClick={() => setOpenPropertyId((current) => (current === property.id ? null : property.id))}
+                >
+                  <span className="truncate">{property.name}</span>
+                  <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
+                </button>
+                <FloatingPopover
+                  anchorElement={propertyButtonRefs.current.get(property.id) ?? null}
+                  open={openPropertyId === property.id}
+                  width={240}
+                  placement="bottom-end"
+                  className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+                >
+                  <PropertyEditor
+                    property={property}
+                    onUpdate={(updates) => void handleUpdateProperty(property.id, updates)}
+                    onDelete={() => void handleDeleteProperty(property.id)}
+                  />
+                </FloatingPopover>
+              </div>
+            ))}
+            <div className="flex items-center gap-1 border-r border-border/70 px-2 py-1.5 text-muted-foreground">
+              <button
+                type="button"
+                className="rounded-md p-1.5 hover:bg-muted hover:text-foreground"
+                title="Add property"
+                aria-label="Add property"
+                onClick={() => void handleAddProperty()}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className="rounded-md px-1.5 py-1 text-lg leading-none hover:bg-muted hover:text-foreground"
+                title="More property options"
+                aria-label="More property options"
+              >
+                ...
+              </button>
+            </div>
+          </div>
+          <div className="min-w-[680px]">
+            {visibleRows.map((row) => {
+              const properties = parseDatabaseProperties(row.properties);
+
+              return (
+                <div
+                  key={row.id}
+                  className="grid min-h-11 border-b border-border/70"
+                  style={{ gridTemplateColumns: tableGridTemplateColumns }}
+                >
+                  <div className="border-r border-border/70 px-2 py-1.5">
+                    <button
+                      type="button"
+                      className="w-full truncate rounded-sm px-1 py-1 text-left text-sm hover:bg-muted hover:text-foreground"
+                      onClick={() => onSelectPage(row.id)}
+                    >
+                      {row.title || "Untitled"}
+                    </button>
+                  </div>
+                  {schema.properties.map((property) => (
+                    <div key={property.id} className="border-r border-border/70 px-2 py-1.5 last:border-r-0">
+                      {property.type === "checkbox" ? (
+                        <input
+                          type="checkbox"
+                          className="mt-2 h-4 w-4"
+                          checked={properties[property.id] === true}
+                          onChange={(event) => void handlePropertyChange(row, property.id, event.target.checked)}
+                        />
+                      ) : property.type === "select" ? (
+                        <select
+                          className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
+                          value={String(properties[property.id] ?? "")}
+                          onChange={(event) => void handlePropertyChange(row, property.id, event.target.value)}
+                        >
+                          <option value="">Empty</option>
+                          {(property.options ?? []).map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={property.type === "date" ? "date" : "text"}
+                          className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
+                          value={String(properties[property.id] ?? "")}
+                          onChange={(event) => void handlePropertyChange(row, property.id, event.target.value)}
+                        />
+                      )}
+                    </div>
+                  ))}
+                  <div className="border-r border-border/70" />
+                </div>
+              );
+            })}
+            {visibleRows.length === 0 && (
+              <div className="border-b border-border/70 px-3 py-8 text-center text-sm text-muted-foreground">
+                No rows match current filter.
+              </div>
+            )}
+            <button
+              type="button"
+              className="grid min-h-11 w-full text-left text-sm text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground hover:opacity-100 focus:opacity-100"
+              style={{ gridTemplateColumns: tableGridTemplateColumns }}
+              onClick={() => void handleAddRow()}
+            >
+              <span className="flex items-center gap-2 border-r border-border/70 px-3 py-2">
+                <Plus className="h-4 w-4" />
+                New page
+              </span>
+              {schema.properties.map((property) => (
+                <span key={`new-row-empty-${property.id}`} className="border-r border-border/70 last:border-r-0" />
+              ))}
+              <span className="border-r border-border/70" />
+            </button>
+          </div>
+        </>
+      )}
+      {rowTemplates.length > 0 && (
+        <div className="relative border-t border-border/70">
+          <button
+            type="button"
+            ref={templateMenuButtonRef}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => setTemplateMenuOpen((open) => !open)}
+          >
+            <Copy className="h-4 w-4" />
+            New row from template
+            <ChevronDown className="ml-auto h-4 w-4" />
+          </button>
+          <FloatingPopover
+            anchorElement={templateMenuButtonRef.current}
+            open={templateMenuOpen}
+            width={224}
+            className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          >
+            {rowTemplates.map((template) => (
+              <button
+                type="button"
+                key={template.id}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                onClick={() => void handleAddRowFromTemplate(template.id)}
+              >
+                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="truncate">{template.title || "Untitled"}</span>
+              </button>
+            ))}
+          </FloatingPopover>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DatabaseRowPropertiesPanel({
+  databasePage,
+  rowPage,
+}: {
+  databasePage: Page;
+  rowPage: Page;
+}) {
+  const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
+  const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
+  const schema = parseDatabaseSchema(databasePage.database_schema ?? JSON.stringify(defaultDatabaseSchema()));
+  const properties = parseDatabaseProperties(rowPage.properties);
+
+  const handlePropertyChange = async (propertyId: string, value: string | boolean) => {
+    const nextProperties = updateDatabaseProperty(rowPage.properties, propertyId, value);
+    updatePageOptimistically(rowPage.id, { properties: nextProperties });
+    await updatePage(rowPage.id, { properties: nextProperties });
+  };
+
+  const handleToggleTemplate = async () => {
+    await toggleTemplateAction(rowPage.id, rowPage.is_template !== 1);
+  };
+
+  return (
+    <div className="mb-8 rounded-md border border-border bg-background">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs text-muted-foreground">
+        <span>{databasePage.title || "Database"} properties</span>
+        <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => void handleToggleTemplate()}>
+          {rowPage.is_template === 1 ? "Remove row template" : "Use as row template"}
+        </button>
+      </div>
+      <div className="divide-y divide-border">
+        {schema.properties.map((property) => (
+          <div key={property.id} className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-3 px-3 py-2 text-sm">
+            <div className="truncate text-muted-foreground">{property.name}</div>
+            <DatabasePropertyValueControl
+              property={property}
+              value={properties[property.id]}
+              onChange={(value) => void handlePropertyChange(property.id, value)}
+            />
+          </div>
+        ))}
+        {schema.properties.length === 0 && (
+          <div className="px-3 py-4 text-sm text-muted-foreground">No properties yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DatabasePropertyValueControl({
+  property,
+  value,
+  onChange,
+}: {
+  property: DatabaseProperty;
+  value: string | boolean | undefined;
+  onChange: (value: string | boolean) => void;
+}) {
+  if (property.type === "checkbox") {
+    return (
+      <input
+        type="checkbox"
+        className="h-4 w-4"
+        checked={value === true}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    );
+  }
+
+  if (property.type === "select") {
+    return (
+      <select
+        className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
+        value={String(value ?? "")}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Empty</option>
+        {(property.options ?? []).map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      type={property.type === "date" ? "date" : "text"}
+      className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
+      value={String(value ?? "")}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+function defaultFilterForProperty(property: DatabaseProperty): DatabaseFilter {
+  if (property.type === "checkbox") {
+    return { propertyId: property.id, operator: "equals", value: true };
+  }
+
+  if (property.type === "date") {
+    return { propertyId: property.id, operator: "equals", value: "" };
+  }
+
+  if (property.type === "select") {
+    return { propertyId: property.id, operator: "equals", value: property.options?.[0] ?? "" };
+  }
+
+  return { propertyId: property.id, operator: "contains", value: "" };
+}
+
+function DatabaseViewToolbar({
+  properties,
+  schema,
+  boardProperty,
+  onAddRow,
+  onSortChange,
+  onFilterChange,
+  onViewChange,
+  onBoardPropertyChange,
+}: {
+  properties: DatabaseProperty[];
+  schema: DatabaseSchema;
+  boardProperty: DatabaseProperty | null;
+  onAddRow: () => void;
+  onSortChange: (sort: DatabaseSort | null) => void;
+  onFilterChange: (filter: DatabaseFilter | null) => void;
+  onViewChange: (view: "table" | "board") => void;
+  onBoardPropertyChange: (propertyId: string) => void;
+}) {
+  const sortProperty = properties.find((property) => property.id === schema.sort?.propertyId);
+  const filterProperty = properties.find((property) => property.id === schema.filter?.propertyId);
+  const selectProperties = properties.filter((property) => property.type === "select");
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className={`flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
+            schema.view !== "board" ? "bg-muted text-foreground" : "hover:bg-muted hover:text-foreground"
+          }`}
+          onClick={() => onViewChange("table")}
+        >
+          <Table2 className="h-4 w-4" />
+          Table
+        </button>
+        <button
+          type="button"
+          className={`flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
+            schema.view === "board" ? "bg-muted text-foreground" : "hover:bg-muted hover:text-foreground"
+          }`}
+          onClick={() => onViewChange("board")}
+        >
+          <Columns3 className="h-4 w-4" />
+          Board
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {schema.view === "board" && selectProperties.length > 0 && (
+        <select
+          className="rounded-md bg-transparent px-2 py-1 outline-none hover:bg-muted hover:text-foreground"
+          value={boardProperty?.id ?? ""}
+          onChange={(event) => onBoardPropertyChange(event.target.value)}
+        >
+          {selectProperties.map((property) => (
+            <option key={property.id} value={property.id}>
+              Board by {property.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <label className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground">
+        <ArrowUpDown className="h-4 w-4" />
+        <select
+          className="max-w-24 bg-transparent text-sm outline-none"
+          value={sortProperty?.id ?? ""}
+          aria-label="Sort property"
+          onChange={(event) => {
+            const property = properties.find((candidate) => candidate.id === event.target.value);
+            onSortChange(property ? { propertyId: property.id, direction: schema.sort?.direction ?? "asc" } : null);
+          }}
+        >
+          <option value="">Sort</option>
+          {properties.map((property) => (
+            <option key={property.id} value={property.id}>
+              {property.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {schema.sort && (
+        <>
+          <select
+            className="rounded-md bg-transparent px-2 py-1 outline-none hover:bg-muted hover:text-foreground"
+            value={schema.sort.direction}
+            onChange={(event) =>
+              onSortChange({
+                ...schema.sort!,
+                direction: event.target.value as DatabaseSort["direction"],
+              })
+            }
+          >
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
+          <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => onSortChange(null)}>
+            Clear
+          </button>
+        </>
+      )}
+
+      <label className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground">
+        <ListFilter className="h-4 w-4" />
+        <select
+          className="max-w-24 bg-transparent text-sm outline-none"
+          value={filterProperty?.id ?? ""}
+          aria-label="Filter property"
+          onChange={(event) => {
+            const property = properties.find((candidate) => candidate.id === event.target.value);
+            onFilterChange(property ? defaultFilterForProperty(property) : null);
+          }}
+        >
+          <option value="">Filter</option>
+          {properties.map((property) => (
+            <option key={property.id} value={property.id}>
+              {property.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {schema.filter && filterProperty && (
+        <>
+          <FilterValueControl property={filterProperty} filter={schema.filter} onChange={onFilterChange} />
+          <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => onFilterChange(null)}>
+            Clear
+          </button>
+        </>
+      )}
+        <button
+          type="button"
+          className="ml-2 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-blue-500"
+          onClick={() => onAddRow()}
+        >
+          New
+          <ChevronDown className="h-4 w-4 border-l border-white/25 pl-1" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterValueControl({
+  property,
+  filter,
+  onChange,
+}: {
+  property: DatabaseProperty;
+  filter: DatabaseFilter;
+  onChange: (filter: DatabaseFilter) => void;
+}) {
+  if (property.type === "checkbox") {
+    return (
+      <select
+        className="rounded-md border border-border bg-background px-2 py-1 outline-none"
+        value={filter.value === false ? "false" : "true"}
+        onChange={(event) => onChange({ propertyId: property.id, operator: "equals", value: event.target.value === "true" })}
+      >
+        <option value="true">Checked</option>
+        <option value="false">Unchecked</option>
+      </select>
+    );
+  }
+
+  if (property.type === "select") {
+    return (
+      <select
+        className="rounded-md border border-border bg-background px-2 py-1 outline-none"
+        value={String(filter.value ?? "")}
+        onChange={(event) => onChange({ propertyId: property.id, operator: "equals", value: event.target.value })}
+      >
+        {(property.options ?? []).map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (property.type === "date") {
+    return (
+      <>
+        <select
+          className="rounded-md border border-border bg-background px-2 py-1 outline-none"
+          value={filter.operator}
+          onChange={(event) =>
+            onChange({
+              propertyId: property.id,
+              operator: event.target.value as DatabaseFilter["operator"],
+              value: event.target.value === "is_empty" ? undefined : String(filter.value ?? ""),
+            })
+          }
+        >
+          <option value="equals">Exact</option>
+          <option value="is_empty">Empty</option>
+        </select>
+        {filter.operator !== "is_empty" && (
+          <input
+            type="date"
+            className="rounded-md border border-border bg-background px-2 py-1 outline-none"
+            value={String(filter.value ?? "")}
+            onChange={(event) => onChange({ propertyId: property.id, operator: "equals", value: event.target.value })}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <input
+      className="rounded-md border border-border bg-background px-2 py-1 outline-none"
+      placeholder="Contains..."
+      value={String(filter.value ?? "")}
+      onChange={(event) => onChange({ propertyId: property.id, operator: "contains", value: event.target.value })}
+    />
+  );
+}
+
+function PropertyEditor({
+  property,
+  onUpdate,
+  onDelete,
+}: {
+  property: DatabaseProperty;
+  onUpdate: (updates: Partial<DatabaseProperty>) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-muted-foreground">
+        Name
+        <input
+          className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
+          value={property.name}
+          onChange={(event) => onUpdate({ name: event.target.value })}
+        />
+      </label>
+      <label className="block text-xs text-muted-foreground">
+        Type
+        <select
+          className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
+          value={property.type}
+          onChange={(event) => onUpdate({ type: event.target.value as DatabasePropertyType })}
+        >
+          {PROPERTY_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+      </label>
+      {property.type === "select" && (
+        <label className="block text-xs text-muted-foreground">
+          Options
+          <input
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
+            value={(property.options ?? []).join(", ")}
+            onChange={(event) =>
+              onUpdate({
+                options: event.target.value
+                  .split(",")
+                  .map((option) => option.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+        </label>
+      )}
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Delete property
+      </button>
+    </div>
+  );
+}

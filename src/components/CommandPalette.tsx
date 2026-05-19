@@ -1,96 +1,131 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Search, FileText } from 'lucide-react';
+import { Search, FileText, Star } from 'lucide-react';
 import { SearchResult, searchPages } from '../lib/db';
+import { pageContentPreview } from '../lib/pageContent';
+import { splitSearchMatch } from '../lib/searchDisplay';
+import { commandPaletteSections, CommandPalettePage } from '../lib/commandPaletteSections';
 
-function contentPreview(content: string | null, query: string): string | null {
-  if (!content || !query.trim()) return null;
-
-  const text = content.replace(/[{}\[\]",:]/g, ' ').replace(/\s+/g, ' ').trim();
-  const index = text.toLowerCase().indexOf(query.toLowerCase());
-
-  if (index === -1) return text.slice(0, 120);
-
-  return text.slice(Math.max(0, index - 40), index + query.length + 80);
+function HighlightedText({
+  text,
+  query,
+  selected
+}: {
+  text: string;
+  query: string;
+  selected: boolean;
+}) {
+  return (
+    <>
+      {splitSearchMatch(text, query).map((part, index) => (
+        <span
+          key={`${part.text}-${index}`}
+          className={part.matched ? selected ? 'rounded bg-primary/10 px-0.5 text-foreground' : 'rounded bg-primary/10 px-0.5 text-foreground' : undefined}
+        >
+          {part.text}
+        </span>
+      ))}
+    </>
+  );
 }
 
 export function CommandPalette() {
-  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { pages, setCurrentPageId } = useAppStore();
+  const { pages, setCurrentPageId, isCommandPaletteOpen, openCommandPalette, closeCommandPalette } = useAppStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setIsOpen((prev) => !prev);
+        openCommandPalette();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [openCommandPalette]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isCommandPaletteOpen) {
       setQuery('');
       setSelectedIndex(0);
       setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [isOpen]);
+  }, [isCommandPaletteOpen]);
 
   useEffect(() => {
-    if (!isOpen || !query.trim()) {
+    if (!isCommandPaletteOpen || !query.trim()) {
       setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
       return;
     }
 
+    setIsSearching(true);
+    setSearchError(null);
+    let cancelled = false;
     const timeout = window.setTimeout(() => {
       searchPages(query)
         .then((results) => {
+          if (cancelled) return;
           setSearchResults(results);
           setSelectedIndex(0);
         })
-        .catch((error) => console.error('Search failed:', error));
+        .catch((error) => {
+          if (cancelled) return;
+          console.error('Search failed:', error);
+          setSearchError('Search failed.');
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearching(false);
+        });
     }, 150);
 
-    return () => window.clearTimeout(timeout);
-  }, [isOpen, query]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [isCommandPaletteOpen, query]);
 
-  const filteredPages = query.trim()
-    ? searchResults
-    : pages.filter(p => (p.title || 'Untitled').toLowerCase().includes(query.toLowerCase()));
+  const sections = commandPaletteSections({ query, pages, searchResults });
+  const flattenedPages: CommandPalettePage[] = sections.flatMap((section) => section.pages);
 
   const handleSelect = (id: string) => {
     setCurrentPageId(id);
-    setIsOpen(false);
+    closeCommandPalette();
   };
 
   const handleModalKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      setIsOpen(false);
+      closeCommandPalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev + 1) % filteredPages.length);
+      if (flattenedPages.length === 0) return;
+      setSelectedIndex(prev => (prev + 1) % flattenedPages.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev - 1 + filteredPages.length) % filteredPages.length);
-    } else if (e.key === 'Enter' && filteredPages.length > 0) {
+      if (flattenedPages.length === 0) return;
+      setSelectedIndex(prev => (prev - 1 + flattenedPages.length) % flattenedPages.length);
+    } else if (e.key === 'Enter' && flattenedPages.length > 0) {
       e.preventDefault();
-      handleSelect(filteredPages[selectedIndex].id);
+      handleSelect(flattenedPages[selectedIndex].id);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isCommandPaletteOpen) return null;
 
   return (
     <div 
       className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] flex items-start justify-center pt-[20vh]"
-      onClick={() => setIsOpen(false)}
+      onClick={closeCommandPalette}
     >
       <div 
         className="bg-card border border-border shadow-2xl rounded-xl w-[500px] max-w-[90vw] flex flex-col overflow-hidden"
@@ -112,39 +147,69 @@ export function CommandPalette() {
           <div className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">ESC</div>
         </div>
         
-        <div className="max-h-[300px] overflow-y-auto p-2">
-          {filteredPages.length === 0 ? (
+        <div className="max-h-[380px] overflow-y-auto p-2">
+          {isSearching ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+              Searching...
+            </div>
+          ) : searchError ? (
+            <div className="px-3 py-6 text-center text-sm text-destructive">
+              {searchError}
+            </div>
+          ) : flattenedPages.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
-              No results found.
+              {query.trim() ? 'No results.' : 'No pages yet.'}
             </div>
           ) : (
-            filteredPages.map((page, index) => {
-              const preview = 'matched_content' in page
-                ? contentPreview((page as SearchResult).matched_content, query)
-                : null;
+            sections.map((section) => {
+              let sectionStartIndex = 0;
+              for (const previousSection of sections) {
+                if (previousSection === section) break;
+                sectionStartIndex += previousSection.pages.length;
+              }
 
               return (
-              <div 
-                key={page.id}
-                className={`flex items-start px-3 py-2 text-sm cursor-pointer rounded-md ${index === selectedIndex ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground/80 hover:text-foreground'}`}
-                onClick={() => handleSelect(page.id)}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                {page.icon ? (
-                  <span className="w-4 h-4 mr-3 mt-0.5 flex items-center justify-center text-xs">{page.icon}</span>
-                ) : (
-                  <FileText className={`w-4 h-4 mr-3 mt-0.5 flex-shrink-0 ${index === selectedIndex ? 'opacity-80' : 'opacity-50'}`} />
-                )}
-                <div className="min-w-0">
-                  <div className="truncate">{page.title || 'Untitled'}</div>
-                  {preview && (
-                    <div className={`truncate text-xs ${index === selectedIndex ? 'opacity-80' : 'text-muted-foreground'}`}>
-                      {preview}
-                    </div>
-                  )}
+                <div key={section.title} className="mb-2 last:mb-0">
+                  <div className="flex items-center gap-1.5 px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {section.title === 'Favorites' && <Star className="h-3 w-3 fill-current" />}
+                    {section.title}
+                  </div>
+                  {section.pages.map((page, index) => {
+                    const absoluteIndex = sectionStartIndex + index;
+                    const preview = page.matched_content
+                      ? pageContentPreview(page.matched_content, query)
+                      : null;
+                    const title = page.title || 'Untitled';
+                    const isSelected = absoluteIndex === selectedIndex;
+
+                    return (
+                      <div
+                        key={`${section.title}-${page.id}`}
+                        className="flex items-start px-3 py-2 text-sm cursor-pointer rounded-md text-foreground/80 hover:bg-muted hover:text-foreground"
+                        onClick={() => handleSelect(page.id)}
+                        onMouseEnter={() => setSelectedIndex(absoluteIndex)}
+                      >
+                        {page.icon ? (
+                          <span className="w-4 h-4 mr-3 mt-0.5 flex items-center justify-center text-xs">{page.icon}</span>
+                        ) : (
+                          <FileText className="w-4 h-4 mr-3 mt-0.5 flex-shrink-0 opacity-50" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate">
+                            <HighlightedText text={title} query={query} selected={isSelected} />
+                          </div>
+                          {preview && (
+                            <div className="truncate text-xs text-muted-foreground">
+                              <HighlightedText text={preview} query={query} selected={isSelected} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            )})
+              );
+            })
           )}
         </div>
       </div>

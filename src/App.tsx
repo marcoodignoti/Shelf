@@ -4,9 +4,13 @@ import { useAppStore } from "./store/useAppStore";
 import { Editor } from "./components/PageEditor";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CommandPalette } from "./components/CommandPalette";
+import { AppNotice } from "./components/AppNotice";
+import { isNewPageShortcut } from "./lib/shortcuts";
+import { HOME_PAGE_ID } from "./lib/navigation";
+import { HomeView } from "./components/HomeView";
 
 export default function App() {
-  const { pages, currentPageId, theme } = useAppStore();
+  const { pages, currentPageId, theme, isLoading, addPage, setCurrentPageId } = useAppStore();
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -26,20 +30,62 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isNewPageShortcut(event)) {
+        event.preventDefault();
+        void addPage();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [addPage]);
+
+  useEffect(() => {
+    const preventNativeContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    window.addEventListener("contextmenu", preventNativeContextMenu);
+    return () => window.removeEventListener("contextmenu", preventNativeContextMenu);
+  }, []);
+
   const currentPage = pages.find(p => p.id === currentPageId);
 
   return (
     <Layout>
-      {currentPage ? (
+      {isLoading ? (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          Loading workspace...
+        </div>
+      ) : currentPageId === HOME_PAGE_ID ? (
+        <HomeView
+          pages={pages}
+          onSelectPage={setCurrentPageId}
+        />
+      ) : currentPage ? (
         <ErrorBoundary key={currentPage.id}>
-          <Editor page={currentPage} />
+          <Editor page={currentPage} pages={pages} onSelectPage={setCurrentPageId} />
         </ErrorBoundary>
       ) : (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          Select or create a page
+        <div className="flex h-full items-center justify-center px-8 text-center">
+          <div className="max-w-sm">
+            <div className="text-lg font-semibold text-foreground">No page selected</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Create a page to start writing in this workspace.
+            </div>
+            <button
+              className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              onClick={() => void addPage()}
+            >
+              New page
+            </button>
+          </div>
         </div>
       )}
       <CommandPalette />
+      <AppNotice />
     </Layout>
   );
 }

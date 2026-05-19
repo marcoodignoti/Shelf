@@ -1,14 +1,20 @@
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 export interface Page {
   id: string;
   title: string;
   parent_id: string | null;
   content: string | null;
+  search_text: string | null;
   icon: string | null;
   cover_url: string | null;
   is_deleted: number;
   is_favorite: number;
+  is_template: number;
+  is_database?: number;
+  database_schema?: string | null;
+  properties?: string | null;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -51,10 +57,15 @@ export async function updatePage(id: string, updates: Partial<Page>): Promise<vo
     'title',
     'parent_id',
     'content',
+    'search_text',
     'icon',
     'cover_url',
     'is_deleted',
-    'is_favorite'
+    'is_favorite',
+    'is_template',
+    'is_database',
+    'database_schema',
+    'properties'
   ]);
   
   const safeUpdates: Partial<Page> = {};
@@ -73,18 +84,68 @@ export async function deletePage(id: string): Promise<void> {
   await invoke('delete_page', { id });
 }
 
-export async function getDeletedPages(): Promise<Page[]> {
-  return await invoke<Page[]>('list_deleted_pages');
+export async function movePage(id: string, parentId: string | null): Promise<void> {
+  await invoke('move_page', {
+    id,
+    parentId,
+    updatedAt: new Date().toISOString()
+  });
 }
 
-export async function restorePage(id: string): Promise<void> {
-  await invoke('restore_page', { id });
+export async function reorderPages(parentId: string | null, orderedIds: string[]): Promise<void> {
+  await invoke('reorder_pages', {
+    parentId,
+    orderedIds,
+    updatedAt: new Date().toISOString()
+  });
 }
 
-export async function hardDeletePage(id: string): Promise<void> {
-  await invoke('hard_delete_page', { id });
+export async function importPages(pages: Page[]): Promise<number> {
+  return await invoke<number>('import_pages', { pages });
 }
 
 export async function toggleFavorite(id: string, isFavorite: boolean): Promise<void> {
   await invoke('toggle_favorite', { id, isFavorite });
+}
+
+export async function toggleTemplate(id: string, isTemplate: boolean): Promise<void> {
+  await invoke('toggle_template', { id, isTemplate });
+}
+
+export async function createPageFromTemplate(
+  templateId: string,
+  parentId: string | null = null
+): Promise<Page> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  return await invoke<Page>('create_page_from_template', {
+    id,
+    templateId,
+    parentId,
+    createdAt: now,
+  });
+}
+
+export async function duplicatePage(sourceId: string): Promise<Page> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  return await invoke<Page>('duplicate_page', {
+    id,
+    sourceId,
+    createdAt: now,
+  });
+}
+
+export async function importCoverImage(sourcePath: string, pageId: string): Promise<string> {
+  return await invoke<string>('import_cover_image', { sourcePath, pageId });
+}
+
+export function coverImageSrc(coverUrl: string): string {
+  if (/^(https?:|data:|blob:|asset:)/i.test(coverUrl)) {
+    return coverUrl;
+  }
+
+  return convertFileSrc(coverUrl);
 }
