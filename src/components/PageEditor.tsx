@@ -877,8 +877,8 @@ export function Editor({
         </div>
       </div>
       {isDeleteConfirmOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="w-[420px] overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+        <div className="on-modal-overlay z-[150] items-center justify-center">
+          <div className="on-modal-panel w-[420px]">
             <div className="flex items-start gap-3 border-b border-border p-4">
               <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
                 <AlertTriangle className="h-4 w-4" />
@@ -895,14 +895,14 @@ export function Editor({
             <div className="flex justify-end gap-2 p-3">
               <button
                 type="button"
-                className="rounded-md px-3 py-1.5 text-sm hover:bg-muted"
+                className="on-button-secondary"
                 onClick={() => setIsDeleteConfirmOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="rounded-md bg-destructive px-3 py-1.5 text-sm text-destructive-foreground hover:bg-destructive/90"
+                className="on-button-danger"
                 onClick={() => void handleConfirmDelete()}
               >
                 Delete

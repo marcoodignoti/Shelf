@@ -920,8 +920,8 @@ export function Sidebar() {
         </div>
       </div>
       {pendingDelete && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-card border border-border shadow-lg rounded-lg w-[420px] overflow-hidden">
+        <div className="on-modal-overlay z-50 items-center justify-center">
+          <div className="on-modal-panel w-[420px]">
             <div className="flex items-start gap-3 p-4 border-b border-border">
               <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
                 <AlertTriangle className="w-4 h-4" />
@@ -933,13 +933,13 @@ export function Sidebar() {
             </div>
             <div className="flex justify-end gap-2 p-3">
               <button
-                className="px-3 py-1.5 text-sm rounded-md hover:bg-muted"
+                className="on-button-secondary"
                 onClick={() => setPendingDelete(null)}
               >
                 Cancel
               </button>
               <button
-                className="px-3 py-1.5 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="on-button-danger"
                 onClick={handleConfirmDelete}
               >
                 Delete
