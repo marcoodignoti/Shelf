@@ -1,7 +1,7 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
 import { useAppStore } from '../store/useAppStore';
-import { Menu } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { isSidebarOpen, toggleSidebar } = useAppStore();
@@ -9,18 +9,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-background text-foreground font-sans overflow-hidden">
       {isSidebarOpen && <Sidebar />}
+      <div
+        className={`fixed top-2 z-[90] flex items-center gap-2 ${isSidebarOpen ? 'left-[198px]' : 'left-[84px]'}`}
+        data-tauri-drag-region
+      >
+        <button
+          onClick={toggleSidebar}
+          className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
+          title="Toggle sidebar"
+        >
+          <PanelLeft className="h-4 w-4" />
+        </button>
+      </div>
       <main className="flex-1 overflow-y-auto relative transition-all duration-300 flex flex-col">
-        {!isSidebarOpen && (
-          <div className="absolute top-10 left-4 z-50">
-            <button 
-              onClick={toggleSidebar}
-              className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-muted-foreground transition-colors"
-              title="Open Sidebar"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          </div>
-        )}
         {children}
       </main>
     </div>
