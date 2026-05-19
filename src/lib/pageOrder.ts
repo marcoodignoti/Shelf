@@ -1,5 +1,9 @@
 export type DropPosition = "before" | "inside" | "after";
 
+export function appendedSiblingId(siblingIds: string[], appendedId: string): string[] {
+  return [...siblingIds.filter((id) => id !== appendedId), appendedId];
+}
+
 export function reorderedSiblingIds(
   siblingIds: string[],
   draggedId: string,

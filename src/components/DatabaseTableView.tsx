@@ -1,5 +1,5 @@
-import { ArrowUpDown, ChevronDown, Columns3, Copy, ListFilter, Plus, PlusCircle, Table2, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { ArrowUpDown, ChevronDown, Columns3, Copy, ExternalLink, ListFilter, Plus, PlusCircle, Star, Table2, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDatabaseProperty,
   DATABASE_TITLE_PROPERTY_ID,
@@ -12,7 +12,9 @@ import {
   DatabaseSchema,
   DatabaseSort,
   defaultDatabaseSchema,
+  deleteDatabaseBoardView,
   deleteDatabaseProperty,
+  isBoardViewEnabled,
   parseDatabaseProperties,
   parseDatabaseSchema,
   updateDatabaseProperty,
@@ -21,7 +23,9 @@ import {
   visibleDatabaseRows,
   selectedBoardProperty,
 } from "../lib/database";
+import { clampContextMenuPosition } from "../lib/contextMenu";
 import { Page, updatePage } from "../lib/db";
+import { appendedSiblingId } from "../lib/pageOrder";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -38,8 +42,13 @@ export function DatabaseTableView({
 }) {
   const addPage = useAppStore((state) => state.addPage);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
+  const duplicatePageAction = useAppStore((state) => state.duplicatePageAction);
+  const removePage = useAppStore((state) => state.removePage);
+  const reorderPagesAction = useAppStore((state) => state.reorderPagesAction);
+  const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const [openPropertyId, setOpenPropertyId] = useState<string | null>(null);
+  const [rowContextMenu, setRowContextMenu] = useState<{ rowId: string; left: number; top: number } | null>(null);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const propertyButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -54,7 +63,28 @@ export function DatabaseTableView({
   const visibleRows = useMemo(() => visibleDatabaseRows(dataRows, schema), [dataRows, schema]);
   const boardProperty = selectedBoardProperty(schema);
   const boardColumns = useMemo(() => groupDatabaseBoardRows(visibleRows, schema), [visibleRows, schema]);
+  const boardViewEnabled = isBoardViewEnabled(schema);
   const tableGridTemplateColumns = `minmax(220px, 1.4fr) repeat(${schema.properties.length}, minmax(140px, 1fr)) 96px`;
+  const contextMenuRow = rowContextMenu ? rows.find((row) => row.id === rowContextMenu.rowId) ?? null : null;
+
+  useEffect(() => {
+    if (!rowContextMenu) return;
+
+    const closeMenu = () => setRowContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [rowContextMenu]);
 
   const persistSchema = async (nextSchema: DatabaseSchema) => {
     const database_schema = JSON.stringify(nextSchema);
@@ -63,17 +93,17 @@ export function DatabaseTableView({
   };
 
   const handleAddRow = async () => {
-    const row = await addPage("Untitled", databasePage.id);
+    const row = await addPage("Untitled", databasePage.id, { select: false });
     if (row) {
-      onSelectPage(row.id);
+      await reorderPagesAction(databasePage.id, appendedSiblingId(dataRows.map((dataRow) => dataRow.id), row.id));
     }
   };
 
   const handleAddRowFromTemplate = async (templateId: string) => {
     setTemplateMenuOpen(false);
-    const row = await addPageFromTemplate(templateId, databasePage.id);
+    const row = await addPageFromTemplate(templateId, databasePage.id, { select: false });
     if (row) {
-      onSelectPage(row.id);
+      await reorderPagesAction(databasePage.id, appendedSiblingId(dataRows.map((dataRow) => dataRow.id), row.id));
     }
   };
 
@@ -118,13 +148,17 @@ export function DatabaseTableView({
     await persistSchema(updateDatabaseView(schema, { view: "board", boardPropertyId: propertyId }));
   };
 
+  const handleDeleteBoardView = async () => {
+    await persistSchema(deleteDatabaseBoardView(schema));
+  };
+
   const handleAddBoardRow = async (option: string) => {
-    const row = await addPage("Untitled", databasePage.id);
+    const row = await addPage("Untitled", databasePage.id, { select: false });
     if (row && boardProperty) {
       const properties = updateDatabaseProperty(row.properties, boardProperty.id, option);
       updatePageOptimistically(row.id, { properties });
       await updatePage(row.id, { properties });
-      onSelectPage(row.id);
+      await reorderPagesAction(databasePage.id, appendedSiblingId(dataRows.map((dataRow) => dataRow.id), row.id));
     }
   };
 
@@ -144,6 +178,35 @@ export function DatabaseTableView({
     }
   };
 
+  const openRowContextMenu = (event: React.MouseEvent, row: Page) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenPropertyId(null);
+    setTemplateMenuOpen(false);
+    setRowContextMenu({
+      rowId: row.id,
+      ...clampContextMenuPosition(event.clientX, event.clientY, window.innerWidth, window.innerHeight, 220, 170),
+    });
+  };
+
+  const handleDuplicateRow = async (row: Page) => {
+    setRowContextMenu(null);
+    const duplicated = await duplicatePageAction(row.id, { select: false });
+    if (duplicated) {
+      await reorderPagesAction(databasePage.id, appendedSiblingId(dataRows.map((dataRow) => dataRow.id), duplicated.id));
+    }
+  };
+
+  const handleDeleteRow = async (row: Page) => {
+    setRowContextMenu(null);
+    await removePage(row.id);
+  };
+
+  const handleToggleRowFavorite = async (row: Page) => {
+    setRowContextMenu(null);
+    await toggleFavoriteAction(row.id, row.is_favorite !== 1);
+  };
+
   return (
     <div className="mb-10 overflow-visible bg-background">
       <DatabaseViewToolbar
@@ -155,8 +218,9 @@ export function DatabaseTableView({
         onFilterChange={handleFilterChange}
         onViewChange={handleViewChange}
         onBoardPropertyChange={handleBoardPropertyChange}
+        onDeleteBoardView={handleDeleteBoardView}
       />
-      {schema.view === "board" ? (
+      {schema.view === "board" && boardViewEnabled ? (
         boardProperty ? (
           <div className="flex min-h-64 gap-3 overflow-x-auto py-2">
             {boardColumns.map((column) => (
@@ -180,6 +244,7 @@ export function DatabaseTableView({
                       draggable
                       className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background"
                       onClick={() => onSelectPage(row.id)}
+                      onContextMenu={(event) => openRowContextMenu(event, row)}
                       onDragStart={() => setDraggedRowId(row.id)}
                       onDragEnd={() => setDraggedRowId(null)}
                     >
@@ -266,8 +331,9 @@ export function DatabaseTableView({
               return (
                 <div
                   key={row.id}
-                  className="grid min-h-11 border-b border-border/70"
+                  className="group/row grid min-h-11 border-b border-border/70"
                   style={{ gridTemplateColumns: tableGridTemplateColumns }}
+                  onContextMenu={(event) => openRowContextMenu(event, row)}
                 >
                   <div className="border-r border-border/70 px-2 py-1.5">
                     <button
@@ -310,7 +376,7 @@ export function DatabaseTableView({
                       )}
                     </div>
                   ))}
-                  <div className="border-r border-border/70" />
+                  <div className="border-r border-border/70" aria-hidden="true" />
                 </div>
               );
             })}
@@ -367,6 +433,50 @@ export function DatabaseTableView({
               </button>
             ))}
           </FloatingPopover>
+        </div>
+      )}
+      {rowContextMenu && contextMenuRow && (
+        <div
+          className="fixed z-[160] w-[220px] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          style={{ left: rowContextMenu.left, top: rowContextMenu.top }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => {
+              setRowContextMenu(null);
+              onSelectPage(contextMenuRow.id);
+            }}
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+            Open
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => void handleToggleRowFavorite(contextMenuRow)}
+          >
+            <Star className={`h-3.5 w-3.5 text-muted-foreground ${contextMenuRow.is_favorite === 1 ? "fill-current" : ""}`} />
+            {contextMenuRow.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => void handleDuplicateRow(contextMenuRow)}
+          >
+            <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+            Duplicate
+          </button>
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+            onClick={() => void handleDeleteRow(contextMenuRow)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </button>
         </div>
       )}
     </div>
@@ -494,6 +604,7 @@ function DatabaseViewToolbar({
   onFilterChange,
   onViewChange,
   onBoardPropertyChange,
+  onDeleteBoardView,
 }: {
   properties: DatabaseProperty[];
   schema: DatabaseSchema;
@@ -503,10 +614,12 @@ function DatabaseViewToolbar({
   onFilterChange: (filter: DatabaseFilter | null) => void;
   onViewChange: (view: "table" | "board") => void;
   onBoardPropertyChange: (propertyId: string) => void;
+  onDeleteBoardView: () => void;
 }) {
   const sortProperty = properties.find((property) => property.id === schema.sort?.propertyId);
   const filterProperty = properties.find((property) => property.id === schema.filter?.propertyId);
   const selectProperties = properties.filter((property) => property.type === "select");
+  const boardViewEnabled = isBoardViewEnabled(schema);
 
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
@@ -521,16 +634,40 @@ function DatabaseViewToolbar({
           <Table2 className="h-4 w-4" />
           Table
         </button>
-        <button
-          type="button"
-          className={`flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
-            schema.view === "board" ? "bg-muted text-foreground" : "hover:bg-muted hover:text-foreground"
-          }`}
-          onClick={() => onViewChange("board")}
-        >
-          <Columns3 className="h-4 w-4" />
-          Board
-        </button>
+        {boardViewEnabled ? (
+          <div
+            className={`group/view flex items-center rounded-full font-medium transition-colors ${
+              schema.view === "board" ? "bg-muted text-foreground" : "hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-l-full py-2 pl-3 pr-2"
+              onClick={() => onViewChange("board")}
+            >
+              <Columns3 className="h-4 w-4" />
+              Board
+            </button>
+            <button
+              type="button"
+              className="mr-1 rounded-full p-1 opacity-0 hover:bg-background/80 group-hover/view:opacity-100 focus:opacity-100"
+              aria-label="Delete board view"
+              title="Delete board view"
+              onClick={onDeleteBoardView}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-full px-3 py-2 font-medium hover:bg-muted hover:text-foreground"
+            onClick={() => onViewChange("board")}
+          >
+            <Plus className="h-4 w-4" />
+            Board
+          </button>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-1.5">
       {schema.view === "board" && selectProperties.length > 0 && (

@@ -4,6 +4,7 @@ import { Page, getPages, createPage, createPageFromTemplate, deletePage, duplica
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
 
 type Theme = 'light' | 'dark' | 'system';
+type CreatePageOptions = { select?: boolean };
 
 interface AppState {
   pages: Page[];
@@ -14,7 +15,7 @@ interface AppState {
   isCommandPaletteOpen: boolean;
   fetchPages: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
-  addPage: (title?: string, parentId?: string | null) => Promise<Page | null>;
+  addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
   renamePageAction: (id: string, title: string) => Promise<void>;
   removePage: (id: string) => Promise<void>;
@@ -22,8 +23,8 @@ interface AppState {
   reorderPagesAction: (parentId: string | null, orderedIds: string[]) => Promise<void>;
   toggleFavoriteAction: (id: string, isFavorite: boolean) => Promise<void>;
   toggleTemplateAction: (id: string, isTemplate: boolean) => Promise<void>;
-  addPageFromTemplate: (templateId: string, parentId?: string | null) => Promise<Page | null>;
-  duplicatePageAction: (sourceId: string) => Promise<Page | null>;
+  addPageFromTemplate: (templateId: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
+  duplicatePageAction: (sourceId: string, options?: CreatePageOptions) => Promise<Page | null>;
   clearError: () => void;
   setError: (error: string | null) => void;
   clearNotice: () => void;
@@ -86,11 +87,17 @@ export const useAppStore = create<AppState>((set) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
-  addPage: async (title = 'Untitled', parentId = null) => {
+  addPage: async (title = 'Untitled', parentId = null, options = {}) => {
     try {
       const newPage = await createPage(title, parentId);
-      localStorage.setItem('opennotion-current-page-id', newPage.id);
-      set((state) => ({ pages: [newPage, ...state.pages], currentPageId: newPage.id, error: null }));
+      if (options.select !== false) {
+        localStorage.setItem('opennotion-current-page-id', newPage.id);
+      }
+      set((state) => ({
+        pages: [newPage, ...state.pages],
+        currentPageId: options.select === false ? state.currentPageId : newPage.id,
+        error: null
+      }));
       return newPage;
     } catch (error: unknown) {
       console.error(error);
@@ -188,11 +195,17 @@ export const useAppStore = create<AppState>((set) => ({
       set({ error: message, notice: { kind: 'error', message } });
     }
   },
-  addPageFromTemplate: async (templateId, parentId = null) => {
+  addPageFromTemplate: async (templateId, parentId = null, options = {}) => {
     try {
       const newPage = await createPageFromTemplate(templateId, parentId);
-      localStorage.setItem('opennotion-current-page-id', newPage.id);
-      set((state) => ({ pages: [newPage, ...state.pages], currentPageId: newPage.id, error: null }));
+      if (options.select !== false) {
+        localStorage.setItem('opennotion-current-page-id', newPage.id);
+      }
+      set((state) => ({
+        pages: [newPage, ...state.pages],
+        currentPageId: options.select === false ? state.currentPageId : newPage.id,
+        error: null
+      }));
       return newPage;
     } catch (error: unknown) {
       console.error(error);
@@ -201,11 +214,17 @@ export const useAppStore = create<AppState>((set) => ({
       return null;
     }
   },
-  duplicatePageAction: async (sourceId) => {
+  duplicatePageAction: async (sourceId, options = {}) => {
     try {
       const newPage = await duplicatePage(sourceId);
-      localStorage.setItem('opennotion-current-page-id', newPage.id);
-      set((state) => ({ pages: [newPage, ...state.pages], currentPageId: newPage.id, error: null }));
+      if (options.select !== false) {
+        localStorage.setItem('opennotion-current-page-id', newPage.id);
+      }
+      set((state) => ({
+        pages: [newPage, ...state.pages],
+        currentPageId: options.select === false ? state.currentPageId : newPage.id,
+        error: null
+      }));
       return newPage;
     } catch (error: unknown) {
       console.error(error);
