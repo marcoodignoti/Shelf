@@ -7,7 +7,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { isSidebarOpen, toggleSidebar } = useAppStore();
 
   return (
-    <div className="flex h-screen bg-background text-foreground font-sans overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans">
       {isSidebarOpen && <Sidebar />}
       <div
         className={`fixed top-2 z-[90] flex items-center gap-2 ${isSidebarOpen ? 'left-[198px]' : 'left-[84px]'}`}
@@ -15,7 +15,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       >
         <button
           onClick={toggleSidebar}
-          className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
+          className="on-icon-button"
           title="Toggle sidebar"
         >
           <PanelLeft className="h-4 w-4" />
