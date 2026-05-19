@@ -26,48 +26,48 @@
 
 @layer base {
   :root, .light {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 15%;
+    --background: 210 24% 98%;
+    --foreground: 222 28% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 15%;
+    --card-foreground: 222 28% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 15%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 60 5% 96%;
-    --secondary-foreground: 0 0% 15%;
-    --muted: 60 5% 96%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 60 5% 96%;
-    --accent-foreground: 0 0% 15%;
-    --destructive: 0 84.2% 60.2%;
+    --popover-foreground: 222 28% 12%;
+    --primary: 222 28% 12%;
+    --primary-foreground: 210 24% 98%;
+    --secondary: 214 24% 94%;
+    --secondary-foreground: 222 28% 16%;
+    --muted: 214 24% 94%;
+    --muted-foreground: 215 14% 42%;
+    --accent: 214 28% 90%;
+    --accent-foreground: 222 28% 12%;
+    --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 92%;
-    --input: 0 0% 92%;
-    --ring: 0 0% 15%;
-    --radius: 0.25rem;
+    --border: 214 18% 84%;
+    --input: 214 18% 84%;
+    --ring: 222 28% 18%;
+    --radius: 0.5rem;
   }
  
   .dark {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 88%;
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 88%;
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 88%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 13%;
-    --secondary-foreground: 0 0% 88%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 88%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 222 22% 8%;
+    --foreground: 214 24% 92%;
+    --card: 222 20% 10%;
+    --card-foreground: 214 24% 92%;
+    --popover: 222 20% 10%;
+    --popover-foreground: 214 24% 92%;
+    --primary: 214 24% 92%;
+    --primary-foreground: 222 22% 8%;
+    --secondary: 222 18% 12%;
+    --secondary-foreground: 214 20% 88%;
+    --muted: 222 16% 15%;
+    --muted-foreground: 215 12% 62%;
+    --accent: 220 16% 18%;
+    --accent-foreground: 214 24% 92%;
+    --destructive: 0 62% 42%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 0 0% 83.1%;
+    --border: 220 14% 22%;
+    --input: 220 14% 22%;
+    --ring: 214 24% 82%;
   }
 }
  
@@ -82,6 +82,74 @@
 }
 
 @layer components {
+  .on-icon-button {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .on-shell-row {
+    @apply flex w-full items-center rounded-md px-3 py-1.5 text-[13.5px] text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-secondary;
+  }
+
+  .on-shell-row-active {
+    @apply bg-accent text-foreground shadow-sm;
+  }
+
+  .on-section-label {
+    @apply px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .on-menu-item {
+    @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-popover-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .on-menu-item-danger {
+    @apply text-destructive hover:bg-destructive/10 hover:text-destructive;
+  }
+
+  .on-popover {
+    @apply overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl;
+  }
+
+  .on-modal-overlay {
+    @apply fixed inset-0 z-[100] flex bg-background/80 backdrop-blur-sm;
+  }
+
+  .on-modal-panel {
+    @apply overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl;
+  }
+
+  .on-modal-header {
+    @apply flex items-center justify-between border-b border-border px-6 py-4;
+  }
+
+  .on-modal-body {
+    @apply p-6;
+  }
+
+  .on-modal-footer {
+    @apply flex justify-end gap-2 border-t border-border/60 px-4 py-3;
+  }
+
+  .on-button-secondary {
+    @apply inline-flex items-center justify-center rounded-lg border border-border bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .on-button-danger {
+    @apply inline-flex items-center justify-center rounded-lg bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .on-selectable-tile {
+    @apply flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card p-4 text-card-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .on-selectable-tile-active {
+    @apply border-primary bg-accent text-foreground shadow-sm;
+  }
+
+  .on-kbd {
+    @apply rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground;
+  }
+
   .bn-container,
   .bn-editor {
     background: transparent !important;

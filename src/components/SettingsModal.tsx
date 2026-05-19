@@ -56,16 +56,16 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
   };
 
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-lg overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+    <div className="on-modal-overlay items-center justify-center p-4">
+      <div className="on-modal-panel flex w-full max-w-lg flex-col">
+        <div className="on-modal-header">
           <h2 className="text-lg font-semibold">Settings</h2>
-          <button onClick={onClose} className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-muted-foreground transition-colors">
+          <button onClick={onClose} className="on-icon-button">
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-6 space-y-8">
+        <div className="on-modal-body space-y-8">
           
           <div className="space-y-4">
             <div>
@@ -75,7 +75,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
             
             <div className="flex gap-3">
               <button 
-                className={`flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-lg border ${theme === 'light' ? 'border-foreground bg-black/5 dark:bg-white/10' : 'border-border hover:bg-black/5 dark:hover:bg-white/5'} transition-colors`}
+                className={`on-selectable-tile ${theme === 'light' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('light')}
               >
                 <Sun className="w-6 h-6" />
@@ -83,7 +83,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
               </button>
               
               <button 
-                className={`flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-lg border ${theme === 'dark' ? 'border-foreground bg-black/5 dark:bg-white/10' : 'border-border hover:bg-black/5 dark:hover:bg-white/5'} transition-colors`}
+                className={`on-selectable-tile ${theme === 'dark' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('dark')}
               >
                 <Moon className="w-6 h-6" />
@@ -91,7 +91,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
               </button>
               
               <button 
-                className={`flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-lg border ${theme === 'system' ? 'border-foreground bg-black/5 dark:bg-white/10' : 'border-border hover:bg-black/5 dark:hover:bg-white/5'} transition-colors`}
+                className={`on-selectable-tile ${theme === 'system' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('system')}
               >
                 <Monitor className="w-6 h-6" />
@@ -108,16 +108,16 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
             
             <button 
               onClick={handleExport}
-              className="flex items-center justify-center w-full px-4 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border rounded-md font-medium text-sm transition-colors"
+              className="on-button-secondary w-full gap-2"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4" />
               Export Database Backup
             </button>
             <button
               onClick={() => void handleImport()}
-              className="flex items-center justify-center w-full px-4 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border rounded-md font-medium text-sm transition-colors"
+              className="on-button-secondary w-full gap-2"
             >
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4" />
               Import Backup as Duplicates
             </button>
             {backupStatus && (

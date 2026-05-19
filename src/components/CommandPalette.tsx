@@ -124,19 +124,19 @@ export function CommandPalette() {
 
   return (
     <div 
-      className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] flex items-start justify-center pt-[20vh]"
+      className="on-modal-overlay items-start justify-center pt-[20vh]"
       onClick={closeCommandPalette}
     >
       <div 
-        className="bg-card border border-border shadow-2xl rounded-xl w-[500px] max-w-[90vw] flex flex-col overflow-hidden"
+        className="on-modal-panel flex w-[500px] max-w-[90vw] flex-col"
         onClick={e => e.stopPropagation()}
         onKeyDown={handleModalKeyDown}
       >
-        <div className="flex items-center px-4 py-3 border-b border-border">
+        <div className="flex items-center border-b border-border px-4 py-3">
           <Search className="w-5 h-5 text-muted-foreground mr-3" />
           <input 
             ref={inputRef}
-            className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+            className="flex-1 border-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none"
             placeholder="Search pages..."
             value={query}
             onChange={(e) => {
@@ -144,7 +144,7 @@ export function CommandPalette() {
               setSelectedIndex(0);
             }}
           />
-          <div className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">ESC</div>
+          <div className="on-kbd">ESC</div>
         </div>
         
         <div className="max-h-[380px] overflow-y-auto p-2">
@@ -170,7 +170,7 @@ export function CommandPalette() {
 
               return (
                 <div key={section.title} className="mb-2 last:mb-0">
-                  <div className="flex items-center gap-1.5 px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="on-section-label flex items-center gap-1.5 pb-1 pt-1">
                     {section.title === 'Favorites' && <Star className="h-3 w-3 fill-current" />}
                     {section.title}
                   </div>
@@ -185,7 +185,7 @@ export function CommandPalette() {
                     return (
                       <div
                         key={`${section.title}-${page.id}`}
-                        className="flex items-start px-3 py-2 text-sm cursor-pointer rounded-md text-foreground/80 hover:bg-muted hover:text-foreground"
+                        className={`flex cursor-pointer items-start rounded-md px-3 py-2 text-sm transition-colors ${isSelected ? 'bg-accent text-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
                         onClick={() => handleSelect(page.id)}
                         onMouseEnter={() => setSelectedIndex(absoluteIndex)}
                       >
