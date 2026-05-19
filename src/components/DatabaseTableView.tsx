@@ -1,4 +1,4 @@
-import { ArrowUpDown, ChevronDown, Columns3, Copy, ExternalLink, ListFilter, Plus, PlusCircle, Star, Table2, Trash2, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, Columns3, Copy, ExternalLink, GripVertical, ListFilter, Pencil, Plus, PlusCircle, Star, Table2, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDatabaseProperty,
@@ -25,11 +25,23 @@ import {
 } from "../lib/database";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { Page, updatePage } from "../lib/db";
-import { appendedSiblingId } from "../lib/pageOrder";
+import { normalizePageTitle } from "../lib/pageTitle";
+import { appendedSiblingId, dropPositionFromOffset, reorderedSiblingIds } from "../lib/pageOrder";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
 const PROPERTY_TYPES: DatabasePropertyType[] = ["text", "checkbox", "select", "date"];
+type TableDropTarget = { rowId: string; position: "before" | "after" };
+type TableDragSession = {
+  rowId: string;
+  startX: number;
+  startY: number;
+  active: boolean;
+};
+
+function isDatabaseControlTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest("input, select, textarea, [contenteditable='true']"));
+}
 
 export function DatabaseTableView({
   databasePage,
@@ -43,15 +55,24 @@ export function DatabaseTableView({
   const addPage = useAppStore((state) => state.addPage);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
   const duplicatePageAction = useAppStore((state) => state.duplicatePageAction);
+  const renamePageAction = useAppStore((state) => state.renamePageAction);
   const removePage = useAppStore((state) => state.removePage);
   const reorderPagesAction = useAppStore((state) => state.reorderPagesAction);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
+  const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const [openPropertyId, setOpenPropertyId] = useState<string | null>(null);
   const [rowContextMenu, setRowContextMenu] = useState<{ rowId: string; left: number; top: number } | null>(null);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
+  const [tableDropTarget, setTableDropTarget] = useState<TableDropTarget | null>(null);
+  const [renamingRowId, setRenamingRowId] = useState<string | null>(null);
+  const [draftRowTitle, setDraftRowTitle] = useState("");
   const propertyButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const rowRenameInputRef = useRef<HTMLInputElement>(null);
+  const tableDragSessionRef = useRef<TableDragSession | null>(null);
+  const tableDropTargetRef = useRef<TableDropTarget | null>(null);
+  const dataRowsRef = useRef<Page[]>([]);
   const templateMenuButtonRef = useRef<HTMLButtonElement>(null);
   const schema = parseDatabaseSchema(databasePage.database_schema ?? JSON.stringify(defaultDatabaseSchema()));
   const viewProperties = useMemo(
@@ -66,6 +87,10 @@ export function DatabaseTableView({
   const boardViewEnabled = isBoardViewEnabled(schema);
   const tableGridTemplateColumns = `minmax(220px, 1.4fr) repeat(${schema.properties.length}, minmax(140px, 1fr)) 96px`;
   const contextMenuRow = rowContextMenu ? rows.find((row) => row.id === rowContextMenu.rowId) ?? null : null;
+
+  useEffect(() => {
+    dataRowsRef.current = dataRows;
+  }, [dataRows]);
 
   useEffect(() => {
     if (!rowContextMenu) return;
@@ -85,6 +110,13 @@ export function DatabaseTableView({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [rowContextMenu]);
+
+  useEffect(() => {
+    if (!renamingRowId) return;
+
+    rowRenameInputRef.current?.focus();
+    rowRenameInputRef.current?.select();
+  }, [renamingRowId]);
 
   const persistSchema = async (nextSchema: DatabaseSchema) => {
     const database_schema = JSON.stringify(nextSchema);
@@ -170,6 +202,100 @@ export function DatabaseTableView({
     setDraggedRowId(null);
   };
 
+  const clearTableDragState = () => {
+    setDraggedRowId(null);
+    tableDropTargetRef.current = null;
+    setTableDropTarget(null);
+  };
+
+  const handleRowDragEnd = () => {
+    setDraggedRowId(null);
+    setTableDropTarget(null);
+  };
+
+  const updateTableDropTarget = (clientX: number, clientY: number) => {
+    const session = tableDragSessionRef.current;
+    if (!session) return;
+
+    const rowElement = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-database-row-id]");
+    const targetId = rowElement?.dataset.databaseRowId;
+    if (!rowElement || !targetId || targetId === session.rowId) {
+      tableDropTargetRef.current = null;
+      setTableDropTarget(null);
+      return;
+    }
+
+    const rect = rowElement.getBoundingClientRect();
+    const dropPosition = dropPositionFromOffset(clientY - rect.top, rect.height);
+    const nextDropTarget: TableDropTarget = {
+      rowId: targetId,
+      position: dropPosition === "before" ? "before" : "after",
+    };
+    tableDropTargetRef.current = nextDropTarget;
+    setTableDropTarget(nextDropTarget);
+  };
+
+  const reorderTableRowsFromDropTarget = async (sourceId: string, target: TableDropTarget) => {
+    const siblingIds = dataRowsRef.current.map((row) => row.id);
+    const orderedIds = reorderedSiblingIds(siblingIds, sourceId, target.rowId, target.position);
+    if (orderedIds.join("\0") === siblingIds.join("\0")) return;
+
+    await reorderPagesAction(databasePage.id, orderedIds);
+  };
+
+  const handleTableDragHandlePointerDown = (event: React.PointerEvent<HTMLDivElement>, row: Page) => {
+    if (event.button !== 0 || event.pointerType === "touch") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    tableDragSessionRef.current = {
+      rowId: row.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const session = tableDragSessionRef.current;
+      if (!session) return;
+
+      const distance = Math.hypot(moveEvent.clientX - session.startX, moveEvent.clientY - session.startY);
+      if (!session.active && distance < 4) return;
+
+      if (!session.active) {
+        tableDragSessionRef.current = { ...session, active: true };
+        setDraggedRowId(session.rowId);
+        document.body.style.cursor = "grabbing";
+        document.body.style.userSelect = "none";
+      }
+
+      moveEvent.preventDefault();
+      updateTableDropTarget(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handlePointerUp = () => {
+      const session = tableDragSessionRef.current;
+      const target = tableDropTargetRef.current;
+      tableDragSessionRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      clearTableDragState();
+
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      if (session?.active && target) {
+        void reorderTableRowsFromDropTarget(session.rowId, target);
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
   const setPropertyButtonRef = (propertyId: string, element: HTMLButtonElement | null) => {
     if (element) {
       propertyButtonRefs.current.set(propertyId, element);
@@ -179,14 +305,37 @@ export function DatabaseTableView({
   };
 
   const openRowContextMenu = (event: React.MouseEvent, row: Page) => {
+    if (isDatabaseControlTarget(event.target)) return;
+
     event.preventDefault();
     event.stopPropagation();
     setOpenPropertyId(null);
     setTemplateMenuOpen(false);
     setRowContextMenu({
       rowId: row.id,
-      ...clampContextMenuPosition(event.clientX, event.clientY, window.innerWidth, window.innerHeight, 220, 170),
+      ...clampContextMenuPosition(event.clientX, event.clientY, window.innerWidth, window.innerHeight, 176, 300),
     });
+  };
+
+  const startRowRename = (row: Page) => {
+    setRowContextMenu(null);
+    setDraftRowTitle(row.title || "Untitled");
+    setRenamingRowId(row.id);
+  };
+
+  const commitRowRename = async (row: Page) => {
+    const nextTitle = normalizePageTitle(draftRowTitle);
+    setRenamingRowId(null);
+    setDraftRowTitle(nextTitle);
+
+    if (nextTitle !== row.title) {
+      await renamePageAction(row.id, nextTitle);
+    }
+  };
+
+  const cancelRowRename = (row: Page) => {
+    setDraftRowTitle(row.title || "Untitled");
+    setRenamingRowId(null);
   };
 
   const handleDuplicateRow = async (row: Page) => {
@@ -205,6 +354,16 @@ export function DatabaseTableView({
   const handleToggleRowFavorite = async (row: Page) => {
     setRowContextMenu(null);
     await toggleFavoriteAction(row.id, row.is_favorite !== 1);
+  };
+
+  const handleToggleRowTemplate = async (row: Page) => {
+    setRowContextMenu(null);
+    await toggleTemplateAction(row.id, row.is_template !== 1);
+  };
+
+  const handleAddRowSubpage = async (row: Page) => {
+    setRowContextMenu(null);
+    await addPage("Untitled", row.id);
   };
 
   return (
@@ -238,18 +397,55 @@ export function DatabaseTableView({
                 </div>
                 <div className="flex-1 space-y-2 p-2">
                   {column.rows.map((row) => (
-                    <button
-                      type="button"
+                    <div
                       key={row.id}
                       draggable
-                      className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background"
-                      onClick={() => onSelectPage(row.id)}
+                      role="button"
+                      tabIndex={0}
+                      className={`w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background ${
+                        draggedRowId === row.id ? "opacity-45" : ""
+                      }`}
+                      onClick={() => {
+                        if (renamingRowId !== row.id) onSelectPage(row.id);
+                      }}
                       onContextMenu={(event) => openRowContextMenu(event, row)}
-                      onDragStart={() => setDraggedRowId(row.id)}
-                      onDragEnd={() => setDraggedRowId(null)}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", row.id);
+                        setDraggedRowId(row.id);
+                      }}
+                      onDragEnd={handleRowDragEnd}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectPage(row.id);
+                        }
+                      }}
                     >
-                      <div className="truncate font-medium">{row.title || "Untitled"}</div>
-                    </button>
+                      {renamingRowId === row.id ? (
+                        <input
+                          ref={rowRenameInputRef}
+                          className="w-full rounded-sm bg-transparent px-1 py-0.5 font-medium outline-none focus:bg-muted"
+                          value={draftRowTitle}
+                          onChange={(event) => setDraftRowTitle(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onBlur={() => void commitRowRename(row)}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void commitRowRename(row);
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelRowRename(row);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="truncate font-medium">{row.title || "Untitled"}</div>
+                      )}
+                    </div>
                   ))}
                 </div>
                 <button
@@ -327,22 +523,48 @@ export function DatabaseTableView({
           <div className="min-w-[680px]">
             {visibleRows.map((row) => {
               const properties = parseDatabaseProperties(row.properties);
+              const isDropBefore = tableDropTarget?.rowId === row.id && tableDropTarget.position === "before";
+              const isDropAfter = tableDropTarget?.rowId === row.id && tableDropTarget.position === "after";
 
               return (
                 <div
                   key={row.id}
-                  className="group/row grid min-h-11 border-b border-border/70"
+                  className={`group/row grid min-h-11 border-b border-border/70 ${
+                    draggedRowId === row.id ? "opacity-45" : ""
+                  } ${isDropBefore ? "border-t-2 border-t-primary" : ""} ${isDropAfter ? "border-b-2 border-b-primary" : ""}`}
                   style={{ gridTemplateColumns: tableGridTemplateColumns }}
+                  data-database-row-id={row.id}
                   onContextMenu={(event) => openRowContextMenu(event, row)}
                 >
                   <div className="border-r border-border/70 px-2 py-1.5">
-                    <button
-                      type="button"
-                      className="w-full truncate rounded-sm px-1 py-1 text-left text-sm hover:bg-muted hover:text-foreground"
-                      onClick={() => onSelectPage(row.id)}
-                    >
-                      {row.title || "Untitled"}
-                    </button>
+                    {renamingRowId === row.id ? (
+                      <input
+                        ref={rowRenameInputRef}
+                        className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none focus:bg-muted"
+                        value={draftRowTitle}
+                        onChange={(event) => setDraftRowTitle(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onBlur={() => void commitRowRename(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void commitRowRename(row);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelRowRename(row);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="w-full truncate rounded-sm px-1 py-1 text-left text-sm hover:bg-muted hover:text-foreground"
+                        onClick={() => onSelectPage(row.id)}
+                      >
+                        {row.title || "Untitled"}
+                      </button>
+                    )}
                   </div>
                   {schema.properties.map((property) => (
                     <div key={property.id} className="border-r border-border/70 px-2 py-1.5 last:border-r-0">
@@ -376,7 +598,19 @@ export function DatabaseTableView({
                       )}
                     </div>
                   ))}
-                  <div className="border-r border-border/70" aria-hidden="true" />
+                  <div className="flex items-center justify-center border-r border-border/70">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 active:cursor-grabbing"
+                      title="Drag row"
+                      aria-label={`Drag ${row.title || "Untitled"}`}
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => handleTableDragHandlePointerDown(event, row)}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -437,10 +671,18 @@ export function DatabaseTableView({
       )}
       {rowContextMenu && contextMenuRow && (
         <div
-          className="fixed z-[160] w-[220px] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          className="fixed z-[160] w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
           style={{ left: rowContextMenu.left, top: rowContextMenu.top }}
           onClick={(event) => event.stopPropagation()}
         >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => startRowRename(contextMenuRow)}
+          >
+            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            Rename
+          </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
@@ -467,6 +709,23 @@ export function DatabaseTableView({
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
             Duplicate
+          </button>
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => void handleToggleRowTemplate(contextMenuRow)}
+          >
+            <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+            {contextMenuRow.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            onClick={() => void handleAddRowSubpage(contextMenuRow)}
+          >
+            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+            New subpage
           </button>
           <div className="my-1 h-px bg-border" />
           <button
