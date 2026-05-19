@@ -4,7 +4,7 @@ OpenNotion is a local-first notes app built with Tauri, React, TypeScript, Block
 
 ## Current Scope
 
-- Create, edit, delete, restore, and permanently delete pages.
+- Create, edit, and permanently delete pages after explicit confirmation.
 - Persist page titles and BlockNote document content in local SQLite storage.
 - Search pages by title and content through a Rust-backed database command.
 - Export the full local workspace as JSON.
