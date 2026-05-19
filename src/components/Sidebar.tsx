@@ -86,7 +86,7 @@ function PageItem({
   onRenameHandled: () => void,
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void
 }) {
-  const { setCurrentPageId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction } = useAppStore();
+  const { currentPageId, setCurrentPageId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction } = useAppStore();
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState('');
@@ -259,7 +259,7 @@ function PageItem({
 
   const dropClass = dropTarget?.pageId === page.id
     ? dropTarget.position === 'inside'
-      ? 'border-y-2 border-y-transparent bg-black/10 dark:bg-white/10'
+      ? 'border-y-2 border-y-transparent bg-accent'
       : dropTarget.position === 'before'
       ? 'border-t-2 border-t-primary'
       : 'border-b-2 border-b-primary'
@@ -269,7 +269,7 @@ function PageItem({
     <div>
       <div
         data-page-id={page.id}
-        className={`group flex items-center justify-between py-[3px] text-[13px] cursor-pointer rounded-md mb-[1px] select-none hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
+        className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
         style={{ paddingLeft: `${(depth * 12) + 12}px`, paddingRight: '8px' }}
         onClick={() => setCurrentPageId(page.id)}
         onDoubleClick={startRename}
@@ -278,7 +278,7 @@ function PageItem({
       >
         <div className="flex items-center truncate">
           <button
-            className={`w-4 h-4 mr-1 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 flex-shrink-0 ${hasChildren ? '' : 'invisible'}`}
+            className={`on-icon-button mr-1 h-6 w-6 rounded-md ${hasChildren ? '' : 'invisible'}`}
             onClick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
           >
             {isExpanded ? <ChevronDown className="w-[14px] h-[14px] opacity-40" /> : <ChevronRight className="w-[14px] h-[14px] opacity-40" />}
@@ -314,7 +314,7 @@ function PageItem({
         </div>
         <div className={`flex items-center transition-opacity flex-shrink-0 ${isRenaming ? 'hidden' : 'opacity-0 group-hover:opacity-100'}`}>
           <button
-            className="mr-0.5 flex items-center rounded p-1 hover:bg-black/10 dark:hover:bg-white/10"
+            className="on-icon-button mr-0.5 h-6 w-6 rounded-md"
             title={page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
             onClick={(event) => void handleToggleFavorite(event)}
           >
@@ -327,7 +327,7 @@ function PageItem({
           <div className="relative">
             <button
               ref={moveButtonRef}
-              className="mr-0.5 flex items-center rounded p-1 hover:bg-black/10 dark:hover:bg-white/10"
+              className="on-icon-button mr-0.5 h-6 w-6 rounded-md"
               title="Move page"
               onClick={toggleMoveMenu}
             >
@@ -335,7 +335,7 @@ function PageItem({
             </button>
             {isMoveOpen && moveMenuPosition && (
               <div
-                className="fixed z-[130] w-56 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-xl"
+                className="fixed z-[130] w-56 on-popover"
                 style={{ top: moveMenuPosition.top, left: moveMenuPosition.left }}
                 onClick={(event) => event.stopPropagation()}
               >
@@ -350,7 +350,7 @@ function PageItem({
                 </div>
                 <div className="max-h-56 overflow-y-auto p-1">
                   <button
-                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                    className="on-menu-item justify-between"
                     onClick={() => void handleMovePage(null)}
                   >
                     <span>Root</span>
@@ -359,7 +359,7 @@ function PageItem({
                   {moveTargets.map(target => (
                     <button
                       key={target.id}
-                      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                      className="on-menu-item justify-between"
                       onClick={() => void handleMovePage(target.id)}
                     >
                       <span className="truncate">{target.title || 'Untitled'}</span>
@@ -374,14 +374,14 @@ function PageItem({
             )}
           </div>
           <button
-            className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded mr-0.5"
+            className="on-icon-button mr-0.5 h-6 w-6 rounded-md"
             onClick={handleAddSubpage}
             title="Add subpage"
           >
             <Plus className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
           <button
-            className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
+            className="on-icon-button h-6 w-6 rounded-md"
             onClick={handleDeletePage}
             title="Delete page"
           >
@@ -392,12 +392,12 @@ function PageItem({
 
       {contextMenuPosition && (
         <div
-          className="fixed z-[140] w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          className="fixed z-[140] w-44 on-popover"
           style={{ left: contextMenuPosition.left, top: contextMenuPosition.top }}
           onClick={(event) => event.stopPropagation()}
         >
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={(event) => {
               startRename(event);
             }}
@@ -406,7 +406,7 @@ function PageItem({
             Rename
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={(event) => void handleDuplicatePage(event)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -414,21 +414,21 @@ function PageItem({
           </button>
           <div className="my-1 h-px bg-border" />
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={(event) => void handleToggleFavorite(event)}
           >
             <Star className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? 'fill-current' : ''}`} />
             {page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={(event) => void handleToggleTemplate(event)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
             {page.is_template === 1 ? 'Remove from Templates' : 'Use as Template'}
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={(event) => {
               setContextMenuPosition(null);
               void handleAddSubpage(event);
@@ -438,7 +438,7 @@ function PageItem({
             New subpage
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            className="on-menu-item"
             onClick={() => {
               openMoveMenuAt(contextMenuPosition.left, contextMenuPosition.top);
               setContextMenuPosition(null);
@@ -449,7 +449,7 @@ function PageItem({
           </button>
           <div className="my-1 h-px bg-border" />
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+            className="on-menu-item on-menu-item-danger"
             onClick={(event) => {
               setContextMenuPosition(null);
               handleDeletePage(event);
@@ -773,7 +773,7 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="w-60 bg-secondary border-r border-border flex flex-col h-full overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="w-60 bg-secondary/95 border-r border-border flex flex-col h-full overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
@@ -781,7 +781,7 @@ export function Sidebar() {
 
       <div className="px-1 mb-0 space-y-[0px]">
         <button
-          className="flex items-center w-full px-3 py-1.5 text-[13.5px] hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer text-foreground/80 hover:text-foreground"
+          className={`on-shell-row ${currentPageId === HOME_PAGE_ID ? 'on-shell-row-active' : ''}`}
           onClick={() => setCurrentPageId(HOME_PAGE_ID)}
         >
           <Home className="w-4 h-4 mr-2.5 opacity-60" />
@@ -789,7 +789,7 @@ export function Sidebar() {
         </button>
         <button
           ref={newPageButtonRef}
-          className="flex items-center w-full px-3 py-1.5 text-[13.5px] hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground rounded-md transition-colors cursor-pointer"
+          className="on-shell-row"
           onClick={toggleNewPageMenu}
         >
           <PlusCircle className="w-4 h-4 mr-2.5 opacity-60" />
@@ -797,11 +797,11 @@ export function Sidebar() {
         </button>
         {newPageMenuPosition && (
           <div
-            className="fixed z-[140] w-56 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+            className="fixed z-[140] w-56 on-popover"
             style={{ left: newPageMenuPosition.left, top: newPageMenuPosition.top }}
           >
             <button
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+              className="on-menu-item"
               onClick={() => void handleAddPage()}
             >
               <FileText className="h-3.5 w-3.5 text-muted-foreground" />
@@ -811,7 +811,7 @@ export function Sidebar() {
             {templatePages.map(template => (
               <button
                 key={`new-template-${template.id}`}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleCreateFromTemplate(template.id)}
               >
                 {template.icon ? (
@@ -825,7 +825,7 @@ export function Sidebar() {
           </div>
         )}
         <button
-          className="flex items-center w-full px-3 py-1.5 text-[13.5px] hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground rounded-md transition-colors cursor-pointer"
+          className="on-shell-row"
           onClick={openCommandPalette}
         >
           <Search className="w-4 h-4 mr-2.5 opacity-60" />
@@ -838,11 +838,11 @@ export function Sidebar() {
         )}
         {templatePages.length > 0 && (
           <div className="px-2 mb-4">
-            <div className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-1 px-3 mt-4">Templates</div>
+            <div className="on-section-label mb-1 mt-4">Templates</div>
             {templatePages.map(page => (
               <div
                 key={`tpl-${page.id}`}
-                className="group flex items-center justify-between px-3 py-[3px] text-[13px] cursor-pointer rounded-md mb-[1px] hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
+                className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
                 onClick={() => setCurrentPageId(page.id)}
               >
                 <div className="flex items-center truncate">
@@ -859,11 +859,11 @@ export function Sidebar() {
         )}
         {favoritePages.length > 0 && (
           <div className="px-2 mb-4">
-            <div className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-1 px-3 mt-4">Favorites</div>
+            <div className="on-section-label mb-1 mt-4">Favorites</div>
             {favoritePages.map(page => (
               <div
                 key={`fav-${page.id}`}
-                className="group flex items-center justify-between px-3 py-[3px] text-[13px] cursor-pointer rounded-md mb-[1px] hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
+                className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
                 onClick={() => setCurrentPageId(page.id)}
               >
                 <div className="flex items-center truncate">
@@ -875,7 +875,7 @@ export function Sidebar() {
                   <span className="truncate">{page.title || 'Untitled'}</span>
                 </div>
                 <button
-                  className="ml-1 rounded p-1 opacity-0 hover:bg-black/10 group-hover:opacity-100 dark:hover:bg-white/10"
+                  className="on-icon-button ml-1 h-6 w-6 rounded-md opacity-0 group-hover:opacity-100"
                   title="Remove from Favorites"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -890,12 +890,12 @@ export function Sidebar() {
         )}
 
         <div className="px-2 pb-20 min-h-[100px]">
-          <div className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-1 px-3 mt-4">Private</div>
+          <div className="on-section-label mb-1 mt-4">Private</div>
           {!isLoading && rootPages.length === 0 && (
             <div className="mx-3 mt-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
               No pages yet.
               <button
-                className="mt-2 block text-foreground hover:underline"
+                className="mt-2 block text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => void addPage()}
               >
                 Create first page
@@ -950,7 +950,7 @@ export function Sidebar() {
       )}
       <div className="flex-shrink-0 border-t border-border/60 px-1 py-2">
         <button
-          className="flex items-center w-full px-3 py-1.5 text-[13.5px] hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground rounded-md transition-colors cursor-pointer"
+          className="on-shell-row"
           onClick={() => setIsSettingsOpen(true)}
         >
           <Settings className="w-4 h-4 mr-2.5 opacity-60" />
