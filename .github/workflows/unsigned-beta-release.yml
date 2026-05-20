@@ -112,9 +112,15 @@ jobs:
           - Windows code signing certificate for Windows
           EOF
 
+      - name: Prepare release asset list
+        run: |
+          find release-artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) -print | sort > release-assets.txt
+          test -s release-assets.txt
+          cat release-assets.txt
+
       - name: Create GitHub prerelease
         run: |
-          gh release create "$RELEASE_TAG" release-artifacts/**/* \
+          gh release create "$RELEASE_TAG" $(cat release-assets.txt) \
             --title "OpenNotion ${RELEASE_TAG} unsigned beta" \
             --notes-file release-notes.md \
             --prerelease
