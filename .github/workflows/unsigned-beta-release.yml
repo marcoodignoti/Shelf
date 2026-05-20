@@ -1,0 +1,120 @@
+name: Unsigned Beta Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0-beta.1"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*-beta*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unsigned-beta-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: Build unsigned beta (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            os: macos-14
+            artifact_name: opennotion-macos-unsigned
+            artifact_path: |
+              src-tauri/target/release/bundle/dmg/*.dmg
+          - platform: windows
+            os: windows-latest
+            artifact_name: opennotion-windows-unsigned
+            artifact_path: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build unsigned bundle
+        run: npm run tauri build
+
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish unsigned beta release
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unsigned artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create unsigned beta release notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## Unsigned Beta Build
+
+          This is a public beta artifact for testing. It is not a notarized macOS production release and it is not a signed Windows production release.
+
+          ### macOS
+
+          The DMG is unsigned/ad-hoc and not notarized. macOS Gatekeeper may show an unidentified developer warning. For private testing, open it with Control-click or right-click, then Open.
+
+          ### Windows
+
+          The installer is unsigned. Windows SmartScreen may show a warning until a code signing certificate is configured.
+
+          ### Production Status
+
+          Production-grade public distribution still requires:
+
+          - Apple Developer ID signing and notarization for macOS
+          - Windows code signing certificate for Windows
+          EOF
+
+      - name: Create GitHub prerelease
+        run: |
+          gh release create "$RELEASE_TAG" release-artifacts/**/* \
+            --title "OpenNotion ${RELEASE_TAG} unsigned beta" \
+            --notes-file release-notes.md \
+            --prerelease
