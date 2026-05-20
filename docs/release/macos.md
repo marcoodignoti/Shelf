@@ -2,6 +2,23 @@
 
 OpenNotion can build an unsigned local app without Apple credentials. Public production distribution needs Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
+## Current Status
+
+Production macOS distribution is blocked until an Apple Developer Program account is available. This is not a code or CI failure:
+
+- unsigned/ad-hoc local builds are supported for development and private testing
+- public distribution needs a Developer ID Application certificate
+- Developer ID certificates require a paid Apple Developer Program account
+- notarization also requires Apple developer credentials
+
+Until that account exists, `npm run release:verify:macos` must fail with an ad-hoc signing or missing Team ID message. That failure is the intended release gate.
+
+Allowed work before Apple Developer enrollment:
+
+- keep CI, tests, E2E, and unsigned Tauri bundles green
+- improve data safety, backup/restore, updater prep, logging, QA checklist, and app UX
+- share private tester builds only with the expectation that macOS will show unidentified developer warnings
+
 ## Required Secrets
 
 - Apple Developer ID Application certificate in the signing keychain.
