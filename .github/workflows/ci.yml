@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: "22"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -24,8 +27,18 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-node-${{ env.NODE_VERSION }}-
+            playwright-${{ runner.os }}-
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -47,6 +60,7 @@ jobs:
         run: npm run test
 
       - name: Install Playwright browsers
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
       - name: E2E persistence smoke
