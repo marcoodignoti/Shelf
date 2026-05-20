@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
-use std::fs::{copy, create_dir_all, metadata, File};
+use std::fs::{copy, create_dir_all, metadata, set_permissions, File, Permissions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -10,6 +10,7 @@ use tauri::{Manager, Runtime};
 
 const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+const APP_SCHEMA_VERSION: &str = "1";
 
 #[derive(Clone)]
 struct AppState {
@@ -94,6 +95,24 @@ struct PageUpdates {
 }
 
 async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS app_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO app_metadata (key, value)
+         VALUES ('schema_version', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(APP_SCHEMA_VERSION)
+    .execute(db)
+    .await?;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS pages (
             id TEXT PRIMARY KEY,
@@ -353,6 +372,7 @@ async fn hard_delete_page_tree(db: &SqlitePool, id: &str) -> Result<(), sqlx::Er
 
 async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<u64, sqlx::Error> {
     let mut imported_count = 0;
+    let mut transaction = db.begin().await?;
 
     for page in pages {
         let result = sqlx::query(
@@ -375,11 +395,13 @@ async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<
         .bind(page.sort_order.unwrap_or(0))
         .bind(&page.created_at)
         .bind(&page.updated_at)
-        .execute(db)
+        .execute(&mut *transaction)
         .await?;
 
         imported_count += result.rows_affected();
     }
+
+    transaction.commit().await?;
 
     Ok(imported_count)
 }
@@ -679,6 +701,18 @@ fn cover_destination(
     Ok(covers_dir.join(file_name))
 }
 
+fn ensure_private_directory(path: &Path) -> std::io::Result<()> {
+    create_dir_all(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        set_permissions(path, Permissions::from_mode(0o700))?;
+    }
+
+    Ok(())
+}
+
 fn copy_cover_image<R: Runtime>(
     app: &tauri::AppHandle<R>,
     source_path: &Path,
@@ -689,7 +723,7 @@ fn copy_cover_image<R: Runtime>(
         .app_config_dir()
         .map_err(|error| error.to_string())?
         .join("covers");
-    create_dir_all(&covers_dir).map_err(|error| error.to_string())?;
+    ensure_private_directory(&covers_dir).map_err(|error| error.to_string())?;
 
     validated_cover_extension(source_path, COVER_IMAGE_MAX_BYTES)?;
     let destination = cover_destination(&covers_dir, page_id, source_path)?;
@@ -975,7 +1009,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let app_path = app.path().app_config_dir()?;
-            create_dir_all(&app_path)?;
+            ensure_private_directory(&app_path)?;
             let db_path = app_path.join("opennotion.db");
             let db_url = format!("sqlite:{}", db_path.display());
             let options = SqliteConnectOptions::from_str(&db_url)?
@@ -1022,7 +1056,9 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{remove_file, write};
+    use std::fs::{remove_dir_all, remove_file, write};
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     async fn test_db() -> SqlitePool {
         let db = SqlitePoolOptions::new()
@@ -1061,6 +1097,37 @@ mod tests {
             assert!(indexes.contains(&"idx_pages_active_parent_sort".to_string()));
             assert!(indexes.contains(&"idx_pages_active_updated_at".to_string()));
         });
+    }
+
+    #[test]
+    fn migrations_record_schema_version() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            let schema_version: String =
+                sqlx::query_scalar("SELECT value FROM app_metadata WHERE key = 'schema_version'")
+                    .fetch_one(&db)
+                    .await
+                    .expect("fetch schema version");
+
+            assert_eq!(schema_version, APP_SCHEMA_VERSION);
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_directory_uses_owner_only_permissions() {
+        let dir = temp_path("private-dir");
+
+        ensure_private_directory(&dir).expect("create private directory");
+
+        let mode = metadata(&dir)
+            .expect("directory metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
+
+        let _ = remove_dir_all(&dir);
     }
 
     #[test]
@@ -1499,6 +1566,70 @@ mod tests {
                 imported.properties.as_deref(),
                 Some("{\"status\":\"Done\"}")
             );
+        });
+    }
+
+    #[test]
+    fn import_page_records_rolls_back_when_any_page_fails() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_page_record(
+                &db,
+                "duplicate",
+                "Existing",
+                None,
+                "2026-05-18T00:00:00.000Z",
+            )
+            .await
+            .expect("create existing page");
+
+            let pages = vec![
+                ImportedPage {
+                    id: "new-good".to_string(),
+                    title: "New Good".to_string(),
+                    parent_id: None,
+                    content: None,
+                    search_text: None,
+                    icon: None,
+                    cover_url: None,
+                    is_deleted: 0,
+                    is_favorite: 0,
+                    is_template: Some(0),
+                    is_database: Some(0),
+                    database_schema: None,
+                    properties: None,
+                    sort_order: Some(0),
+                    created_at: "2026-05-18T00:01:00.000Z".to_string(),
+                    updated_at: "2026-05-18T00:01:00.000Z".to_string(),
+                },
+                ImportedPage {
+                    id: "duplicate".to_string(),
+                    title: "Duplicate".to_string(),
+                    parent_id: None,
+                    content: None,
+                    search_text: None,
+                    icon: None,
+                    cover_url: None,
+                    is_deleted: 0,
+                    is_favorite: 0,
+                    is_template: Some(0),
+                    is_database: Some(0),
+                    database_schema: None,
+                    properties: None,
+                    sort_order: Some(1),
+                    created_at: "2026-05-18T00:02:00.000Z".to_string(),
+                    updated_at: "2026-05-18T00:02:00.000Z".to_string(),
+                },
+            ];
+
+            import_page_records(&db, &pages)
+                .await
+                .expect_err("duplicate id aborts import");
+
+            assert!(get_page_record(&db, "new-good")
+                .await
+                .expect("fetch new page")
+                .is_none());
         });
     }
 
