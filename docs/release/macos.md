@@ -9,6 +9,20 @@ OpenNotion can build an unsigned local app without Apple credentials. Public pro
 - App Store Connect API key or a configured `notarytool` keychain profile.
 - Tauri signing/notarization configuration wired to those credentials.
 
+For GitHub Actions, configure these repository secrets:
+
+```text
+APPLE_CERTIFICATE
+APPLE_CERTIFICATE_PASSWORD
+KEYCHAIN_PASSWORD
+APPLE_API_ISSUER
+APPLE_API_KEY
+APPLE_API_KEY_P8
+APPLE_TEAM_ID
+```
+
+`APPLE_CERTIFICATE` is the base64 encoded `.p12` export of the Developer ID Application certificate. `APPLE_API_KEY_P8` is the full private key text downloaded from App Store Connect. The manual/tag workflow in `.github/workflows/macos-release.yml` writes that key to a temporary file and passes `APPLE_API_KEY_PATH` to Tauri.
+
 ## Local Release Gate
 
 Run these commands before any public build is considered releasable:
@@ -34,6 +48,24 @@ The DMG filename depends on the app version and build architecture. `scripts/ver
 
 - `codesign -dv --verbose=4` does not report `Signature=adhoc`.
 - `codesign -dv --verbose=4` reports a real `TeamIdentifier`.
+- `codesign -dv --verbose=4` reports `Runtime Version`, proving hardened runtime is enabled.
 - `spctl` accepts both the app and DMG.
 - The DMG is stapled after successful notarization.
 - The app version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` matches the release tag.
+
+## GitHub Release Workflow
+
+The `macOS Release` workflow runs only on manual dispatch or `v*` tags. It is separate from CI because unsigned PR builds must stay fast and green, while release builds require Apple credentials.
+
+Run it after secrets are configured:
+
+```sh
+gh workflow run "macOS Release" --ref main
+```
+
+For tag releases:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```

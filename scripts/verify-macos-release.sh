@@ -56,6 +56,11 @@ if echo "$SIGNING_INFO" | grep -q "TeamIdentifier=not set"; then
   exit 1
 fi
 
+if ! echo "$SIGNING_INFO" | grep -q "Runtime Version"; then
+  echo "Release gate failed: app is not signed with hardened runtime." >&2
+  exit 1
+fi
+
 if [[ "$CODESIGN_VERIFY_STATUS" -ne 0 ]]; then
   echo "$CODESIGN_VERIFY_OUTPUT" >&2
   echo "Release gate failed: app signature verification failed." >&2

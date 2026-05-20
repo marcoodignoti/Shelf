@@ -42,11 +42,16 @@ test.beforeEach(async ({ page }) => {
       window.localStorage.setItem(resetKey, "done");
     }
 
+    let callbackCounter = 0;
+
     window.__TAURI_INTERNALS__ = {
       metadata: {
         currentWindow: { label: "main" },
       },
-      transformCallback: () => Math.floor(Math.random() * 1_000_000),
+      transformCallback: () => {
+        callbackCounter += 1;
+        return callbackCounter;
+      },
       unregisterCallback: () => undefined,
       convertFileSrc: (filePath: string) => filePath,
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
