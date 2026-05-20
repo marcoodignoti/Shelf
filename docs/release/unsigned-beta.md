@@ -38,5 +38,13 @@ The workflow creates a GitHub prerelease and uploads unsigned macOS and Windows 
 
 Beta users must expect OS trust warnings:
 
-- macOS: unidentified developer warning, use Control-click or right-click then Open
+- macOS: unidentified developer warning or "damaged and can't be opened" after browser download
 - Windows: SmartScreen warning because installer is unsigned
+
+For macOS private testing:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/OpenNotion.app
+```
+
+Run that after copying `OpenNotion.app` into `/Applications`, then open the app. This only removes the browser quarantine marker; it does not sign or notarize the app.

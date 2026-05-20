@@ -98,7 +98,20 @@ jobs:
 
           ### macOS
 
-          The DMG is unsigned/ad-hoc and not notarized. macOS Gatekeeper may show an unidentified developer warning. For private testing, open it with Control-click or right-click, then Open.
+          The DMG is unsigned/ad-hoc and not notarized. macOS Gatekeeper may show an unidentified developer warning or a "damaged and can't be opened" message after browser download.
+
+          For private testing:
+
+          1. Copy `OpenNotion.app` to `/Applications`.
+          2. Run:
+
+             ```sh
+             xattr -dr com.apple.quarantine /Applications/OpenNotion.app
+             ```
+
+          3. Open OpenNotion from `/Applications`.
+
+          This removes the browser quarantine marker. It does not sign or notarize the app.
 
           ### Windows
 
