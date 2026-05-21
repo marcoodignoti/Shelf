@@ -92,13 +92,7 @@ public enum BlockNoteCodec {
         let props = object["props"] as? [String: Any] ?? [:]
         let text = inlineText(from: object["content"])
         let kind = blockKind(type: type, props: props)
-        let rawJSON: String?
-
-        if case .unknown = kind {
-            rawJSON = rawJSONString(from: object)
-        } else {
-            rawJSON = nil
-        }
+        let rawJSON = rawJSONString(from: object)
 
         return Block(id: id, kind: kind, text: text, rawJSON: rawJSON)
     }
@@ -125,11 +119,10 @@ public enum BlockNoteCodec {
     }
 
     private static func encodeBlock(_ block: Block) -> [String: Any] {
-        if case let .unknown(type) = block.kind,
-           let rawJSON = block.rawJSON,
+        if let rawJSON = block.rawJSON,
            let data = rawJSON.data(using: .utf8),
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return object.merging(["id": block.id, "type": type]) { current, _ in current }
+            return object
         }
 
         var object: [String: Any] = [
@@ -179,7 +172,7 @@ public enum BlockNoteCodec {
                 return object["text"] as? String
             }
             return nil
-        }.joined(separator: " ")
+        }.joined()
     }
 
     private static func inlineContent(from text: String) -> [[String: Any]] {

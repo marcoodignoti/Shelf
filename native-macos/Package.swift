@@ -28,6 +28,10 @@ let package = Package(
         .testTarget(
             name: "OpenNotionCoreTests",
             dependencies: ["OpenNotionCore"]
+        ),
+        .testTarget(
+            name: "OpenNotionNativeTests",
+            dependencies: ["OpenNotionNative", "OpenNotionCore"]
         )
     ]
 )

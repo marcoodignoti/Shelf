@@ -14,7 +14,7 @@ struct OpenNotionNativeApp: App {
                 }
         }
         .commands {
-            CommandGroup(after: .newItem) {
+            CommandGroup(replacing: .newItem) {
                 Button("New Page") {
                     store.createPage()
                 }

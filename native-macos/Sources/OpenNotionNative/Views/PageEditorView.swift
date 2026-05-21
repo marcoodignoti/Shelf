@@ -5,27 +5,33 @@ import UniformTypeIdentifiers
 
 struct PageEditorView: View {
     let page: Page
-    let onSave: (String, BlockDocument) -> Void
+    let onSave: (String, BlockDocument) -> Bool
 
-    @State private var title: String
-    @State private var document: BlockDocument
+    @State private var draft: PageEditorDraft
     @State private var focusedBlockID: String?
+    @State private var autosaveTask: Task<Void, Never>?
+    @State private var saveState = PageEditorSaveState.saved
 
     private let startsAsUntitledEmptyPage: Bool
 
     private var hasUnsupportedBlocks: Bool {
-        document.blocks.contains { $0.kind.isUnsupported }
+        draft.document.blocks.contains { $0.kind.isUnsupported }
     }
 
-    init(page: Page, onSave: @escaping (String, BlockDocument) -> Void) {
+    init(page: Page, onSave: @escaping (String, BlockDocument) -> Bool) {
         let decodedDocument = (try? BlockNoteCodec.decode(page.content)) ?? .empty
         let isUntitledEmptyPage = page.title == "Untitled"
             && decodedDocument.blocks.allSatisfy { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let initialTitle = isUntitledEmptyPage ? "" : page.title
         self.page = page
         self.onSave = onSave
         self.startsAsUntitledEmptyPage = isUntitledEmptyPage
-        _title = State(initialValue: isUntitledEmptyPage ? "" : page.title)
-        _document = State(initialValue: decodedDocument)
+        _draft = State(initialValue: PageEditorDraft(
+            title: initialTitle,
+            document: decodedDocument,
+            savedTitle: page.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : page.title,
+            savedDocument: decodedDocument
+        ))
         _focusedBlockID = State(initialValue: decodedDocument.blocks.first?.id)
     }
 
@@ -35,14 +41,14 @@ struct PageEditorView: View {
                 PageActionStrip()
 
                 ZStack(alignment: .leading) {
-                    if title.isEmpty {
+                    if draft.title.isEmpty {
                         Text(startsAsUntitledEmptyPage ? "New page" : "Untitled")
                             .font(.system(size: 44, weight: .bold, design: .default))
                             .foregroundStyle(Color.primary.opacity(0.12))
                             .allowsHitTesting(false)
                     }
 
-                    TextField("", text: $title)
+                    TextField("", text: $draft.title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 44, weight: .bold, design: .default))
                 }
@@ -65,17 +71,31 @@ struct PageEditorView: View {
             .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .center)
 
-            BlockEditorView(document: $document, focusedBlockID: $focusedBlockID)
+            BlockEditorView(document: $draft.document, focusedBlockID: $focusedBlockID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onChange(of: draft.title) { _, _ in
+            scheduleAutosave()
+        }
+        .onChange(of: draft.document) { _, _ in
+            scheduleAutosave()
+        }
+        .onDisappear {
+            autosaveTask?.cancel()
+            saveNow()
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
-                    onSave(persistedTitle, document)
+                    saveNow()
                 } label: {
                     Label("Save", systemImage: "square.and.arrow.down")
                 }
                 .keyboardShortcut("s")
+
+                Text(saveState.label)
+                    .font(.caption)
+                    .foregroundStyle(saveState == .failed ? Color.red : Color.secondary)
 
                 Button {} label: {
                     Label("Copy Link", systemImage: "link")
@@ -95,9 +115,57 @@ struct PageEditorView: View {
         }
     }
 
-    private var persistedTitle: String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        guard draft.isDirty else {
+            saveState = .saved
+            return
+        }
+
+        saveState = .unsaved
+        autosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+            saveNow()
+        }
+    }
+
+    private func saveNow() {
+        autosaveTask?.cancel()
+        guard draft.isDirty else {
+            saveState = .saved
+            return
+        }
+
+        saveState = .saving
+        if onSave(draft.persistedTitle, draft.document) {
+            draft.markSaved()
+            saveState = .saved
+        } else {
+            saveState = .failed
+        }
+    }
+}
+
+private enum PageEditorSaveState {
+    case saved
+    case unsaved
+    case saving
+    case failed
+
+    var label: String {
+        switch self {
+        case .saved:
+            return "Saved"
+        case .unsaved:
+            return "Unsaved"
+        case .saving:
+            return "Saving..."
+        case .failed:
+            return "Save failed"
+        }
     }
 }
 
@@ -134,43 +202,60 @@ private struct BlockEditorView: View {
     @State private var activeDropLocation: BlockDropLocation?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(document.blocks) { block in
-                    VStack(alignment: .leading, spacing: 0) {
-                        BlockDropIndicator(isActive: activeDropLocation == .before(block.id))
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(document.blocks) { block in
+                        VStack(alignment: .leading, spacing: 0) {
+                            BlockDropIndicator(isActive: activeDropLocation == .before(block.id))
 
-                        BlockRowView(
-                            block: binding(for: block.id),
-                            document: $document,
-                            focusedBlockID: $focusedBlockID,
-                            draggingBlockID: $draggingBlockID,
-                            activeDropLocation: $activeDropLocation,
-                            prefix: prefix(for: block)
-                        )
+                            BlockRowView(
+                                block: binding(for: block.id),
+                                document: $document,
+                                focusedBlockID: $focusedBlockID,
+                                draggingBlockID: $draggingBlockID,
+                                activeDropLocation: $activeDropLocation,
+                                prefix: prefix(for: block)
+                            ) { id, anchor in
+                                requestScroll(to: id, anchor: anchor, using: scrollProxy)
+                            }
+                        }
+                        .id(block.id)
                     }
-                }
 
-                BlockDropIndicator(isActive: activeDropLocation == .end)
+                    BlockDropIndicator(isActive: activeDropLocation == .end)
 
-                Color.clear
-                    .frame(height: 24)
-                    .onDrop(
-                        of: BlockDragPasteboard.typeIdentifiers,
-                        delegate: BlockEndDropDelegate(
-                            document: $document,
-                            focusedBlockID: $focusedBlockID,
-                            draggingBlockID: $draggingBlockID,
-                            activeDropLocation: $activeDropLocation
+                    Color.clear
+                        .frame(height: 24)
+                        .onDrop(
+                            of: BlockDragPasteboard.typeIdentifiers,
+                            delegate: BlockEndDropDelegate(
+                                document: $document,
+                                focusedBlockID: $focusedBlockID,
+                                draggingBlockID: $draggingBlockID,
+                                activeDropLocation: $activeDropLocation
+                            )
                         )
-                    )
+                }
+                .padding(.horizontal, 40)
+                .padding(.bottom, activeSlashBlockID == nil ? 48 : 220)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .padding(.horizontal, 40)
-            .padding(.bottom, 48)
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .background(Color(nsColor: .textBackgroundColor))
+            .onChange(of: focusedBlockID) { _, id in
+                guard let id else {
+                    return
+                }
+                requestScroll(to: id, anchor: .center, using: scrollProxy)
+            }
+            .onChange(of: activeSlashBlockID) { _, id in
+                guard let id else {
+                    return
+                }
+                requestScroll(to: id, anchor: .center, using: scrollProxy)
+            }
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private func binding(for id: String) -> Binding<Block> {
@@ -216,6 +301,30 @@ private struct BlockEditorView: View {
             cursor -= 1
         }
         return ordinal
+    }
+
+    private var activeSlashBlockID: String? {
+        guard let focusedBlockID,
+              let block = document.blocks.first(where: { $0.id == focusedBlockID }),
+              block.kind.acceptsText,
+              block.kind != .code else {
+            return nil
+        }
+
+        let trimmed = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"),
+              trimmed.count <= 24 else {
+            return nil
+        }
+        return focusedBlockID
+    }
+
+    private func requestScroll(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.16)) {
+                proxy.scrollTo(id, anchor: anchor)
+            }
+        }
     }
 }
 
@@ -351,26 +460,49 @@ private struct BlockRowView: View {
     @Binding var draggingBlockID: String?
     @Binding var activeDropLocation: BlockDropLocation?
     let prefix: EditorBlockPrefix
+    let onRequestScroll: (String, UnitPoint) -> Void
     @State private var isHovering = false
     @State private var selectedSlashIndex = 0
     @State private var dismissedSlashText: String?
+    @State private var measuredTextHeight: CGFloat = 30
 
     private var isFocused: Bool {
         focusedBlockID == block.id
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            selectionButton
-                .frame(width: 20, height: rowHeight, alignment: .top)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                selectionButton
+                    .frame(width: 20, height: rowHeight, alignment: .top)
 
-            prefixView
-                .frame(width: 26, height: rowHeight, alignment: .topTrailing)
+                prefixView
+                    .frame(width: 26, height: rowHeight, alignment: .topTrailing)
 
-            VStack(alignment: .leading, spacing: 4) {
                 content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(rowBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .onDrop(
+                of: BlockDragPasteboard.typeIdentifiers,
+                delegate: BlockRowDropDelegate(
+                    targetID: block.id,
+                    document: $document,
+                    focusedBlockID: $focusedBlockID,
+                    draggingBlockID: $draggingBlockID,
+                    activeDropLocation: $activeDropLocation
+                )
+            )
+            .onTapGesture {
+                focusedBlockID = block.id
+            }
+            .onHover { isHovering = $0 }
 
-                if shouldShowSlashMenu {
+            if shouldShowSlashMenu {
+                VStack(alignment: .leading, spacing: 0) {
                     SlashCommandMenu(
                         styles: slashStyles,
                         selectedStyleID: selectedSlashStyle?.id,
@@ -378,33 +510,36 @@ private struct BlockRowView: View {
                     ) { style in
                         applySlashCommand(style)
                     }
-                    .padding(.top, 2)
+
+                    Color.clear
+                        .frame(height: 18)
+                        .id(slashMenuBottomID)
                 }
+                .padding(.top, 2)
+                .padding(.leading, 58)
             }
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
-        .background(rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onDrop(
-            of: BlockDragPasteboard.typeIdentifiers,
-            delegate: BlockRowDropDelegate(
-                targetID: block.id,
-                document: $document,
-                focusedBlockID: $focusedBlockID,
-                draggingBlockID: $draggingBlockID,
-                activeDropLocation: $activeDropLocation
-            )
-        )
-        .onTapGesture {
-            focusedBlockID = block.id
-        }
-        .onHover { isHovering = $0 }
         .onChange(of: block.text) { _, _ in
             dismissedSlashText = nil
             selectedSlashIndex = 0
         }
+        .onChange(of: measuredTextHeight) { oldHeight, newHeight in
+            guard isFocused,
+                  abs(newHeight - oldHeight) > 1 else {
+                return
+            }
+            onRequestScroll(block.id, .bottom)
+        }
+        .onChange(of: shouldShowSlashMenu) { _, isShowing in
+            guard isShowing else {
+                return
+            }
+            onRequestScroll(slashMenuBottomID, .bottom)
+        }
+    }
+
+    private var slashMenuBottomID: String {
+        "\(block.id)-slash-menu-bottom"
     }
 
     private var selectionButton: some View {
@@ -470,6 +605,7 @@ private struct BlockRowView: View {
             return
         }
         selectedSlashIndex = index
+        onRequestScroll(block.id, .center)
     }
 
     private func applySlashCommand(_ style: EditorBlockStyle) {
@@ -553,6 +689,7 @@ private struct BlockRowView: View {
                         get: { block.text },
                         set: { document.updateText(id: block.id, text: $0) }
                     ),
+                    measuredHeight: $measuredTextHeight,
                     isFocused: isFocused,
                     font: textFont,
                     textColor: .labelColor,
@@ -566,7 +703,7 @@ private struct BlockRowView: View {
             .padding(block.kind == .code ? EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8) : EdgeInsets())
             .background(block.kind == .code ? Color(nsColor: .controlBackgroundColor).opacity(0.72) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: block.kind == .code ? 6 : 0))
-            .frame(height: rowHeight)
+            .frame(minHeight: rowHeight)
         }
     }
 
@@ -616,8 +753,25 @@ private struct BlockRowView: View {
         case .divider:
             return 32
         default:
-            let lineCount = max(1, block.text.components(separatedBy: .newlines).count)
-            return max(30, CGFloat(lineCount) * (textFont.pointSize + 8) + 8)
+            return max(minimumTextRowHeight, measuredTextHeight + textVerticalChrome)
+        }
+    }
+
+    private var minimumTextRowHeight: CGFloat {
+        switch block.kind {
+        case .code:
+            return 40
+        default:
+            return 30
+        }
+    }
+
+    private var textVerticalChrome: CGFloat {
+        switch block.kind {
+        case .code:
+            return 12
+        default:
+            return 0
         }
     }
 
@@ -679,6 +833,7 @@ private struct BlockRowView: View {
                 return false
             }
             selectedSlashIndex = max(0, selectedSlashIndex - 1)
+            onRequestScroll(block.id, .center)
             return true
         case .moveToNextMenuItem:
             guard shouldShowSlashMenu,
@@ -686,6 +841,7 @@ private struct BlockRowView: View {
                 return false
             }
             selectedSlashIndex = min(slashStyles.count - 1, selectedSlashIndex + 1)
+            onRequestScroll(block.id, .center)
             return true
         case .cancelMenu:
             guard shouldShowSlashMenu else {
@@ -712,60 +868,101 @@ private struct SlashCommandMenu: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Basic blocks")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
-
-                if styles.isEmpty {
-                    Text("No commands")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                } else {
-                    ForEach(styles) { style in
-                        SlashCommandRow(
-                            style: style,
-                            isSelected: style.id == selectedStyleID,
-                            onHover: onHover,
-                            onSelect: onSelect
-                        )
-                    }
-                }
-
-                Divider()
-                    .padding(.top, 6)
-
-                HStack {
-                    Text("Close menu")
-                    Spacer()
-                    Text("esc")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.system(size: 15))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 8) {
+                menuPanel
+                previewPanel
+                    .padding(.top, previewTopPadding)
             }
-            .frame(width: 326)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.75), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
 
-            if let selectedIndex,
-               styles.indices.contains(selectedIndex) {
-                SlashCommandPreview(style: styles[selectedIndex])
-                    .offset(x: 334, y: 40 + CGFloat(selectedIndex) * 43)
+            VStack(alignment: .leading, spacing: 8) {
+                menuPanel
+                previewPanel
             }
         }
+    }
+
+    @ViewBuilder
+    private var previewPanel: some View {
+        if let selectedIndex,
+           styles.indices.contains(selectedIndex) {
+            SlashCommandPreview(style: styles[selectedIndex])
+        }
+    }
+
+    private var previewTopPadding: CGFloat {
+        CGFloat(
+            SlashMenuLayout.previewTopOffset(
+                selectedIndex: selectedIndex,
+                rowHeight: 43,
+                maxVisibleOffset: 172
+            )
+        )
+    }
+
+    private var menuPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Basic blocks")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            if styles.isEmpty {
+                Text("No commands")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(styles) { style in
+                                SlashCommandRow(
+                                    style: style,
+                                    isSelected: style.id == selectedStyleID,
+                                    onHover: onHover,
+                                    onSelect: onSelect
+                                )
+                                .id(style.id)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 300)
+                    .onChange(of: selectedStyleID) { _, id in
+                        guard let id else {
+                            return
+                        }
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            scrollProxy.scrollTo(id, anchor: .center)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+                .padding(.top, 6)
+
+            HStack {
+                Text("Close menu")
+                Spacer()
+                Text("esc")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.system(size: 15))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        .frame(width: 326)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.75), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
     }
 }
 
@@ -783,7 +980,9 @@ private struct SlashCommandRow: View {
                 Text(style.menuSymbol)
                     .font(.system(size: 18, weight: .medium, design: style == .code ? .monospaced : .default))
                     .foregroundStyle(.primary.opacity(0.85))
-                    .frame(width: 28, alignment: .center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(width: 34, alignment: .center)
                 Text(style.title)
                     .font(.system(size: 15))
                     .foregroundStyle(.primary)
