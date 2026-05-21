@@ -169,7 +169,7 @@ public enum BlockKind: Equatable, Sendable {
     fileprivate var normalized: BlockKind {
         switch self {
         case let .heading(level):
-            return .heading(level: min(max(level, 1), 3))
+            return .heading(level: min(max(level, 1), 4))
         default:
             return self
         }

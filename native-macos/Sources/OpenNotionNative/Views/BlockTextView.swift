@@ -6,6 +6,9 @@ enum BlockTextCommand {
     case deleteBackwardAtBeginning
     case moveToPreviousBlock
     case moveToNextBlock
+    case moveToPreviousMenuItem
+    case moveToNextMenuItem
+    case cancelMenu
 }
 
 struct BlockTextView: NSViewRepresentable {
@@ -119,13 +122,25 @@ final class EditorNSTextView: NSTextView {
                 return
             }
         case #selector(moveUp(_:)):
+            if commandHandler?(.moveToPreviousMenuItem) == true {
+                return
+            }
+
             if range.location == 0,
                commandHandler?(.moveToPreviousBlock) == true {
                 return
             }
         case #selector(moveDown(_:)):
+            if commandHandler?(.moveToNextMenuItem) == true {
+                return
+            }
+
             if NSMaxRange(range) >= string.utf16.count,
                commandHandler?(.moveToNextBlock) == true {
+                return
+            }
+        case #selector(cancelOperation(_:)):
+            if commandHandler?(.cancelMenu) == true {
                 return
             }
         default:
