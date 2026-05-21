@@ -79,7 +79,7 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(store.pages.map(\.id), ["target"])
     }
 
-    func testConfirmingPendingDeletionDeletesPage() {
+    func testConfirmingPendingDeletionPermanentlyDeletesPage() {
         let repository = RecordingPageRepository(pages: [
             Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
         ])
@@ -92,24 +92,6 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertNil(store.pendingDeletePageID)
         XCTAssertEqual(repository.deletedPageIDs, ["target"])
         XCTAssertEqual(store.pages, [])
-        XCTAssertEqual(store.deletedPages.map(\.id), ["target"])
-    }
-
-    func testRestoringDeletedPageReturnsItToPages() {
-        let repository = RecordingPageRepository(pages: [
-            Page(id: "active", title: "Active", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
-        ], deletedPages: [
-            Page(id: "deleted", title: "Deleted", isDeleted: 1, createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
-        ])
-        let store = OpenNotionStore(repository: repository)
-        store.load()
-
-        XCTAssertTrue(store.restorePage(pageID: "deleted"))
-
-        XCTAssertEqual(repository.updatedPageIDs, ["deleted"])
-        XCTAssertEqual(store.deletedPages, [])
-        XCTAssertEqual(store.pages.map(\.id), ["active", "deleted"])
-        XCTAssertEqual(store.selectedPageID, "deleted")
     }
 
     func testOpeningPageDeepLinkSelectsExistingPage() {
@@ -140,13 +122,11 @@ final class OpenNotionStoreTests: XCTestCase {
 
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
     var pages: [Page]
-    var deletedPages: [Page]
     private(set) var updatedPageIDs: [String] = []
     private(set) var deletedPageIDs: [String] = []
 
-    init(pages: [Page], deletedPages: [Page] = []) {
+    init(pages: [Page]) {
         self.pages = pages
-        self.deletedPages = deletedPages
     }
 
     var safetyStatus: DatabaseSafetyStatus { .unavailable }
@@ -158,7 +138,7 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
     }
 
     func listDeletedPages() throws -> [Page] {
-        deletedPages
+        []
     }
 
     func searchPages(query: String) throws -> [Page] {
@@ -173,15 +153,6 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
 
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws {
         updatedPageIDs.append(id)
-        if let deletedIndex = deletedPages.firstIndex(where: { $0.id == id }),
-           updates.isDeleted == 0 {
-            var restoredPage = deletedPages.remove(at: deletedIndex)
-            restoredPage.isDeleted = 0
-            restoredPage.updatedAt = updatedAt
-            pages.append(restoredPage)
-            return
-        }
-
         guard let index = pages.firstIndex(where: { $0.id == id }) else {
              return
         }
@@ -200,22 +171,12 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
         }
         if let isDeleted = updates.isDeleted {
             pages[index].isDeleted = isDeleted
-            if isDeleted == 1 {
-                deletedPages.append(pages.remove(at: index))
-                return
-            }
         }
         pages[index].updatedAt = updatedAt
     }
 
     func deletePage(id: String) throws {
         deletedPageIDs.append(id)
-        let removedPages = pages.filter { $0.id == id }.map { page in
-            var deletedPage = page
-            deletedPage.isDeleted = 1
-            return deletedPage
-        }
-        deletedPages.append(contentsOf: removedPages)
         pages.removeAll { $0.id == id }
     }
 }

@@ -20,7 +20,7 @@ struct OpenNotionNativeApp: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("Move Page to Trash") {
+                Button("Delete Page Permanently") {
                     store.requestDeleteSelectedPage()
                 }
                 .keyboardShortcut(.delete)

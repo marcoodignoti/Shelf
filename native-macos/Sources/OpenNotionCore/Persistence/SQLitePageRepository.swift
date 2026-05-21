@@ -218,7 +218,6 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
 
     public func deletePage(id: String) throws {
         try backupBeforeFirstLiveWriteIfNeeded()
-        let updatedAt = ISO8601DateFormatter().string(from: Date())
 
         try databasePool.write { db in
             try db.execute(
@@ -229,11 +228,10 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
                         SELECT pages.id FROM pages
                         JOIN descendants ON pages.parent_id = descendants.id
                     )
-                    UPDATE pages
-                    SET is_deleted = 1, updated_at = ?
+                    DELETE FROM pages
                     WHERE id IN (SELECT id FROM descendants)
                     """,
-                arguments: [id, updatedAt])
+                arguments: [id])
         }
     }
 

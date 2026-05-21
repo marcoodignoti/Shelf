@@ -51,19 +51,6 @@ struct SidebarView: View {
                     )
                 }
             }
-
-            if !isSearching, !store.deletedPages.isEmpty {
-                Section("Trash") {
-                    ForEach(store.deletedPages) { page in
-                        PageRow(page: page)
-                            .contextMenu {
-                                Button("Restore") {
-                                    store.restorePage(pageID: page.id)
-                                }
-                            }
-                    }
-                }
-            }
         }
         .listStyle(.sidebar)
         .navigationTitle("OpenNotion")
@@ -116,7 +103,7 @@ struct SidebarView: View {
 
         Divider()
 
-        Button("Move to Trash", role: .destructive) {
+        Button("Delete Permanently", role: .destructive) {
             store.requestDeletePage(pageID: page.id)
         }
     }

@@ -18,15 +18,15 @@ struct ContentView: View {
         .onOpenURL { url in
             _ = store.openPageLink(url)
         }
-        .confirmationDialog("Move page to Trash?", isPresented: deleteConfirmationBinding, titleVisibility: .visible) {
-            Button("Move to Trash", role: .destructive) {
+        .confirmationDialog("Delete page permanently?", isPresented: deleteConfirmationBinding, titleVisibility: .visible) {
+            Button("Delete Permanently", role: .destructive) {
                 _ = store.confirmPendingPageDeletion()
             }
             Button("Cancel", role: .cancel) {
                 store.cancelPendingPageDeletion()
             }
         } message: {
-            Text("The page is hidden from the workspace but kept in the database as deleted.")
+            Text("This permanently deletes the page and its subpages. This action cannot be undone.")
         }
         .alert("OpenNotion", isPresented: errorBinding) {
             Button("OK") {
