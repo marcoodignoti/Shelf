@@ -81,19 +81,12 @@ final class OpenNotionStore {
         }
     }
 
-    func save(pageID: String, title: String, plainText: String, preserveContent: Bool = false) {
+    func save(pageID: String, title: String, document: BlockDocument) {
         do {
             let now = dateFormatter.string(from: Date())
-            let updates: PageUpdates
-
-            if preserveContent {
-                updates = PageUpdates(title: normalizedTitle(title))
-            } else {
-                let document = BlockNoteCodec.document(fromPlainText: plainText)
-                let content = try BlockNoteCodec.encode(document)
-                let searchText = BlockNoteCodec.searchText(for: document)
-                updates = PageUpdates(title: normalizedTitle(title), content: content, searchText: searchText)
-            }
+            let content = try BlockNoteCodec.encode(document)
+            let searchText = BlockNoteCodec.searchText(for: document)
+            let updates = PageUpdates(title: normalizedTitle(title), content: content, searchText: searchText)
 
             try repository.updatePage(
                 id: pageID,
