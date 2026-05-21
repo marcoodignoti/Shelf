@@ -28,7 +28,7 @@ struct PageEditorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 TextField("Untitled", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 34, weight: .bold, design: .default))
+                    .font(.system(size: 38, weight: .bold, design: .default))
 
                 if page.isDatabase == 1 {
                     Label("Database view comes in phase 2. Page content and metadata are safe to edit here.", systemImage: "tablecells")
@@ -42,9 +42,11 @@ struct PageEditorView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 44)
-            .padding(.top, 36)
-            .padding(.bottom, 18)
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 48)
+            .padding(.top, 46)
+            .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, alignment: .center)
 
             BlockEditorView(document: $document, focusedBlockID: $focusedBlockID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -92,6 +94,8 @@ private struct BlockEditorView: View {
             }
             .padding(.horizontal, 40)
             .padding(.bottom, 48)
+            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -147,6 +151,7 @@ private struct BlockRowView: View {
     @Binding var document: BlockDocument
     @Binding var focusedBlockID: String?
     let prefix: EditorBlockPrefix
+    @State private var isHovering = false
 
     private var isFocused: Bool {
         focusedBlockID == block.id
@@ -164,7 +169,7 @@ private struct BlockRowView: View {
                 content
 
                 if shouldShowSlashMenu {
-                    SlashCommandMenu { style in
+                    SlashCommandMenu(query: slashQuery) { style in
                         applySlashCommand(style)
                     }
                     .padding(.top, 2)
@@ -174,7 +179,7 @@ private struct BlockRowView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background(isFocused ? Color.accentColor.opacity(0.08) : Color.clear)
+        .background(rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .dropDestination(for: String.self) { items, _ in
             guard let draggedID = items.first else {
@@ -187,23 +192,30 @@ private struct BlockRowView: View {
         .onTapGesture {
             focusedBlockID = block.id
         }
+        .onHover { isHovering = $0 }
     }
 
     private var selectionButton: some View {
         Button {
             focusedBlockID = block.id
         } label: {
-            Image(systemName: block.kind.selectorSystemImage)
-                .font(.system(size: 12, weight: .medium))
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isFocused ? Color.accentColor : .secondary)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.top, 7)
+        .opacity(isFocused || isHovering ? 1 : 0)
         .draggable(block.id)
         .help("Select or drag block")
         .accessibilityLabel("Select block")
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(isFocused ? Color.accentColor.opacity(0.045) : (isHovering ? Color.primary.opacity(0.035) : Color.clear))
     }
 
     private var shouldShowSlashMenu: Bool {
@@ -215,6 +227,14 @@ private struct BlockRowView: View {
 
         let trimmed = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("/") && trimmed.count <= 24
+    }
+
+    private var slashQuery: String {
+        let trimmed = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/") else {
+            return ""
+        }
+        return String(trimmed.dropFirst()).lowercased()
     }
 
     private func applySlashCommand(_ style: EditorBlockStyle) {
@@ -282,20 +302,33 @@ private struct BlockRowView: View {
             .foregroundStyle(.secondary)
             .frame(height: rowHeight, alignment: .center)
         default:
-            BlockTextView(
-                text: Binding(
-                    get: { block.text },
-                    set: { document.updateText(id: block.id, text: $0) }
-                ),
-                isFocused: isFocused,
-                font: textFont,
-                textColor: .labelColor,
-                isEditable: block.kind.acceptsText,
-                onFocus: {
-                    focusedBlockID = block.id
-                },
-                onCommand: handleCommand
-            )
+            ZStack(alignment: .topLeading) {
+                if block.text.isEmpty {
+                    Text(placeholderText)
+                        .font(placeholderFont)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
+                }
+
+                BlockTextView(
+                    text: Binding(
+                        get: { block.text },
+                        set: { document.updateText(id: block.id, text: $0) }
+                    ),
+                    isFocused: isFocused,
+                    font: textFont,
+                    textColor: .labelColor,
+                    isEditable: block.kind.acceptsText,
+                    onFocus: {
+                        focusedBlockID = block.id
+                    },
+                    onCommand: handleCommand
+                )
+            }
+            .padding(block.kind == .code ? EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8) : EdgeInsets())
+            .background(block.kind == .code ? Color(nsColor: .controlBackgroundColor).opacity(0.72) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: block.kind == .code ? 6 : 0))
             .frame(height: rowHeight)
         }
     }
@@ -308,6 +341,32 @@ private struct BlockRowView: View {
             return .monospacedSystemFont(ofSize: 14, weight: .regular)
         default:
             return .systemFont(ofSize: 16, weight: .regular)
+        }
+    }
+
+    private var placeholderText: String {
+        switch block.kind {
+        case .heading(level: 1):
+            return "Heading 1"
+        case .heading:
+            return "Heading 2"
+        case .bulletListItem, .numberedListItem, .checkListItem:
+            return "List item"
+        case .code:
+            return "Type code"
+        default:
+            return "Type '/' for commands"
+        }
+    }
+
+    private var placeholderFont: Font {
+        switch block.kind {
+        case let .heading(level):
+            return .system(size: level == 1 ? 28 : 22, weight: .bold)
+        case .code:
+            return .system(size: 14, design: .monospaced)
+        default:
+            return .system(size: 16)
         }
     }
 
@@ -410,33 +469,52 @@ private struct BlockStyleToolbar: View {
 }
 
 private struct SlashCommandMenu: View {
+    let query: String
     let onSelect: (EditorBlockStyle) -> Void
 
     private var styles: [EditorBlockStyle] {
-        EditorBlockStyle.allCases
+        let allStyles = EditorBlockStyle.allCases
+        guard !query.isEmpty else {
+            return allStyles
+        }
+        return allStyles.filter { $0.matches(query) }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(styles) { style in
-                Button {
-                    onSelect(style)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: style.systemImage)
-                            .frame(width: 18)
-                        Text(style.title)
-                            .font(.callout)
-                        Spacer(minLength: 0)
+            if styles.isEmpty {
+                Text("No commands")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(styles) { style in
+                    Button {
+                        onSelect(style)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: style.systemImage)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(style.title)
+                                    .font(.callout)
+                                Text(style.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
-        .frame(width: 220)
+        .frame(width: 248)
         .padding(.vertical, 6)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -470,7 +548,7 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .paragraph:
-            return "Paragraph"
+            return "Text"
         case .heading1:
             return "Heading 1"
         case .heading2:
@@ -486,6 +564,34 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
         case .divider:
             return "Divider"
         }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .paragraph:
+            return "Plain paragraph"
+        case .heading1:
+            return "Large section title"
+        case .heading2:
+            return "Medium section title"
+        case .bullet:
+            return "Bulleted list"
+        case .numbered:
+            return "Numbered list"
+        case .checklist:
+            return "Todo checkbox"
+        case .code:
+            return "Code block"
+        case .divider:
+            return "Visual separator"
+        }
+    }
+
+    func matches(_ query: String) -> Bool {
+        let needle = query.lowercased()
+        return title.lowercased().contains(needle)
+            || subtitle.lowercased().contains(needle)
+            || rawValue.lowercased().contains(needle)
     }
 
     var systemImage: String {
@@ -527,29 +633,6 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return .code
         case .divider:
             return .divider
-        }
-    }
-}
-
-private extension BlockKind {
-    var selectorSystemImage: String {
-        switch self {
-        case .paragraph:
-            return "text.alignleft"
-        case .heading:
-            return "h.square"
-        case .bulletListItem:
-            return "list.bullet"
-        case .numberedListItem:
-            return "list.number"
-        case .checkListItem:
-            return "checklist"
-        case .code:
-            return "chevron.left.forwardslash.chevron.right"
-        case .divider:
-            return "minus"
-        case .unknown:
-            return "lock.doc"
         }
     }
 }
