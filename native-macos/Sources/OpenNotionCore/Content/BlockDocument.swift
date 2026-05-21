@@ -102,6 +102,28 @@ public struct BlockDocument: Equatable, Sendable {
         }
         return blocks[index + 1].id
     }
+
+    public mutating func moveBlock(id: String, before targetID: String) {
+        guard id != targetID,
+              let sourceIndex = blocks.firstIndex(where: { $0.id == id }),
+              let targetIndex = blocks.firstIndex(where: { $0.id == targetID }) else {
+            return
+        }
+
+        let block = blocks.remove(at: sourceIndex)
+        let adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+        blocks.insert(block, at: adjustedTargetIndex)
+    }
+
+    public mutating func moveBlockToEnd(id: String) {
+        guard let sourceIndex = blocks.firstIndex(where: { $0.id == id }),
+              sourceIndex != blocks.indices.last else {
+            return
+        }
+
+        let block = blocks.remove(at: sourceIndex)
+        blocks.append(block)
+    }
 }
 
 public struct Block: Identifiable, Equatable, Sendable {

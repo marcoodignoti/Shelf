@@ -61,4 +61,40 @@ final class BlockDocumentEditingTests: XCTestCase {
         XCTAssertEqual(document.blocks[0].kind, .checkListItem(checked: true))
         XCTAssertEqual(document.blocks[1].kind, .paragraph)
     }
+
+    func testMovingBlockBeforeAnotherBlockReordersDocument() {
+        var document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "A", rawJSON: nil),
+            Block(id: "b", kind: .paragraph, text: "B", rawJSON: nil),
+            Block(id: "c", kind: .paragraph, text: "C", rawJSON: nil)
+        ])
+
+        document.moveBlock(id: "c", before: "a")
+
+        XCTAssertEqual(document.blocks.map(\.id), ["c", "a", "b"])
+    }
+
+    func testMovingBlockToEndReordersDocument() {
+        var document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "A", rawJSON: nil),
+            Block(id: "b", kind: .paragraph, text: "B", rawJSON: nil),
+            Block(id: "c", kind: .paragraph, text: "C", rawJSON: nil)
+        ])
+
+        document.moveBlockToEnd(id: "a")
+
+        XCTAssertEqual(document.blocks.map(\.id), ["b", "c", "a"])
+    }
+
+    func testMovingMissingBlockDoesNothing() {
+        var document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "A", rawJSON: nil),
+            Block(id: "b", kind: .paragraph, text: "B", rawJSON: nil)
+        ])
+
+        document.moveBlock(id: "x", before: "a")
+        document.moveBlock(id: "a", before: "x")
+
+        XCTAssertEqual(document.blocks.map(\.id), ["a", "b"])
+    }
 }
