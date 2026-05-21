@@ -17,8 +17,91 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Build, test, audit
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.paths.outputs.native }}
+      tauri: ${{ steps.paths.outputs.tauri }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+
+          if [[ "$base" =~ ^0+$ ]]; then
+            base="$(git rev-list --max-parents=0 "$head")"
+          fi
+
+          git diff --name-only "$base" "$head" | sort > changed-files.txt
+
+          native=false
+          tauri=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              native-macos/*)
+                native=true
+                ;;
+            esac
+
+            case "$file" in
+              src/*|src-tauri/*|tests/*|public/*|scripts/*|script/*)
+                tauri=true
+                ;;
+              package.json|package-lock.json|index.html)
+                tauri=true
+                ;;
+              vite.config.*|tsconfig*.json|tailwind.config.*|playwright.config.*)
+                tauri=true
+                ;;
+            esac
+          done < changed-files.txt
+
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+          echo "tauri=$tauri" >> "$GITHUB_OUTPUT"
+
+          echo "Changed files:"
+          cat changed-files.txt
+          echo "native=$native"
+          echo "tauri=$tauri"
+
+  native_macos:
+    name: Native macOS build and tests
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: native-macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift tests
+        run: swift test
+
+      - name: Swift build
+        run: swift build
+
+  tauri:
+    name: Tauri build, test, audit
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
     runs-on: macos-14
     steps:
       - name: Checkout
@@ -80,3 +163,36 @@ jobs:
 
       - name: Build Tauri bundle
         run: npm run tauri build
+
+  check:
+    name: Build, test, audit
+    needs:
+      - changes
+      - native_macos
+      - tauri
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize CI result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "changes=${{ needs.changes.result }}"
+          echo "native_macos=${{ needs.native_macos.result }}"
+          echo "tauri=${{ needs.tauri.result }}"
+
+          for result in \
+            "${{ needs.changes.result }}" \
+            "${{ needs.native_macos.result }}" \
+            "${{ needs.tauri.result }}"
+          do
+            case "$result" in
+              success|skipped)
+                ;;
+              *)
+                echo "Required CI leg ended with result: $result"
+                exit 1
+                ;;
+            esac
+          done
