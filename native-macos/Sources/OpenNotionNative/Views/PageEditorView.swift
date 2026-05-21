@@ -78,6 +78,17 @@ private struct BlockEditorView: View {
                         prefix: prefix(for: block)
                     )
                 }
+
+                Color.clear
+                    .frame(height: 20)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let draggedID = items.first else {
+                            return false
+                        }
+                        document.moveBlockToEnd(id: draggedID)
+                        focusedBlockID = draggedID
+                        return true
+                    }
             }
             .padding(.horizontal, 40)
             .padding(.bottom, 48)
@@ -149,13 +160,30 @@ private struct BlockRowView: View {
             prefixView
                 .frame(width: 26, height: rowHeight, alignment: .topTrailing)
 
-            content
+            VStack(alignment: .leading, spacing: 4) {
+                content
+
+                if shouldShowSlashMenu {
+                    SlashCommandMenu { style in
+                        applySlashCommand(style)
+                    }
+                    .padding(.top, 2)
+                }
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
         .background(isFocused ? Color.accentColor.opacity(0.08) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .dropDestination(for: String.self) { items, _ in
+            guard let draggedID = items.first else {
+                return false
+            }
+            document.moveBlock(id: draggedID, before: block.id)
+            focusedBlockID = draggedID
+            return true
+        }
         .onTapGesture {
             focusedBlockID = block.id
         }
@@ -173,8 +201,28 @@ private struct BlockRowView: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 7)
-        .help("Select block")
+        .draggable(block.id)
+        .help("Select or drag block")
         .accessibilityLabel("Select block")
+    }
+
+    private var shouldShowSlashMenu: Bool {
+        guard isFocused,
+              block.kind.acceptsText,
+              block.kind != .code else {
+            return false
+        }
+
+        let trimmed = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("/") && trimmed.count <= 24
+    }
+
+    private func applySlashCommand(_ style: EditorBlockStyle) {
+        document.replaceKind(id: block.id, with: style.kind)
+        if block.kind.acceptsText {
+            document.updateText(id: block.id, text: "")
+        }
+        focusedBlockID = block.id
     }
 
     @ViewBuilder
@@ -358,6 +406,45 @@ private struct BlockStyleToolbar: View {
 
         document.replaceKind(id: blockID, with: style.kind)
         focusedBlockID = blockID
+    }
+}
+
+private struct SlashCommandMenu: View {
+    let onSelect: (EditorBlockStyle) -> Void
+
+    private var styles: [EditorBlockStyle] {
+        EditorBlockStyle.allCases
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(styles) { style in
+                Button {
+                    onSelect(style)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: style.systemImage)
+                            .frame(width: 18)
+                        Text(style.title)
+                            .font(.callout)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 220)
+        .padding(.vertical, 6)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.10), radius: 12, y: 6)
     }
 }
 
