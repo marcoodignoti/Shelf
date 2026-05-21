@@ -73,6 +73,21 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(rows.map { $0["is_deleted"] as Int }, [1, 1])
     }
 
+    func testListDeletedPagesReturnsSoftDeletedPages() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "deleted",
+            title: "Deleted",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        try repository.deletePage(id: "deleted")
+
+        XCTAssertEqual(try repository.listPages(), [])
+        XCTAssertEqual(try repository.listDeletedPages().map(\.id), ["deleted"])
+    }
+
     private func temporaryDatabasePath() -> String {
         let directory = FileManager.default.temporaryDirectory
         let filename = "opennotion-native-\(UUID().uuidString).sqlite"
