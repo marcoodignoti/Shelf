@@ -6,6 +6,7 @@ import OpenNotionCore
 @Observable
 final class OpenNotionStore {
     var pages: [Page] = []
+    var deletedPages: [Page] = []
     var selectedPageID: String?
     var isLoading = false
     var errorMessage: String?
@@ -51,7 +52,7 @@ final class OpenNotionStore {
         isLoading = true
         do {
             try repository.bootstrap()
-            pages = try repository.listPages()
+            try reloadPages()
             if let pendingOpenPageID,
                pages.contains(where: { $0.id == pendingOpenPageID }) {
                 selectedPageID = pendingOpenPageID
@@ -98,6 +99,7 @@ final class OpenNotionStore {
                 createdAt: now
             )
             pages.insert(page, at: 0)
+            deletedPages = try repository.listDeletedPages()
             selectedPageID = page.id
             safetyStatus = repository.safetyStatus
             errorMessage = nil
@@ -132,7 +134,7 @@ final class OpenNotionStore {
                 updates: updates,
                 updatedAt: now
             )
-            pages = try repository.listPages()
+            try reloadPages()
             if let selectedPageIDBeforeSave,
                pages.contains(where: { $0.id == selectedPageIDBeforeSave }) {
                 selectedPageID = selectedPageIDBeforeSave
@@ -155,7 +157,7 @@ final class OpenNotionStore {
         let selectedPageIDBeforeDelete = selectedPageID
         do {
             try repository.deletePage(id: pageID)
-            pages = try repository.listPages()
+            try reloadPages()
             if let selectedPageIDBeforeDelete,
                pages.contains(where: { $0.id == selectedPageIDBeforeDelete }) {
                 selectedPageID = selectedPageIDBeforeDelete
@@ -201,6 +203,22 @@ final class OpenNotionStore {
         return deletePage(pageID: pageID)
     }
 
+    @discardableResult
+    func restorePage(pageID: String) -> Bool {
+        do {
+            let now = dateFormatter.string(from: Date())
+            try repository.updatePage(id: pageID, updates: PageUpdates(isDeleted: 0), updatedAt: now)
+            try reloadPages()
+            selectedPageID = pageID
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func search(_ query: String) -> [Page] {
         do {
             return try repository.searchPages(query: query)
@@ -216,7 +234,7 @@ final class OpenNotionStore {
         do {
             let now = dateFormatter.string(from: Date())
             try repository.updatePage(id: pageID, updates: updates, updatedAt: now)
-            pages = try repository.listPages()
+            try reloadPages()
             if let selectedPageIDBeforeUpdate,
                pages.contains(where: { $0.id == selectedPageIDBeforeUpdate }) {
                 selectedPageID = selectedPageIDBeforeUpdate
@@ -239,6 +257,11 @@ final class OpenNotionStore {
         return trimmed.isEmpty ? "Untitled" : trimmed
     }
 
+    private func reloadPages() throws {
+        pages = try repository.listPages()
+        deletedPages = try repository.listDeletedPages()
+    }
+
     private func pageID(from url: URL) -> String? {
         let pathParts = url.pathComponents.filter { $0 != "/" }
         if url.host == "page" {
@@ -258,6 +281,7 @@ private struct UnavailablePageRepository: PageRepository {
 
     func bootstrap() throws { throw error }
     func listPages() throws -> [Page] { throw error }
+    func listDeletedPages() throws -> [Page] { throw error }
     func searchPages(query: String) throws -> [Page] { throw error }
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page { throw error }
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws { throw error }

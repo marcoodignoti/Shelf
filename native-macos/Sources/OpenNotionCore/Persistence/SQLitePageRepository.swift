@@ -104,6 +104,16 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
         }
     }
 
+    public func listDeletedPages() throws -> [Page] {
+        try databasePool.read { db in
+            try Row.fetchAll(db, sql: Self.pageSelectSQL + """
+                WHERE is_deleted = 1
+                ORDER BY updated_at DESC
+                """)
+            .map(Page.init(row:))
+        }
+    }
+
     public func searchPages(query: String) throws -> [Page] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {

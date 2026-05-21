@@ -14,6 +14,7 @@ struct PageEditorView: View {
     @State private var autosaveTask: Task<Void, Never>?
     @State private var saveState = PageEditorSaveState.saved
     @State private var didCopyLink = false
+    @FocusState private var isTitleFocused: Bool
 
     private let startsAsUntitledEmptyPage: Bool
 
@@ -59,6 +60,10 @@ struct PageEditorView: View {
                     TextField("", text: $draft.title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 44, weight: .bold, design: .default))
+                        .focused($isTitleFocused)
+                        .onTapGesture {
+                            focusedBlockID = nil
+                        }
                 }
 
                 if page.isDatabase == 1 {
@@ -91,6 +96,12 @@ struct PageEditorView: View {
         .onDisappear {
             autosaveTask?.cancel()
             saveNow()
+        }
+        .onAppear {
+            if startsAsUntitledEmptyPage {
+                isTitleFocused = true
+                focusedBlockID = nil
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

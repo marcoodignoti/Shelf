@@ -20,7 +20,17 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selectionBinding) {
-            if !favorites.isEmpty {
+            if isSearching {
+                Section("Results") {
+                    ForEach(visiblePages) { page in
+                        PageRow(page: page)
+                            .tag(page.id)
+                            .contextMenu {
+                                pageContextMenu(for: page)
+                            }
+                    }
+                }
+            } else if !favorites.isEmpty {
                 Section("Favorites") {
                     ForEach(favorites) { page in
                         PageRow(page: page)
@@ -33,21 +43,24 @@ struct SidebarView: View {
             }
 
             Section("Pages") {
-                if isSearching {
-                    ForEach(visiblePages) { page in
+                ForEach(pageTree) { node in
+                    PageTreeRow(
+                        node: node,
+                        expandedPageIDs: $expandedPageIDs,
+                        contextMenu: pageContextMenu
+                    )
+                }
+            }
+
+            if !isSearching, !store.deletedPages.isEmpty {
+                Section("Trash") {
+                    ForEach(store.deletedPages) { page in
                         PageRow(page: page)
-                            .tag(page.id)
                             .contextMenu {
-                                pageContextMenu(for: page)
+                                Button("Restore") {
+                                    store.restorePage(pageID: page.id)
+                                }
                             }
-                    }
-                } else {
-                    ForEach(pageTree) { node in
-                        PageTreeRow(
-                            node: node,
-                            expandedPageIDs: $expandedPageIDs,
-                            contextMenu: pageContextMenu
-                        )
                     }
                 }
             }
