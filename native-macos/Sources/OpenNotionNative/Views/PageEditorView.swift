@@ -1,6 +1,7 @@
 import AppKit
 import OpenNotionCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PageEditorView: View {
     let page: Page
@@ -129,29 +130,40 @@ private struct PageActionButton: View {
 private struct BlockEditorView: View {
     @Binding var document: BlockDocument
     @Binding var focusedBlockID: String?
+    @State private var draggingBlockID: String?
+    @State private var activeDropLocation: BlockDropLocation?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(document.blocks) { block in
-                    BlockRowView(
-                        block: binding(for: block.id),
-                        document: $document,
-                        focusedBlockID: $focusedBlockID,
-                        prefix: prefix(for: block)
-                    )
+                    VStack(alignment: .leading, spacing: 0) {
+                        BlockDropIndicator(isActive: activeDropLocation == .before(block.id))
+
+                        BlockRowView(
+                            block: binding(for: block.id),
+                            document: $document,
+                            focusedBlockID: $focusedBlockID,
+                            draggingBlockID: $draggingBlockID,
+                            activeDropLocation: $activeDropLocation,
+                            prefix: prefix(for: block)
+                        )
+                    }
                 }
 
+                BlockDropIndicator(isActive: activeDropLocation == .end)
+
                 Color.clear
-                    .frame(height: 20)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let draggedID = items.first else {
-                            return false
-                        }
-                        document.moveBlockToEnd(id: draggedID)
-                        focusedBlockID = draggedID
-                        return true
-                    }
+                    .frame(height: 24)
+                    .onDrop(
+                        of: BlockDragPasteboard.typeIdentifiers,
+                        delegate: BlockEndDropDelegate(
+                            document: $document,
+                            focusedBlockID: $focusedBlockID,
+                            draggingBlockID: $draggingBlockID,
+                            activeDropLocation: $activeDropLocation
+                        )
+                    )
             }
             .padding(.horizontal, 40)
             .padding(.bottom, 48)
@@ -207,12 +219,141 @@ private struct BlockEditorView: View {
     }
 }
 
+private enum BlockDropLocation: Equatable {
+    case before(String)
+    case end
+}
+
+private enum BlockDragPasteboard {
+    static let type = UTType(exportedAs: "com.opennotion.native.block-id")
+    static let typeIdentifiers = [type.identifier]
+
+    static func provider(for blockID: String) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
+            completion(blockID.data(using: .utf8), nil)
+            return nil
+        }
+        return provider
+    }
+}
+
+private struct BlockDropIndicator: View {
+    let isActive: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(isActive ? Color.accentColor : Color.clear)
+            .frame(height: 2)
+            .padding(.leading, 54)
+            .padding(.trailing, 4)
+            .padding(.vertical, 2)
+            .animation(.easeOut(duration: 0.12), value: isActive)
+    }
+}
+
+private struct BlockRowDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var document: BlockDocument
+    @Binding var focusedBlockID: String?
+    @Binding var draggingBlockID: String?
+    @Binding var activeDropLocation: BlockDropLocation?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        guard info.hasItemsConforming(to: BlockDragPasteboard.typeIdentifiers),
+              let draggingBlockID else {
+            return false
+        }
+        return draggingBlockID != targetID
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingBlockID,
+              draggingBlockID != targetID else {
+            return
+        }
+        activeDropLocation = .before(targetID)
+    }
+
+    func dropExited(info: DropInfo) {
+        if activeDropLocation == .before(targetID) {
+            activeDropLocation = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            activeDropLocation = nil
+            draggingBlockID = nil
+        }
+
+        guard let draggedID = draggingBlockID,
+              draggedID != targetID else {
+            return false
+        }
+
+        document.moveBlock(id: draggedID, before: targetID)
+        focusedBlockID = draggedID
+        return true
+    }
+}
+
+private struct BlockEndDropDelegate: DropDelegate {
+    @Binding var document: BlockDocument
+    @Binding var focusedBlockID: String?
+    @Binding var draggingBlockID: String?
+    @Binding var activeDropLocation: BlockDropLocation?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: BlockDragPasteboard.typeIdentifiers) && draggingBlockID != nil
+    }
+
+    func dropEntered(info: DropInfo) {
+        if draggingBlockID != nil {
+            activeDropLocation = .end
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        if activeDropLocation == .end {
+            activeDropLocation = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            activeDropLocation = nil
+            draggingBlockID = nil
+        }
+
+        guard let draggedID = draggingBlockID else {
+            return false
+        }
+
+        document.moveBlockToEnd(id: draggedID)
+        focusedBlockID = draggedID
+        return true
+    }
+}
+
 private struct BlockRowView: View {
     @Binding var block: Block
     @Binding var document: BlockDocument
     @Binding var focusedBlockID: String?
+    @Binding var draggingBlockID: String?
+    @Binding var activeDropLocation: BlockDropLocation?
     let prefix: EditorBlockPrefix
     @State private var isHovering = false
+    @State private var selectedSlashIndex = 0
+    @State private var dismissedSlashText: String?
 
     private var isFocused: Bool {
         focusedBlockID == block.id
@@ -230,7 +371,11 @@ private struct BlockRowView: View {
                 content
 
                 if shouldShowSlashMenu {
-                    SlashCommandMenu(query: slashQuery) { style in
+                    SlashCommandMenu(
+                        styles: slashStyles,
+                        selectedStyleID: selectedSlashStyle?.id,
+                        onHover: selectSlashStyle
+                    ) { style in
                         applySlashCommand(style)
                     }
                     .padding(.top, 2)
@@ -242,18 +387,24 @@ private struct BlockRowView: View {
         .padding(.vertical, 2)
         .background(rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .dropDestination(for: String.self) { items, _ in
-            guard let draggedID = items.first else {
-                return false
-            }
-            document.moveBlock(id: draggedID, before: block.id)
-            focusedBlockID = draggedID
-            return true
-        }
+        .onDrop(
+            of: BlockDragPasteboard.typeIdentifiers,
+            delegate: BlockRowDropDelegate(
+                targetID: block.id,
+                document: $document,
+                focusedBlockID: $focusedBlockID,
+                draggingBlockID: $draggingBlockID,
+                activeDropLocation: $activeDropLocation
+            )
+        )
         .onTapGesture {
             focusedBlockID = block.id
         }
         .onHover { isHovering = $0 }
+        .onChange(of: block.text) { _, _ in
+            dismissedSlashText = nil
+            selectedSlashIndex = 0
+        }
     }
 
     private var selectionButton: some View {
@@ -269,7 +420,11 @@ private struct BlockRowView: View {
         .buttonStyle(.plain)
         .padding(.top, 7)
         .opacity(isFocused || isHovering ? 1 : 0)
-        .draggable(block.id)
+        .onDrag {
+            draggingBlockID = block.id
+            activeDropLocation = nil
+            return BlockDragPasteboard.provider(for: block.id)
+        }
         .help("Select or drag block")
         .accessibilityLabel("Select block")
     }
@@ -287,7 +442,7 @@ private struct BlockRowView: View {
         }
 
         let trimmed = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.hasPrefix("/") && trimmed.count <= 24
+        return trimmed.hasPrefix("/") && trimmed.count <= 24 && dismissedSlashText != trimmed
     }
 
     private var slashQuery: String {
@@ -298,12 +453,33 @@ private struct BlockRowView: View {
         return String(trimmed.dropFirst()).lowercased()
     }
 
+    private var slashStyles: [EditorBlockStyle] {
+        EditorBlockStyle.filtered(by: slashQuery)
+    }
+
+    private var selectedSlashStyle: EditorBlockStyle? {
+        guard !slashStyles.isEmpty else {
+            return nil
+        }
+        let clampedIndex = min(max(selectedSlashIndex, 0), slashStyles.count - 1)
+        return slashStyles[clampedIndex]
+    }
+
+    private func selectSlashStyle(_ style: EditorBlockStyle) {
+        guard let index = slashStyles.firstIndex(of: style) else {
+            return
+        }
+        selectedSlashIndex = index
+    }
+
     private func applySlashCommand(_ style: EditorBlockStyle) {
         document.replaceKind(id: block.id, with: style.kind)
         if block.kind.acceptsText {
             document.updateText(id: block.id, text: "")
         }
         focusedBlockID = block.id
+        dismissedSlashText = nil
+        selectedSlashIndex = 0
     }
 
     @ViewBuilder
@@ -397,7 +573,7 @@ private struct BlockRowView: View {
     private var textFont: NSFont {
         switch block.kind {
         case let .heading(level):
-            return .systemFont(ofSize: level == 1 ? 28 : 22, weight: .bold)
+            return .systemFont(ofSize: headingFontSize(for: level), weight: .bold)
         case .code:
             return .monospacedSystemFont(ofSize: 14, weight: .regular)
         default:
@@ -407,10 +583,8 @@ private struct BlockRowView: View {
 
     private var placeholderText: String {
         switch block.kind {
-        case .heading(level: 1):
-            return "Heading 1"
-        case .heading:
-            return "Heading 2"
+        case let .heading(level):
+            return "Heading \(level)"
         case .bulletListItem, .numberedListItem, .checkListItem:
             return "List item"
         case .code:
@@ -423,7 +597,7 @@ private struct BlockRowView: View {
     private var placeholderFont: Font {
         switch block.kind {
         case let .heading(level):
-            return .system(size: level == 1 ? 28 : 22, weight: .bold)
+            return .system(size: headingFontSize(for: level), weight: .bold)
         case .code:
             return .system(size: 14, design: .monospaced)
         default:
@@ -435,8 +609,10 @@ private struct BlockRowView: View {
         switch block.kind {
         case .heading(level: 1):
             return 44
-        case .heading:
+        case .heading(level: 2):
             return 36
+        case .heading:
+            return 32
         case .divider:
             return 32
         default:
@@ -445,9 +621,30 @@ private struct BlockRowView: View {
         }
     }
 
+    private func headingFontSize(for level: Int) -> CGFloat {
+        switch level {
+        case 1:
+            return 28
+        case 2:
+            return 22
+        case 3:
+            return 19
+        default:
+            return 17
+        }
+    }
+
     private func handleCommand(_ command: BlockTextCommand) -> Bool {
         switch command {
         case let .insertNewline(location):
+            if shouldShowSlashMenu {
+                guard let selectedSlashStyle else {
+                    return true
+                }
+                applySlashCommand(selectedSlashStyle)
+                return true
+            }
+
             if case .code = block.kind {
                 return false
             }
@@ -476,72 +673,230 @@ private struct BlockRowView: View {
             }
             focusedBlockID = nextID
             return true
+        case .moveToPreviousMenuItem:
+            guard shouldShowSlashMenu,
+                  !slashStyles.isEmpty else {
+                return false
+            }
+            selectedSlashIndex = max(0, selectedSlashIndex - 1)
+            return true
+        case .moveToNextMenuItem:
+            guard shouldShowSlashMenu,
+                  !slashStyles.isEmpty else {
+                return false
+            }
+            selectedSlashIndex = min(slashStyles.count - 1, selectedSlashIndex + 1)
+            return true
+        case .cancelMenu:
+            guard shouldShowSlashMenu else {
+                return false
+            }
+            dismissedSlashText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            selectedSlashIndex = 0
+            return true
         }
     }
 }
 
 private struct SlashCommandMenu: View {
-    let query: String
+    let styles: [EditorBlockStyle]
+    let selectedStyleID: EditorBlockStyle.ID?
+    let onHover: (EditorBlockStyle) -> Void
     let onSelect: (EditorBlockStyle) -> Void
 
-    private var styles: [EditorBlockStyle] {
-        let allStyles = EditorBlockStyle.allCases
-        guard !query.isEmpty else {
-            return allStyles
+    private var selectedIndex: Int? {
+        guard let selectedStyleID else {
+            return nil
         }
-        return allStyles.filter { $0.matches(query) }
+        return styles.firstIndex { $0.id == selectedStyleID }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Basic blocks")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-            if styles.isEmpty {
-                Text("No commands")
-                    .font(.callout)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Basic blocks")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(styles) { style in
-                    Button {
-                        onSelect(style)
-                    } label: {
-                        HStack(spacing: 14) {
-                            Text(style.menuSymbol)
-                                .font(.system(size: 18, weight: .medium, design: style == .code ? .monospaced : .default))
-                                .foregroundStyle(.primary.opacity(0.85))
-                                .frame(width: 28, alignment: .center)
-                            Text(style.title)
-                                .font(.system(size: 15))
-                                .foregroundStyle(.primary)
-                            Spacer(minLength: 0)
-                            Text(style.shortcutHint)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.secondary.opacity(0.75))
-                        }
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
+                if styles.isEmpty {
+                    Text("No commands")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .contentShape(Rectangle())
+                        .padding(.vertical, 8)
+                } else {
+                    ForEach(styles) { style in
+                        SlashCommandRow(
+                            style: style,
+                            isSelected: style.id == selectedStyleID,
+                            onHover: onHover,
+                            onSelect: onSelect
+                        )
                     }
-                    .buttonStyle(.plain)
                 }
+
+                Divider()
+                    .padding(.top, 6)
+
+                HStack {
+                    Text("Close menu")
+                    Spacer()
+                    Text("esc")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.system(size: 15))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .frame(width: 326)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.75), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
+
+            if let selectedIndex,
+               styles.indices.contains(selectedIndex) {
+                SlashCommandPreview(style: styles[selectedIndex])
+                    .offset(x: 334, y: 40 + CGFloat(selectedIndex) * 43)
             }
         }
-        .frame(width: 326)
-        .padding(.bottom, 8)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.75), lineWidth: 1)
+    }
+}
+
+private struct SlashCommandRow: View {
+    let style: EditorBlockStyle
+    let isSelected: Bool
+    let onHover: (EditorBlockStyle) -> Void
+    let onSelect: (EditorBlockStyle) -> Void
+
+    var body: some View {
+        Button {
+            onSelect(style)
+        } label: {
+            HStack(spacing: 14) {
+                Text(style.menuSymbol)
+                    .font(.system(size: 18, weight: .medium, design: style == .code ? .monospaced : .default))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .frame(width: 28, alignment: .center)
+                Text(style.title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Text(style.shortcutHint)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.75))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background {
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(isSelected ? Color.primary.opacity(0.065) : Color.clear)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+            }
+            .contentShape(Rectangle())
         }
-        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .onHover { hovering in
+            if hovering {
+                onHover(style)
+            }
+        }
+    }
+}
+
+private struct SlashCommandPreview: View {
+    let style: EditorBlockStyle
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(previewTitle)
+                    .font(previewTitleFont)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.primary)
+
+                if style.isListPreview {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("•  Ownership")
+                        Text("•  Altruism")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                } else if style == .code {
+                    Text("let value = true")
+                        .font(.system(size: 12, design: .monospaced))
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                } else if style == .divider {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.18))
+                        .frame(height: 1)
+                        .padding(.vertical, 12)
+                } else {
+                    Text("Clean writing block")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(14)
+            .frame(width: 154, alignment: .topLeading)
+            .frame(minHeight: 112, alignment: .topLeading)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            Text(style.previewCaption)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+        }
+        .padding(10)
+        .background(Color.black.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
+    }
+
+    private var previewTitle: String {
+        switch style {
+        case .paragraph:
+            return "Text"
+        case .heading1:
+            return "Main title"
+        case .heading2, .heading3, .heading4:
+            return "Our Values"
+        case .bullet, .numbered, .checklist:
+            return "Tasks"
+        case .code:
+            return "Code"
+        case .divider:
+            return "Divider"
+        }
+    }
+
+    private var previewTitleFont: Font {
+        switch style {
+        case .heading1:
+            return .system(size: 22)
+        case .heading2:
+            return .system(size: 19)
+        case .heading3:
+            return .system(size: 16)
+        case .heading4:
+            return .system(size: 14)
+        default:
+            return .system(size: 15)
+        }
     }
 }
 
@@ -556,6 +911,8 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
     case paragraph
     case heading1
     case heading2
+    case heading3
+    case heading4
     case bullet
     case numbered
     case checklist
@@ -563,6 +920,13 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
     case divider
 
     var id: String { rawValue }
+
+    static func filtered(by query: String) -> [EditorBlockStyle] {
+        guard !query.isEmpty else {
+            return allCases
+        }
+        return allCases.filter { $0.matches(query) }
+    }
 
     var title: String {
         switch self {
@@ -572,6 +936,10 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return "Heading 1"
         case .heading2:
             return "Heading 2"
+        case .heading3:
+            return "Heading 3"
+        case .heading4:
+            return "Heading 4"
         case .bullet:
             return "Bullet list"
         case .numbered:
@@ -593,6 +961,10 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return "#"
         case .heading2:
             return "##"
+        case .heading3:
+            return "###"
+        case .heading4:
+            return "####"
         case .bullet:
             return "-"
         case .numbered:
@@ -614,6 +986,10 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return "H1"
         case .heading2:
             return "H2"
+        case .heading3:
+            return "H3"
+        case .heading4:
+            return "H4"
         case .bullet:
             return "•"
         case .numbered:
@@ -631,6 +1007,8 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
         let needle = query.lowercased()
         return title.lowercased().contains(needle)
             || rawValue.lowercased().contains(needle)
+            || shortcutHint.lowercased().contains(needle)
+            || menuSymbol.lowercased().contains(needle)
     }
 
     var systemImage: String {
@@ -639,7 +1017,7 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return "text.alignleft"
         case .heading1:
             return "h.square"
-        case .heading2:
+        case .heading2, .heading3, .heading4:
             return "h.square.fill"
         case .bullet:
             return "list.bullet"
@@ -662,6 +1040,10 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return .heading(level: 1)
         case .heading2:
             return .heading(level: 2)
+        case .heading3:
+            return .heading(level: 3)
+        case .heading4:
+            return .heading(level: 4)
         case .bullet:
             return .bulletListItem
         case .numbered:
@@ -672,6 +1054,40 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return .code
         case .divider:
             return .divider
+        }
+    }
+
+    var previewCaption: String {
+        switch self {
+        case .paragraph:
+            return "Plain text block"
+        case .heading1:
+            return "Large section heading"
+        case .heading2:
+            return "Medium section heading"
+        case .heading3:
+            return "Small section heading"
+        case .heading4:
+            return "Compact section heading"
+        case .bullet:
+            return "Bulleted list"
+        case .numbered:
+            return "Numbered list"
+        case .checklist:
+            return "To-do list"
+        case .code:
+            return "Code block"
+        case .divider:
+            return "Visual divider"
+        }
+    }
+
+    var isListPreview: Bool {
+        switch self {
+        case .bullet, .numbered, .checklist:
+            return true
+        default:
+            return false
         }
     }
 }

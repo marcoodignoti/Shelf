@@ -49,6 +49,18 @@ final class BlockDocumentEditingTests: XCTestCase {
         XCTAssertEqual(document.blocks[0], Block(id: "a", kind: .divider, text: "", rawJSON: nil))
     }
 
+    func testHeadingKindNormalizesToSupportedRange() {
+        var document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "Title", rawJSON: nil),
+            Block(id: "b", kind: .paragraph, text: "Tiny", rawJSON: nil)
+        ])
+
+        document.replaceKind(id: "a", with: .heading(level: 4))
+        document.replaceKind(id: "b", with: .heading(level: 12))
+
+        XCTAssertEqual(document.blocks.map(\.kind), [.heading(level: 4), .heading(level: 4)])
+    }
+
     func testTogglingChecklistOnlyChangesChecklistBlocks() {
         var document = BlockDocument(blocks: [
             Block(id: "a", kind: .checkListItem(checked: false), text: "Task", rawJSON: nil),
