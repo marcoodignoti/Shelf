@@ -13,6 +13,7 @@ enum BlockTextCommand {
 
 struct BlockTextView: NSViewRepresentable {
     @Binding var text: String
+    @Binding var measuredHeight: CGFloat
     let isFocused: Bool
     let font: NSFont
     let textColor: NSColor
@@ -39,6 +40,9 @@ struct BlockTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.commandHandler = context.coordinator.handle
         textView.focusHandler = context.coordinator.focus
+        textView.layoutHandler = {
+            context.coordinator.updateMeasuredHeight(for: textView)
+        }
         return textView
     }
 
@@ -46,6 +50,9 @@ struct BlockTextView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.commandHandler = context.coordinator.handle
         textView.focusHandler = context.coordinator.focus
+        textView.layoutHandler = {
+            context.coordinator.updateMeasuredHeight(for: textView)
+        }
         textView.font = font
         textView.textColor = textColor
         textView.isEditable = isEditable
@@ -55,12 +62,14 @@ struct BlockTextView: NSViewRepresentable {
             textView.string = text
         }
 
-        guard isFocused,
-              textView.window?.firstResponder !== textView else {
-            return
-        }
-
         DispatchQueue.main.async {
+            context.coordinator.updateMeasuredHeight(for: textView)
+
+            guard isFocused,
+                  textView.window?.firstResponder !== textView else {
+                return
+            }
+
             textView.window?.makeFirstResponder(textView)
         }
     }
@@ -79,6 +88,7 @@ struct BlockTextView: NSViewRepresentable {
                 return
             }
             parent.text = textView.string
+            updateMeasuredHeight(for: textView)
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -92,12 +102,36 @@ struct BlockTextView: NSViewRepresentable {
         func focus() {
             parent.onFocus()
         }
+
+        func updateMeasuredHeight(for textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else {
+                return
+            }
+
+            textContainer.containerSize = NSSize(
+                width: max(textView.bounds.width, 1),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            layoutManager.ensureLayout(for: textContainer)
+
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let measuredHeight = ceil(usedRect.height + textView.textContainerInset.height * 2)
+            let minimumHeight = ceil((textView.font ?? parent.font).pointSize + 8)
+            let nextHeight = max(measuredHeight, minimumHeight)
+
+            guard abs(parent.measuredHeight - nextHeight) > 0.5 else {
+                return
+            }
+            parent.measuredHeight = nextHeight
+        }
     }
 }
 
 final class EditorNSTextView: NSTextView {
     var commandHandler: ((BlockTextCommand) -> Bool)?
     var focusHandler: (() -> Void)?
+    var layoutHandler: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         let didBecomeFirstResponder = super.becomeFirstResponder()
@@ -105,6 +139,11 @@ final class EditorNSTextView: NSTextView {
             focusHandler?()
         }
         return didBecomeFirstResponder
+    }
+
+    override func layout() {
+        super.layout()
+        layoutHandler?()
     }
 
     override func doCommand(by selector: Selector) {

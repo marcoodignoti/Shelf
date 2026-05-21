@@ -61,6 +61,17 @@ final class BlockDocumentEditingTests: XCTestCase {
         XCTAssertEqual(document.blocks.map(\.kind), [.heading(level: 4), .heading(level: 4)])
     }
 
+    func testSlashMenuPreviewOffsetStaysInsideVisibleMenu() {
+        XCTAssertEqual(
+            SlashMenuLayout.previewTopOffset(selectedIndex: 0, rowHeight: 43, maxVisibleOffset: 172),
+            40
+        )
+        XCTAssertEqual(
+            SlashMenuLayout.previewTopOffset(selectedIndex: 9, rowHeight: 43, maxVisibleOffset: 172),
+            172
+        )
+    }
+
     func testTogglingChecklistOnlyChangesChecklistBlocks() {
         var document = BlockDocument(blocks: [
             Block(id: "a", kind: .checkListItem(checked: false), text: "Task", rawJSON: nil),

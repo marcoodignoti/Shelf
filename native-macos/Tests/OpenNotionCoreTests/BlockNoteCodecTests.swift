@@ -60,4 +60,34 @@ final class BlockNoteCodecTests: XCTestCase {
         ])
         XCTAssertFalse(BlockNoteCodec.hasUnsupportedBlocks(encoded))
     }
+
+    func testRoundTripPreservesKnownBlockInlineContentAndTextSpans() throws {
+        let json = """
+        [
+          {
+            "id": "styled",
+            "type": "paragraph",
+            "content": [
+              {"type": "text", "text": "Hello", "styles": {"bold": true}},
+              {"type": "text", "text": " world", "styles": {"italic": true}}
+            ]
+          }
+        ]
+        """
+
+        let document = try BlockNoteCodec.decode(json)
+        XCTAssertEqual(document.blocks[0].text, "Hello world")
+
+        let encoded = try BlockNoteCodec.encode(document)
+        let blocks = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
+        let content = try XCTUnwrap(blocks.first?["content"] as? [[String: Any]])
+        let firstStyles = try XCTUnwrap(content.first?["styles"] as? [String: Any])
+        let secondStyles = try XCTUnwrap(content.dropFirst().first?["styles"] as? [String: Any])
+
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[0]["text"] as? String, "Hello")
+        XCTAssertEqual(content[1]["text"] as? String, " world")
+        XCTAssertEqual(firstStyles["bold"] as? Bool, true)
+        XCTAssertEqual(secondStyles["italic"] as? Bool, true)
+    }
 }

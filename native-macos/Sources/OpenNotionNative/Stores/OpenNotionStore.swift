@@ -81,7 +81,9 @@ final class OpenNotionStore {
         }
     }
 
-    func save(pageID: String, title: String, document: BlockDocument) {
+    @discardableResult
+    func save(pageID: String, title: String, document: BlockDocument) -> Bool {
+        let selectedPageIDBeforeSave = selectedPageID
         do {
             let now = dateFormatter.string(from: Date())
             let content = try BlockNoteCodec.encode(document)
@@ -93,11 +95,21 @@ final class OpenNotionStore {
                 updates: updates,
                 updatedAt: now
             )
-            load()
-            selectedPageID = pageID
+            pages = try repository.listPages()
+            if let selectedPageIDBeforeSave,
+               pages.contains(where: { $0.id == selectedPageIDBeforeSave }) {
+                selectedPageID = selectedPageIDBeforeSave
+            } else if pages.contains(where: { $0.id == pageID }) {
+                selectedPageID = pageID
+            } else {
+                selectedPageID = pages.first?.id
+            }
             safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
