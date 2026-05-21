@@ -64,12 +64,11 @@ private struct DetailView: View {
             ProgressView("Loading workspace...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let page = store.selectedPage {
-            PageEditorView(page: page) { title, text in
+            PageEditorView(page: page) { title, document in
                 store.save(
                     pageID: page.id,
                     title: title,
-                    plainText: text,
-                    preserveContent: BlockNoteCodec.hasUnsupportedBlocks(page.content)
+                    document: document
                 )
             }
             .id(page.id)

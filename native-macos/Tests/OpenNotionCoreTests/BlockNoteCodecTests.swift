@@ -36,4 +36,28 @@ final class BlockNoteCodecTests: XCTestCase {
         XCTAssertEqual(decoded.blocks.map(\.text), ["One", "Two"])
         XCTAssertEqual(decoded.blocks.map(\.kind), [.paragraph, .paragraph])
     }
+
+    func testEncodesSupportedNativeBlockKinds() throws {
+        let document = BlockDocument(blocks: [
+            Block(id: "h", kind: .heading(level: 1), text: "Title", rawJSON: nil),
+            Block(id: "b", kind: .bulletListItem, text: "Bullet", rawJSON: nil),
+            Block(id: "n", kind: .numberedListItem, text: "Number", rawJSON: nil),
+            Block(id: "c", kind: .checkListItem(checked: true), text: "Done", rawJSON: nil),
+            Block(id: "code", kind: .code, text: "let x = 1", rawJSON: nil),
+            Block(id: "d", kind: .divider, text: "", rawJSON: nil)
+        ])
+
+        let encoded = try BlockNoteCodec.encode(document)
+        let decoded = try BlockNoteCodec.decode(encoded)
+
+        XCTAssertEqual(decoded.blocks.map(\.kind), [
+            .heading(level: 1),
+            .bulletListItem,
+            .numberedListItem,
+            .checkListItem(checked: true),
+            .code,
+            .divider
+        ])
+        XCTAssertFalse(BlockNoteCodec.hasUnsupportedBlocks(encoded))
+    }
 }
