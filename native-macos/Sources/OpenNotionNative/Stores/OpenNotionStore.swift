@@ -82,6 +82,18 @@ final class OpenNotionStore {
     }
 
     @discardableResult
+    func toggleFavorite(pageID: String) -> Bool {
+        guard let page = pages.first(where: { $0.id == pageID }) else {
+            return false
+        }
+
+        return updatePage(
+            pageID: pageID,
+            updates: PageUpdates(isFavorite: page.isFavorite == 1 ? 0 : 1)
+        )
+    }
+
+    @discardableResult
     func save(pageID: String, title: String, document: BlockDocument) -> Bool {
         let selectedPageIDBeforeSave = selectedPageID
         do {
@@ -113,20 +125,33 @@ final class OpenNotionStore {
         }
     }
 
-    func deleteSelectedPage() {
-        guard let pageID = selectedPage?.id else {
-            return
-        }
-
+    @discardableResult
+    func deletePage(pageID: String) -> Bool {
+        let selectedPageIDBeforeDelete = selectedPageID
         do {
             try repository.deletePage(id: pageID)
             pages = try repository.listPages()
-            selectedPageID = pages.first?.id
+            if let selectedPageIDBeforeDelete,
+               pages.contains(where: { $0.id == selectedPageIDBeforeDelete }) {
+                selectedPageID = selectedPageIDBeforeDelete
+            } else {
+                selectedPageID = pages.first?.id
+            }
             safetyStatus = repository.safetyStatus
             errorMessage = nil
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
+    }
+
+    func deleteSelectedPage() {
+        guard let pageID = selectedPageID else {
+            return
+        }
+
+        deletePage(pageID: pageID)
     }
 
     func search(_ query: String) -> [Page] {
@@ -135,6 +160,30 @@ final class OpenNotionStore {
         } catch {
             errorMessage = error.localizedDescription
             return []
+        }
+    }
+
+    @discardableResult
+    private func updatePage(pageID: String, updates: PageUpdates) -> Bool {
+        let selectedPageIDBeforeUpdate = selectedPageID
+        do {
+            let now = dateFormatter.string(from: Date())
+            try repository.updatePage(id: pageID, updates: updates, updatedAt: now)
+            pages = try repository.listPages()
+            if let selectedPageIDBeforeUpdate,
+               pages.contains(where: { $0.id == selectedPageIDBeforeUpdate }) {
+                selectedPageID = selectedPageIDBeforeUpdate
+            } else if pages.contains(where: { $0.id == pageID }) {
+                selectedPageID = pageID
+            } else {
+                selectedPageID = pages.first?.id
+            }
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 

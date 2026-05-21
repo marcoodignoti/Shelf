@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarView: View {
     let store: OpenNotionStore
     @State private var query = ""
+    @State private var expandedPageIDs: Set<String> = []
 
     private var visiblePages: [Page] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -24,14 +25,30 @@ struct SidebarView: View {
                     ForEach(favorites) { page in
                         PageRow(page: page)
                             .tag(page.id)
+                            .contextMenu {
+                                pageContextMenu(for: page)
+                            }
                     }
                 }
             }
 
             Section("Pages") {
-                ForEach(rootPages) { page in
-                    PageRow(page: page)
-                        .tag(page.id)
+                if isSearching {
+                    ForEach(visiblePages) { page in
+                        PageRow(page: page)
+                            .tag(page.id)
+                            .contextMenu {
+                                pageContextMenu(for: page)
+                            }
+                    }
+                } else {
+                    ForEach(pageTree) { node in
+                        PageTreeRow(
+                            node: node,
+                            expandedPageIDs: $expandedPageIDs,
+                            contextMenu: pageContextMenu
+                        )
+                    }
                 }
             }
         }
@@ -65,8 +82,85 @@ struct SidebarView: View {
         visiblePages.filter { $0.isFavorite == 1 }
     }
 
-    private var rootPages: [Page] {
-        visiblePages.filter { $0.parentID == nil }
+    private var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var pageTree: [PageTreeNode] {
+        PageHierarchy.tree(from: visiblePages)
+    }
+
+    @ViewBuilder
+    private func pageContextMenu(for page: Page) -> some View {
+        Button("New Subpage") {
+            expandedPageIDs.insert(page.id)
+            store.createPage(parentID: page.id)
+        }
+
+        Button(page.isFavorite == 1 ? "Remove from Favorites" : "Add to Favorites") {
+            store.toggleFavorite(pageID: page.id)
+        }
+
+        Divider()
+
+        Button("Delete Page", role: .destructive) {
+            store.deletePage(pageID: page.id)
+        }
+    }
+}
+
+private struct PageTreeRow: View {
+    let node: PageTreeNode
+    @Binding var expandedPageIDs: Set<String>
+    let contextMenu: (Page) -> AnyView
+
+    init<ContextMenu: View>(
+        node: PageTreeNode,
+        expandedPageIDs: Binding<Set<String>>,
+        @ViewBuilder contextMenu: @escaping (Page) -> ContextMenu
+    ) {
+        self.node = node
+        _expandedPageIDs = expandedPageIDs
+        self.contextMenu = { AnyView(contextMenu($0)) }
+    }
+
+    var body: some View {
+        if node.children.isEmpty {
+            PageRow(page: node.page)
+                .tag(node.page.id)
+                .contextMenu {
+                    contextMenu(node.page)
+                }
+        } else {
+            DisclosureGroup(isExpanded: isExpanded) {
+                ForEach(node.children) { child in
+                    PageTreeRow(
+                        node: child,
+                        expandedPageIDs: $expandedPageIDs,
+                        contextMenu: contextMenu
+                    )
+                }
+            } label: {
+                PageRow(page: node.page)
+            }
+            .tag(node.page.id)
+            .contextMenu {
+                contextMenu(node.page)
+            }
+        }
+    }
+
+    private var isExpanded: Binding<Bool> {
+        Binding(
+            get: { expandedPageIDs.contains(node.page.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedPageIDs.insert(node.page.id)
+                } else {
+                    expandedPageIDs.remove(node.page.id)
+                }
+            }
+        )
     }
 }
 

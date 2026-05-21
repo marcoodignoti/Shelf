@@ -6,11 +6,14 @@ import UniformTypeIdentifiers
 struct PageEditorView: View {
     let page: Page
     let onSave: (String, BlockDocument) -> Bool
+    let onToggleFavorite: () -> Bool
+    let onDelete: () -> Bool
 
     @State private var draft: PageEditorDraft
     @State private var focusedBlockID: String?
     @State private var autosaveTask: Task<Void, Never>?
     @State private var saveState = PageEditorSaveState.saved
+    @State private var didCopyLink = false
 
     private let startsAsUntitledEmptyPage: Bool
 
@@ -18,13 +21,20 @@ struct PageEditorView: View {
         draft.document.blocks.contains { $0.kind.isUnsupported }
     }
 
-    init(page: Page, onSave: @escaping (String, BlockDocument) -> Bool) {
+    init(
+        page: Page,
+        onSave: @escaping (String, BlockDocument) -> Bool,
+        onToggleFavorite: @escaping () -> Bool,
+        onDelete: @escaping () -> Bool
+    ) {
         let decodedDocument = (try? BlockNoteCodec.decode(page.content)) ?? .empty
         let isUntitledEmptyPage = page.title == "Untitled"
             && decodedDocument.blocks.allSatisfy { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let initialTitle = isUntitledEmptyPage ? "" : page.title
         self.page = page
         self.onSave = onSave
+        self.onToggleFavorite = onToggleFavorite
+        self.onDelete = onDelete
         self.startsAsUntitledEmptyPage = isUntitledEmptyPage
         _draft = State(initialValue: PageEditorDraft(
             title: initialTitle,
@@ -38,8 +48,6 @@ struct PageEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                PageActionStrip()
-
                 ZStack(alignment: .leading) {
                     if draft.title.isEmpty {
                         Text(startsAsUntitledEmptyPage ? "New page" : "Untitled")
@@ -97,18 +105,26 @@ struct PageEditorView: View {
                     .font(.caption)
                     .foregroundStyle(saveState == .failed ? Color.red : Color.secondary)
 
-                Button {} label: {
-                    Label("Copy Link", systemImage: "link")
+                Button {
+                    copyPageLink()
+                } label: {
+                    Label(didCopyLink ? "Copied" : "Copy Link", systemImage: didCopyLink ? "checkmark" : "link")
                 }
                 .help("Copy link")
 
-                Button {} label: {
-                    Label("Favorite", systemImage: "star")
+                Button {
+                    _ = onToggleFavorite()
+                } label: {
+                    Label(page.isFavorite == 1 ? "Remove Favorite" : "Favorite", systemImage: page.isFavorite == 1 ? "star.fill" : "star")
                 }
-                .help("Favorite")
+                .help(page.isFavorite == 1 ? "Remove from favorites" : "Add to favorites")
 
-                Button {} label: {
-                    Label("More", systemImage: "ellipsis")
+                Menu {
+                    Button("Delete Page", role: .destructive) {
+                        _ = onDelete()
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
                 .help("More")
             }
@@ -147,6 +163,16 @@ struct PageEditorView: View {
             saveState = .failed
         }
     }
+
+    private func copyPageLink() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("opennotion://page/\(page.id)", forType: .string)
+        didCopyLink = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            didCopyLink = false
+        }
+    }
 }
 
 private enum PageEditorSaveState {
@@ -166,32 +192,6 @@ private enum PageEditorSaveState {
         case .failed:
             return "Save failed"
         }
-    }
-}
-
-private struct PageActionStrip: View {
-    var body: some View {
-        HStack(spacing: 16) {
-            PageActionButton(title: "Add icon", systemImage: "face.smiling")
-            PageActionButton(title: "Add cover", systemImage: "photo")
-            PageActionButton(title: "Add comment", systemImage: "text.bubble")
-        }
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(.secondary.opacity(0.8))
-    }
-}
-
-private struct PageActionButton: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        Button {} label: {
-            Label(title, systemImage: systemImage)
-                .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.plain)
-        .help(title)
     }
 }
 

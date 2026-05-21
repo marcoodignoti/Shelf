@@ -72,6 +72,10 @@ private struct DetailView: View {
                     title: title,
                     document: document
                 )
+            } onToggleFavorite: {
+                store.toggleFavorite(pageID: page.id)
+            } onDelete: {
+                store.deletePage(pageID: page.id)
             }
             .id(page.id)
         } else {

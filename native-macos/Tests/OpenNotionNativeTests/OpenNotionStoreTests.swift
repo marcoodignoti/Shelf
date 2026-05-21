@@ -46,6 +46,23 @@ final class OpenNotionStoreTests: XCTestCase {
         draft.document.updateText(id: draft.document.blocks[0].id, text: "Body")
         XCTAssertTrue(draft.isDirty)
     }
+
+    func testTogglingFavoriteUpdatesPageAndKeepsSelection() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", isFavorite: 0, createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "selected", title: "Selected", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.select(repository.pages[1])
+
+        XCTAssertTrue(store.toggleFavorite(pageID: "target"))
+
+        XCTAssertEqual(repository.updatedPageIDs, ["target"])
+        XCTAssertEqual(repository.pages.first { $0.id == "target" }?.isFavorite, 1)
+        XCTAssertEqual(store.pages.first { $0.id == "target" }?.isFavorite, 1)
+        XCTAssertEqual(store.selectedPageID, "selected")
+    }
 }
 
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
@@ -88,6 +105,9 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
         }
         if let searchText = updates.searchText {
             pages[index].searchText = searchText
+        }
+        if let isFavorite = updates.isFavorite {
+            pages[index].isFavorite = isFavorite
         }
         pages[index].updatedAt = updatedAt
     }
