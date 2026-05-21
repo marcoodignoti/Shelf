@@ -43,7 +43,7 @@ struct PageEditorView: View {
             savedTitle: page.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : page.title,
             savedDocument: decodedDocument
         ))
-        _focusedBlockID = State(initialValue: decodedDocument.blocks.first?.id)
+        _focusedBlockID = State(initialValue: isUntitledEmptyPage ? nil : decodedDocument.blocks.first?.id)
     }
 
     var body: some View {
@@ -99,8 +99,12 @@ struct PageEditorView: View {
         }
         .onAppear {
             if startsAsUntitledEmptyPage {
-                isTitleFocused = true
                 focusedBlockID = nil
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    focusedBlockID = nil
+                    isTitleFocused = true
+                }
             }
         }
         .toolbar {
