@@ -142,7 +142,10 @@ private struct BlockRowView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
+            selectionButton
+                .frame(width: 20, height: rowHeight, alignment: .top)
+
             prefixView
                 .frame(width: 26, height: rowHeight, alignment: .topTrailing)
 
@@ -156,6 +159,22 @@ private struct BlockRowView: View {
         .onTapGesture {
             focusedBlockID = block.id
         }
+    }
+
+    private var selectionButton: some View {
+        Button {
+            focusedBlockID = block.id
+        } label: {
+            Image(systemName: block.kind.selectorSystemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isFocused ? Color.accentColor : .secondary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 7)
+        .help("Select block")
+        .accessibilityLabel("Select block")
     }
 
     @ViewBuilder
@@ -421,6 +440,29 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
             return .code
         case .divider:
             return .divider
+        }
+    }
+}
+
+private extension BlockKind {
+    var selectorSystemImage: String {
+        switch self {
+        case .paragraph:
+            return "text.alignleft"
+        case .heading:
+            return "h.square"
+        case .bulletListItem:
+            return "list.bullet"
+        case .numberedListItem:
+            return "list.number"
+        case .checkListItem:
+            return "checklist"
+        case .code:
+            return "chevron.left.forwardslash.chevron.right"
+        case .divider:
+            return "minus"
+        case .unknown:
+            return "lock.doc"
         }
     }
 }
