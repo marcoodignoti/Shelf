@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import OpenNotionCore
 @testable import OpenNotionNative
 
@@ -46,11 +47,83 @@ final class OpenNotionStoreTests: XCTestCase {
         draft.document.updateText(id: draft.document.blocks[0].id, text: "Body")
         XCTAssertTrue(draft.isDirty)
     }
+
+    func testTogglingFavoriteUpdatesPageAndKeepsSelection() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", isFavorite: 0, createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "selected", title: "Selected", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.select(repository.pages[1])
+
+        XCTAssertTrue(store.toggleFavorite(pageID: "target"))
+
+        XCTAssertEqual(repository.updatedPageIDs, ["target"])
+        XCTAssertEqual(repository.pages.first { $0.id == "target" }?.isFavorite, 1)
+        XCTAssertEqual(store.pages.first { $0.id == "target" }?.isFavorite, 1)
+        XCTAssertEqual(store.selectedPageID, "selected")
+    }
+
+    func testRequestingSelectedPageDeletionWaitsForConfirmation() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        store.requestDeleteSelectedPage()
+
+        XCTAssertEqual(store.pendingDeletePageID, "target")
+        XCTAssertEqual(repository.deletedPageIDs, [])
+        XCTAssertEqual(store.pages.map(\.id), ["target"])
+    }
+
+    func testConfirmingPendingDeletionDeletesPage() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.requestDeletePage(pageID: "target")
+
+        XCTAssertTrue(store.confirmPendingPageDeletion())
+
+        XCTAssertNil(store.pendingDeletePageID)
+        XCTAssertEqual(repository.deletedPageIDs, ["target"])
+        XCTAssertEqual(store.pages, [])
+    }
+
+    func testOpeningPageDeepLinkSelectsExistingPage() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "one", title: "One", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "two", title: "Two", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        XCTAssertTrue(store.openPageLink(URL(string: "opennotion://page/two")!))
+
+        XCTAssertEqual(store.selectedPageID, "two")
+    }
+
+    func testEditorTextViewLayoutHandlerReceivesCurrentTextView() {
+        let textView = EditorNSTextView(frame: .zero)
+        var receivedTextView: EditorNSTextView?
+
+        textView.setLayoutHandler { textView in
+            receivedTextView = textView
+        }
+        textView.layout()
+
+        XCTAssertTrue(receivedTextView === textView)
+    }
 }
 
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
     var pages: [Page]
     private(set) var updatedPageIDs: [String] = []
+    private(set) var deletedPageIDs: [String] = []
 
     init(pages: [Page]) {
         self.pages = pages
@@ -89,10 +162,14 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
         if let searchText = updates.searchText {
             pages[index].searchText = searchText
         }
+        if let isFavorite = updates.isFavorite {
+            pages[index].isFavorite = isFavorite
+        }
         pages[index].updatedAt = updatedAt
     }
 
     func deletePage(id: String) throws {
+        deletedPageIDs.append(id)
         pages.removeAll { $0.id == id }
     }
 }
