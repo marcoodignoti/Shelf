@@ -8,10 +8,11 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(store: store)
         } detail: {
-            VStack(spacing: 0) {
-                SafetyBanner(status: store.safetyStatus)
-                Divider()
+            ZStack(alignment: .topLeading) {
                 DetailView(store: store)
+                SafetyBanner(status: store.safetyStatus)
+                    .padding(.top, 10)
+                    .padding(.leading, 14)
             }
         }
         .alert("OpenNotion", isPresented: errorBinding) {
@@ -43,15 +44,16 @@ private struct SafetyBanner: View {
             HStack(spacing: 8) {
                 Image(systemName: status.isLiveDatabase ? "externaldrive.badge.exclamationmark" : "doc.on.doc")
                     .foregroundStyle(status.isLiveDatabase ? .orange : .secondary)
-                Text(message)
-                    .font(.callout)
+                Text(status.isLiveDatabase ? "Live DB - backup on first write" : "Testing copy")
+                    .font(.caption2)
+                    .fontWeight(.medium)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.bar)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.regularMaterial)
+            .clipShape(Capsule())
+            .help(message)
         }
     }
 }
