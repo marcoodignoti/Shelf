@@ -20,8 +20,8 @@ struct OpenNotionNativeApp: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("Delete Page") {
-                    store.deleteSelectedPage()
+                Button("Move Page to Trash") {
+                    store.requestDeleteSelectedPage()
                 }
                 .keyboardShortcut(.delete)
                 .disabled(store.selectedPage == nil)

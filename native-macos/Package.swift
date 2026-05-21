@@ -27,7 +27,10 @@ let package = Package(
         ),
         .testTarget(
             name: "OpenNotionCoreTests",
-            dependencies: ["OpenNotionCore"]
+            dependencies: [
+                "OpenNotionCore",
+                .product(name: "GRDB", package: "GRDB.swift")
+            ]
         ),
         .testTarget(
             name: "OpenNotionNativeTests",

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import XCTest
 @testable import OpenNotionCore
 
@@ -42,6 +43,34 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.searchPages(query: "road").map(\.id), ["page-1"])
         XCTAssertEqual(try repository.searchPages(query: "swift").map(\.id), ["page-1"])
         XCTAssertEqual(try repository.searchPages(query: "missing"), [])
+    }
+
+    func testDeletePageSoftDeletesPageTreeInsteadOfRemovingRows() throws {
+        let databasePath = temporaryDatabasePath()
+        let repository = try SQLitePageRepository(databasePath: databasePath)
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "child",
+            title: "Child",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:01:00.000Z"
+        )
+
+        try repository.deletePage(id: "parent")
+
+        XCTAssertEqual(try repository.listPages(), [])
+        let database = try DatabaseQueue(path: databasePath)
+        let rows = try database.read { db in
+            try Row.fetchAll(db, sql: "SELECT id, is_deleted FROM pages ORDER BY id")
+        }
+        XCTAssertEqual(rows.map { $0["id"] as String }, ["child", "parent"])
+        XCTAssertEqual(rows.map { $0["is_deleted"] as Int }, [1, 1])
     }
 
     private func temporaryDatabasePath() -> String {

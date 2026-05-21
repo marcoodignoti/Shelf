@@ -40,7 +40,7 @@ struct BlockTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.commandHandler = context.coordinator.handle
         textView.focusHandler = context.coordinator.focus
-        textView.layoutHandler = {
+        textView.setLayoutHandler { textView in
             context.coordinator.updateMeasuredHeight(for: textView)
         }
         return textView
@@ -50,7 +50,7 @@ struct BlockTextView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.commandHandler = context.coordinator.handle
         textView.focusHandler = context.coordinator.focus
-        textView.layoutHandler = {
+        textView.setLayoutHandler { textView in
             context.coordinator.updateMeasuredHeight(for: textView)
         }
         textView.font = font
@@ -131,7 +131,16 @@ struct BlockTextView: NSViewRepresentable {
 final class EditorNSTextView: NSTextView {
     var commandHandler: ((BlockTextCommand) -> Bool)?
     var focusHandler: (() -> Void)?
-    var layoutHandler: (() -> Void)?
+    private var layoutHandler: (() -> Void)?
+
+    func setLayoutHandler(_ handler: @escaping (EditorNSTextView) -> Void) {
+        layoutHandler = { [weak self] in
+            guard let self else {
+                return
+            }
+            handler(self)
+        }
+    }
 
     override func becomeFirstResponder() -> Bool {
         let didBecomeFirstResponder = super.becomeFirstResponder()

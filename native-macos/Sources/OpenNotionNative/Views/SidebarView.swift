@@ -103,8 +103,8 @@ struct SidebarView: View {
 
         Divider()
 
-        Button("Delete Page", role: .destructive) {
-            store.deletePage(pageID: page.id)
+        Button("Move to Trash", role: .destructive) {
+            store.requestDeletePage(pageID: page.id)
         }
     }
 }

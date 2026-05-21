@@ -10,9 +10,11 @@ final class OpenNotionStore {
     var isLoading = false
     var errorMessage: String?
     var safetyStatus: DatabaseSafetyStatus = .unavailable
+    var pendingDeletePageID: String?
 
     private let repository: PageRepository
     private let dateFormatter = ISO8601DateFormatter()
+    private var pendingOpenPageID: String?
 
     init(repository: PageRepository? = nil) {
         if let repository {
@@ -50,7 +52,13 @@ final class OpenNotionStore {
         do {
             try repository.bootstrap()
             pages = try repository.listPages()
-            selectedPageID = selectedPage?.id
+            if let pendingOpenPageID,
+               pages.contains(where: { $0.id == pendingOpenPageID }) {
+                selectedPageID = pendingOpenPageID
+                self.pendingOpenPageID = nil
+            } else {
+                selectedPageID = selectedPage?.id
+            }
             safetyStatus = repository.safetyStatus
             errorMessage = nil
         } catch {
@@ -61,6 +69,23 @@ final class OpenNotionStore {
 
     func select(_ page: Page) {
         selectedPageID = page.id
+    }
+
+    @discardableResult
+    func openPageLink(_ url: URL) -> Bool {
+        guard url.scheme == "opennotion",
+              let pageID = pageID(from: url) else {
+            return false
+        }
+
+        if pages.contains(where: { $0.id == pageID }) {
+            selectedPageID = pageID
+            pendingOpenPageID = nil
+            return true
+        }
+
+        pendingOpenPageID = pageID
+        return true
     }
 
     func createPage(parentID: String? = nil) {
@@ -146,12 +171,34 @@ final class OpenNotionStore {
         }
     }
 
-    func deleteSelectedPage() {
-        guard let pageID = selectedPageID else {
+    func requestDeletePage(pageID: String) {
+        guard pages.contains(where: { $0.id == pageID }) else {
             return
         }
 
-        deletePage(pageID: pageID)
+        pendingDeletePageID = pageID
+    }
+
+    func requestDeleteSelectedPage() {
+        guard let pageID = selectedPage?.id else {
+            return
+        }
+
+        requestDeletePage(pageID: pageID)
+    }
+
+    func cancelPendingPageDeletion() {
+        pendingDeletePageID = nil
+    }
+
+    @discardableResult
+    func confirmPendingPageDeletion() -> Bool {
+        guard let pageID = pendingDeletePageID else {
+            return false
+        }
+
+        pendingDeletePageID = nil
+        return deletePage(pageID: pageID)
     }
 
     func search(_ query: String) -> [Page] {
@@ -190,6 +237,18 @@ final class OpenNotionStore {
     private func normalizedTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Untitled" : trimmed
+    }
+
+    private func pageID(from url: URL) -> String? {
+        let pathParts = url.pathComponents.filter { $0 != "/" }
+        if url.host == "page" {
+            return pathParts.first
+        }
+
+        guard pathParts.first == "page" else {
+            return nil
+        }
+        return pathParts.dropFirst().first
     }
 }
 

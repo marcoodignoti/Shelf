@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import OpenNotionCore
 @testable import OpenNotionNative
 
@@ -63,11 +64,66 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(store.pages.first { $0.id == "target" }?.isFavorite, 1)
         XCTAssertEqual(store.selectedPageID, "selected")
     }
+
+    func testRequestingSelectedPageDeletionWaitsForConfirmation() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        store.requestDeleteSelectedPage()
+
+        XCTAssertEqual(store.pendingDeletePageID, "target")
+        XCTAssertEqual(repository.deletedPageIDs, [])
+        XCTAssertEqual(store.pages.map(\.id), ["target"])
+    }
+
+    func testConfirmingPendingDeletionDeletesPage() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.requestDeletePage(pageID: "target")
+
+        XCTAssertTrue(store.confirmPendingPageDeletion())
+
+        XCTAssertNil(store.pendingDeletePageID)
+        XCTAssertEqual(repository.deletedPageIDs, ["target"])
+        XCTAssertEqual(store.pages, [])
+    }
+
+    func testOpeningPageDeepLinkSelectsExistingPage() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "one", title: "One", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "two", title: "Two", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        XCTAssertTrue(store.openPageLink(URL(string: "opennotion://page/two")!))
+
+        XCTAssertEqual(store.selectedPageID, "two")
+    }
+
+    func testEditorTextViewLayoutHandlerReceivesCurrentTextView() {
+        let textView = EditorNSTextView(frame: .zero)
+        var receivedTextView: EditorNSTextView?
+
+        textView.setLayoutHandler { textView in
+            receivedTextView = textView
+        }
+        textView.layout()
+
+        XCTAssertTrue(receivedTextView === textView)
+    }
 }
 
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
     var pages: [Page]
     private(set) var updatedPageIDs: [String] = []
+    private(set) var deletedPageIDs: [String] = []
 
     init(pages: [Page]) {
         self.pages = pages
@@ -113,6 +169,7 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
     }
 
     func deletePage(id: String) throws {
+        deletedPageIDs.append(id)
         pages.removeAll { $0.id == id }
     }
 }

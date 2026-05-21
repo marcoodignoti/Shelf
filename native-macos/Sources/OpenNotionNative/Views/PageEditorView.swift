@@ -7,7 +7,7 @@ struct PageEditorView: View {
     let page: Page
     let onSave: (String, BlockDocument) -> Bool
     let onToggleFavorite: () -> Bool
-    let onDelete: () -> Bool
+    let onDelete: () -> Void
 
     @State private var draft: PageEditorDraft
     @State private var focusedBlockID: String?
@@ -25,7 +25,7 @@ struct PageEditorView: View {
         page: Page,
         onSave: @escaping (String, BlockDocument) -> Bool,
         onToggleFavorite: @escaping () -> Bool,
-        onDelete: @escaping () -> Bool
+        onDelete: @escaping () -> Void
     ) {
         let decodedDocument = (try? BlockNoteCodec.decode(page.content)) ?? .empty
         let isUntitledEmptyPage = page.title == "Untitled"
@@ -120,8 +120,8 @@ struct PageEditorView: View {
                 .help(page.isFavorite == 1 ? "Remove from favorites" : "Add to favorites")
 
                 Menu {
-                    Button("Delete Page", role: .destructive) {
-                        _ = onDelete()
+                    Button("Move to Trash", role: .destructive) {
+                        onDelete()
                     }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")

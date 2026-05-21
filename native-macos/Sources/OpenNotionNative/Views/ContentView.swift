@@ -15,6 +15,19 @@ struct ContentView: View {
                     .padding(.leading, 14)
             }
         }
+        .onOpenURL { url in
+            _ = store.openPageLink(url)
+        }
+        .confirmationDialog("Move page to Trash?", isPresented: deleteConfirmationBinding, titleVisibility: .visible) {
+            Button("Move to Trash", role: .destructive) {
+                _ = store.confirmPendingPageDeletion()
+            }
+            Button("Cancel", role: .cancel) {
+                store.cancelPendingPageDeletion()
+            }
+        } message: {
+            Text("The page is hidden from the workspace but kept in the database as deleted.")
+        }
         .alert("OpenNotion", isPresented: errorBinding) {
             Button("OK") {
                 store.errorMessage = nil
@@ -30,6 +43,17 @@ struct ContentView: View {
             set: { isPresented in
                 if !isPresented {
                     store.errorMessage = nil
+                }
+            }
+        )
+    }
+
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { store.pendingDeletePageID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    store.cancelPendingPageDeletion()
                 }
             }
         )
@@ -75,7 +99,7 @@ private struct DetailView: View {
             } onToggleFavorite: {
                 store.toggleFavorite(pageID: page.id)
             } onDelete: {
-                store.deletePage(pageID: page.id)
+                store.requestDeletePage(pageID: page.id)
             }
             .id(page.id)
         } else {
