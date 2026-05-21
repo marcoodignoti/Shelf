@@ -10,25 +10,41 @@ struct PageEditorView: View {
     @State private var document: BlockDocument
     @State private var focusedBlockID: String?
 
+    private let startsAsUntitledEmptyPage: Bool
+
     private var hasUnsupportedBlocks: Bool {
         document.blocks.contains { $0.kind.isUnsupported }
     }
 
     init(page: Page, onSave: @escaping (String, BlockDocument) -> Void) {
         let decodedDocument = (try? BlockNoteCodec.decode(page.content)) ?? .empty
+        let isUntitledEmptyPage = page.title == "Untitled"
+            && decodedDocument.blocks.allSatisfy { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         self.page = page
         self.onSave = onSave
-        _title = State(initialValue: page.title)
+        self.startsAsUntitledEmptyPage = isUntitledEmptyPage
+        _title = State(initialValue: isUntitledEmptyPage ? "" : page.title)
         _document = State(initialValue: decodedDocument)
         _focusedBlockID = State(initialValue: decodedDocument.blocks.first?.id)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Untitled", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 38, weight: .bold, design: .default))
+            VStack(alignment: .leading, spacing: 14) {
+                PageActionStrip()
+
+                ZStack(alignment: .leading) {
+                    if title.isEmpty {
+                        Text(startsAsUntitledEmptyPage ? "New page" : "Untitled")
+                            .font(.system(size: 44, weight: .bold, design: .default))
+                            .foregroundStyle(Color.primary.opacity(0.12))
+                            .allowsHitTesting(false)
+                    }
+
+                    TextField("", text: $title)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 44, weight: .bold, design: .default))
+                }
 
                 if page.isDatabase == 1 {
                     Label("Database view comes in phase 2. Page content and metadata are safe to edit here.", systemImage: "tablecells")
@@ -44,24 +60,69 @@ struct PageEditorView: View {
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(.horizontal, 48)
-            .padding(.top, 46)
-            .padding(.bottom, 14)
+            .padding(.top, 128)
+            .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .center)
 
             BlockEditorView(document: $document, focusedBlockID: $focusedBlockID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .toolbar {
-            ToolbarItemGroup {
-                BlockStyleToolbar(document: $document, focusedBlockID: $focusedBlockID)
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
-                    onSave(title, document)
+                    onSave(persistedTitle, document)
                 } label: {
                     Label("Save", systemImage: "square.and.arrow.down")
                 }
                 .keyboardShortcut("s")
+
+                Button {} label: {
+                    Label("Copy Link", systemImage: "link")
+                }
+                .help("Copy link")
+
+                Button {} label: {
+                    Label("Favorite", systemImage: "star")
+                }
+                .help("Favorite")
+
+                Button {} label: {
+                    Label("More", systemImage: "ellipsis")
+                }
+                .help("More")
             }
         }
+    }
+
+    private var persistedTitle: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
+    }
+}
+
+private struct PageActionStrip: View {
+    var body: some View {
+        HStack(spacing: 16) {
+            PageActionButton(title: "Add icon", systemImage: "face.smiling")
+            PageActionButton(title: "Add cover", systemImage: "photo")
+            PageActionButton(title: "Add comment", systemImage: "text.bubble")
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.secondary.opacity(0.8))
+    }
+}
+
+private struct PageActionButton: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Button {} label: {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.plain)
+        .help(title)
     }
 }
 
@@ -199,9 +260,9 @@ private struct BlockRowView: View {
         Button {
             focusedBlockID = block.id
         } label: {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isFocused ? Color.accentColor : .secondary)
+            Image(systemName: "circle.grid.2x3.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.75))
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
@@ -215,7 +276,7 @@ private struct BlockRowView: View {
 
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 6)
-            .fill(isFocused ? Color.accentColor.opacity(0.045) : (isHovering ? Color.primary.opacity(0.035) : Color.clear))
+            .fill(isHovering ? Color.primary.opacity(0.035) : Color.clear)
     }
 
     private var shouldShowSlashMenu: Bool {
@@ -419,55 +480,6 @@ private struct BlockRowView: View {
     }
 }
 
-private struct BlockStyleToolbar: View {
-    @Binding var document: BlockDocument
-    @Binding var focusedBlockID: String?
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(EditorBlockStyle.allCases) { style in
-                Button {
-                    apply(style)
-                } label: {
-                    Image(systemName: style.systemImage)
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.borderless)
-                .disabled(!canApplyStyle)
-                .help(style.title)
-            }
-        }
-    }
-
-    private var activeBlockID: String? {
-        focusedBlockID ?? document.blocks.first?.id
-    }
-
-    private var activeBlock: Block? {
-        guard let activeBlockID else {
-            return nil
-        }
-        return document.blocks.first { $0.id == activeBlockID }
-    }
-
-    private var canApplyStyle: Bool {
-        guard let activeBlock else {
-            return false
-        }
-        return !activeBlock.kind.isUnsupported
-    }
-
-    private func apply(_ style: EditorBlockStyle) {
-        guard canApplyStyle,
-              let blockID = activeBlockID else {
-            return
-        }
-
-        document.replaceKind(id: blockID, with: style.kind)
-        focusedBlockID = blockID
-    }
-}
-
 private struct SlashCommandMenu: View {
     let query: String
     let onSelect: (EditorBlockStyle) -> Void
@@ -481,7 +493,14 @@ private struct SlashCommandMenu: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Basic blocks")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
             if styles.isEmpty {
                 Text("No commands")
                     .font(.callout)
@@ -493,36 +512,36 @@ private struct SlashCommandMenu: View {
                     Button {
                         onSelect(style)
                     } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: style.systemImage)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 18)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(style.title)
-                                    .font(.callout)
-                                Text(style.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                        HStack(spacing: 14) {
+                            Text(style.menuSymbol)
+                                .font(.system(size: 18, weight: .medium, design: style == .code ? .monospaced : .default))
+                                .foregroundStyle(.primary.opacity(0.85))
+                                .frame(width: 28, alignment: .center)
+                            Text(style.title)
+                                .font(.system(size: 15))
+                                .foregroundStyle(.primary)
                             Spacer(minLength: 0)
+                            Text(style.shortcutHint)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.secondary.opacity(0.75))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .frame(width: 248)
-        .padding(.vertical, 6)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .frame(width: 326)
+        .padding(.bottom, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.75), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.10), radius: 12, y: 6)
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
     }
 }
 
@@ -566,31 +585,51 @@ private enum EditorBlockStyle: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
+    var shortcutHint: String {
         switch self {
         case .paragraph:
-            return "Plain paragraph"
+            return ""
         case .heading1:
-            return "Large section title"
+            return "#"
         case .heading2:
-            return "Medium section title"
+            return "##"
         case .bullet:
-            return "Bulleted list"
+            return "-"
         case .numbered:
-            return "Numbered list"
+            return "1."
         case .checklist:
-            return "Todo checkbox"
+            return "[]"
         case .code:
-            return "Code block"
+            return "```"
         case .divider:
-            return "Visual separator"
+            return "---"
+        }
+    }
+
+    var menuSymbol: String {
+        switch self {
+        case .paragraph:
+            return "T"
+        case .heading1:
+            return "H1"
+        case .heading2:
+            return "H2"
+        case .bullet:
+            return "•"
+        case .numbered:
+            return "1."
+        case .checklist:
+            return "✓"
+        case .code:
+            return "</>"
+        case .divider:
+            return "-"
         }
     }
 
     func matches(_ query: String) -> Bool {
         let needle = query.lowercased()
         return title.lowercased().contains(needle)
-            || subtitle.lowercased().contains(needle)
             || rawValue.lowercased().contains(needle)
     }
 
