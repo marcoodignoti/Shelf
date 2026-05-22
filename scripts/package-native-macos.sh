@@ -13,6 +13,51 @@ ICON_PATH="${ICON_PATH:-$ROOT_DIR/src-tauri/icons/icon.icns}"
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-${SIGNING_IDENTITY:--}}"
 NOTARIZE="${NOTARIZE:-false}"
 
+fail() {
+  echo "native macOS packaging failed: $*" >&2
+  exit 1
+}
+
+resolve_path() {
+  node -e "const path = require('path'); process.stdout.write(path.resolve(process.argv[1]));" "$1"
+}
+
+validate_output_dir() {
+  local candidate="$1"
+  local resolved_dist
+  local resolved_home=""
+  local resolved_output
+  local resolved_root
+
+  [[ -n "$candidate" ]] || fail "NATIVE_RELEASE_DIR cannot be empty"
+
+  resolved_output="$(resolve_path "$candidate")"
+  resolved_root="$(resolve_path "$ROOT_DIR")"
+  resolved_dist="$(resolve_path "$ROOT_DIR/dist")"
+  if [[ -n "${HOME:-}" ]]; then
+    resolved_home="$(resolve_path "$HOME")"
+  fi
+
+  case "$resolved_output" in
+    "/" | "$resolved_root" | "$resolved_dist")
+      fail "NATIVE_RELEASE_DIR is not safe to remove: $resolved_output"
+      ;;
+  esac
+
+  if [[ -n "$resolved_home" && "$resolved_output" == "$resolved_home" ]]; then
+    fail "NATIVE_RELEASE_DIR is not safe to remove: $resolved_output"
+  fi
+
+  case "$resolved_output" in
+    "$resolved_dist"/*)
+      printf '%s\n' "$resolved_output"
+      ;;
+    *)
+      fail "NATIVE_RELEASE_DIR must resolve inside $resolved_dist: $resolved_output"
+      ;;
+  esac
+}
+
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('$ROOT_DIR/package.json', 'utf8')).version")"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opennotion-native-package.XXXXXX")"
@@ -31,6 +76,7 @@ case "$RAW_ARCH" in
     ;;
 esac
 
+OUTPUT_DIR="$(validate_output_dir "$OUTPUT_DIR")"
 APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
@@ -53,7 +99,7 @@ Environment:
   APPLE_API_KEY_PATH                         App Store Connect API key path
   APPLE_API_KEY                              App Store Connect key ID
   APPLE_API_ISSUER                           App Store Connect issuer ID
-  NATIVE_RELEASE_DIR                         output directory, defaults to dist/native-release
+  NATIVE_RELEASE_DIR                         output directory under dist/, defaults to dist/native-release
 EOF
   exit 0
 fi
