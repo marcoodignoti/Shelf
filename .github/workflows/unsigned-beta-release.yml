@@ -1,4 +1,4 @@
-name: Unsigned Beta Release
+name: Unsigned Native Beta Release
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: unsigned-beta-release-${{ github.ref }}
+  group: unsigned-native-beta-release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -23,23 +23,8 @@ env:
 
 jobs:
   build:
-    name: Build unsigned beta (${{ matrix.platform }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos
-            os: macos-14
-            artifact_name: opennotion-macos-unsigned
-            artifact_path: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-          - platform: windows
-            os: windows-latest
-            artifact_name: opennotion-windows-unsigned
-            artifact_path: |
-              src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/msi/*.msi
-    runs-on: ${{ matrix.os }}
+    name: Build unsigned native macOS beta
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,31 +35,29 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Swift version
+        run: swift --version
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
+      - name: Native release contract
+        run: scripts/test-native-release-pipeline.sh
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Build unsigned native bundle
+        run: SIGNING_IDENTITY=- NOTARIZE=false scripts/package-native-macos.sh
 
-      - name: Build unsigned bundle
-        run: npm run tauri build
+      - name: Verify unsigned native bundle
+        run: scripts/verify-native-macos-release.sh
 
-      - name: Upload unsigned artifacts
+      - name: Upload unsigned native artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          name: opennotion-macos-native-unsigned
+          path: |
+            dist/native-release/OpenNotion.app
+            dist/native-release/OpenNotion_*.dmg
           if-no-files-found: error
 
   release:
-    name: Publish unsigned beta release
+    name: Publish unsigned native beta release
     needs: build
     runs-on: ubuntu-latest
     env:
@@ -89,16 +72,16 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: Create unsigned beta release notes
+      - name: Create unsigned native beta release notes
         run: |
           cat > release-notes.md <<'EOF'
-          ## Unsigned Beta Build
+          ## Unsigned Native macOS Beta Build
 
-          This is a public beta artifact for testing. It is not a notarized macOS production release and it is not a signed Windows production release.
+          This artifact is built from the native SwiftUI macOS app. It is ad-hoc signed for private testing and is not notarized.
 
           ### macOS
 
-          The DMG is unsigned/ad-hoc and not notarized. macOS Gatekeeper may show an unidentified developer warning or a "damaged and can't be opened" message after browser download.
+          Gatekeeper may show an unidentified developer warning or a "damaged and can't be opened" message after browser download.
 
           For private testing:
 
@@ -111,29 +94,18 @@ jobs:
 
           3. Open OpenNotion from `/Applications`.
 
-          This removes the browser quarantine marker. It does not sign or notarize the app.
-
-          ### Windows
-
-          The installer is unsigned. Windows SmartScreen may show a warning until a code signing certificate is configured.
-
-          ### Production Status
-
-          Production-grade public distribution still requires:
-
-          - Apple Developer ID signing and notarization for macOS
-          - Windows code signing certificate for Windows
+          Production public distribution still requires Developer ID signing and notarization through the `macOS Release` workflow.
           EOF
 
       - name: Prepare release asset list
         run: |
-          find release-artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) -print | sort > release-assets.txt
+          find release-artifacts -type f -name 'OpenNotion_*.dmg' -print | sort > release-assets.txt
           test -s release-assets.txt
           cat release-assets.txt
 
       - name: Create GitHub prerelease
         run: |
           gh release create "$RELEASE_TAG" $(cat release-assets.txt) \
-            --title "OpenNotion ${RELEASE_TAG} unsigned beta" \
+            --title "OpenNotion ${RELEASE_TAG} unsigned native macOS beta" \
             --notes-file release-notes.md \
             --prerelease

@@ -12,7 +12,8 @@
     "check": "npm run build && npm run test && npm run e2e && npm audit --audit-level=moderate && cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release:verify:macos": "scripts/verify-macos-release.sh"
+    "release:package:macos": "scripts/package-native-macos.sh",
+    "release:verify:macos": "scripts/verify-native-macos-release.sh"
   },
   "dependencies": {
     "@blocknote/core": "^0.51.0",
