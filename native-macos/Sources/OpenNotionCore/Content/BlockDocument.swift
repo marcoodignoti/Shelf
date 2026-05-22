@@ -18,7 +18,6 @@ public struct BlockDocument: Equatable, Sendable {
         }
 
         blocks[index].text = text
-        blocks[index].rawJSON = nil
     }
 
     public mutating func replaceKind(id: String, with kind: BlockKind) {
