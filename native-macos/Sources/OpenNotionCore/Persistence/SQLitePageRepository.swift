@@ -96,7 +96,7 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
 
     public func listPages() throws -> [Page] {
         try databasePool.read { db in
-            try Row.fetchAll(db, sql: Self.pageSelectSQL + """
+            try Row.fetchAll(db, sql: Self.pageMetadataSelectSQL + """
                 WHERE is_deleted = 0
                 ORDER BY sort_order ASC, created_at DESC
                 """)
@@ -106,10 +106,22 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
 
     public func listDeletedPages() throws -> [Page] {
         try databasePool.read { db in
-            try Row.fetchAll(db, sql: Self.pageSelectSQL + """
+            try Row.fetchAll(db, sql: Self.pageMetadataSelectSQL + """
                 WHERE is_deleted = 1
                 ORDER BY updated_at DESC
                 """)
+            .map(Page.init(row:))
+        }
+    }
+
+    public func page(id: String) throws -> Page? {
+        try databasePool.read { db in
+            try Row.fetchOne(
+                db,
+                sql: Self.pageSelectSQL + """
+                    WHERE id = ?
+                    """,
+                arguments: [id])
             .map(Page.init(row:))
         }
     }
@@ -124,7 +136,7 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
         return try databasePool.read { db in
             try Row.fetchAll(
                 db,
-                sql: Self.pageSelectSQL + """
+                sql: Self.pageMetadataSelectSQL + """
                     WHERE is_deleted = 0
                       AND (lower(coalesce(title, '')) LIKE ? OR lower(coalesce(search_text, '')) LIKE ?)
                     ORDER BY
@@ -309,7 +321,15 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
                is_deleted, is_favorite, is_template, is_database,
                database_schema, properties, sort_order, created_at, updated_at
         FROM pages
-        
+
+        """
+
+    private static let pageMetadataSelectSQL = """
+        SELECT id, title, parent_id, NULL AS content, search_text, icon, cover_url,
+               is_deleted, is_favorite, is_template, is_database,
+               database_schema, properties, sort_order, created_at, updated_at
+        FROM pages
+
         """
 
     private func addColumnIfNeeded(_ db: Database, columns: [String], name: String, definition: String) throws {

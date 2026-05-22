@@ -45,6 +45,29 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.searchPages(query: "missing"), [])
     }
 
+    func testListPagesOmitsContentButPageLoadsContent() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "page-1",
+            title: "Large body",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        try repository.updatePage(
+            id: "page-1",
+            updates: PageUpdates(content: "[{\"type\":\"paragraph\",\"content\":\"Body\"}]", searchText: "Body"),
+            updatedAt: "2026-05-21T10:01:00.000Z"
+        )
+
+        let metadata = try XCTUnwrap(repository.listPages().first)
+        let detail = try XCTUnwrap(repository.page(id: "page-1"))
+
+        XCTAssertNil(metadata.content)
+        XCTAssertEqual(metadata.searchText, "Body")
+        XCTAssertEqual(detail.content, "[{\"type\":\"paragraph\",\"content\":\"Body\"}]")
+    }
+
     func testDeletePageMovesPageTreeToTrash() throws {
         let databasePath = temporaryDatabasePath()
         let repository = try SQLitePageRepository(databasePath: databasePath)

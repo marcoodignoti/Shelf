@@ -8,6 +8,7 @@ final class OpenNotionStore {
     var pages: [Page] = []
     var deletedPages: [Page] = []
     var selectedPageID: String?
+    private var selectedPageDetail: Page?
     var isLoading = false
     var errorMessage: String?
     var safetyStatus: DatabaseSafetyStatus = .unavailable
@@ -44,7 +45,10 @@ final class OpenNotionStore {
 
     var selectedPage: Page? {
         guard let selectedPageID else {
-            return pages.first
+            return selectedPageDetail ?? pages.first
+        }
+        if selectedPageDetail?.id == selectedPageID {
+            return selectedPageDetail
         }
         return pages.first { $0.id == selectedPageID }
     }
@@ -62,6 +66,7 @@ final class OpenNotionStore {
             } else {
                 selectedPageID = selectedPage?.id
             }
+            try reloadSelectedPageDetail()
             safetyStatus = repository.safetyStatus
             errorMessage = nil
         } catch {
@@ -72,6 +77,12 @@ final class OpenNotionStore {
 
     func select(_ page: Page) {
         selectedPageID = page.id
+        do {
+            try reloadSelectedPageDetail()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     @discardableResult
@@ -84,6 +95,12 @@ final class OpenNotionStore {
         if pages.contains(where: { $0.id == pageID }) {
             selectedPageID = pageID
             pendingOpenPageID = nil
+            do {
+                try reloadSelectedPageDetail()
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
             return true
         }
 
@@ -102,6 +119,7 @@ final class OpenNotionStore {
             )
             pages.insert(page, at: 0)
             selectedPageID = page.id
+            selectedPageDetail = page
             safetyStatus = repository.safetyStatus
             errorMessage = nil
         } catch {
@@ -144,6 +162,7 @@ final class OpenNotionStore {
             } else {
                 selectedPageID = pages.first?.id
             }
+            try reloadSelectedPageDetail()
             safetyStatus = repository.safetyStatus
             errorMessage = nil
             return true
@@ -166,6 +185,7 @@ final class OpenNotionStore {
             } else {
                 selectedPageID = pages.first?.id
             }
+            try reloadSelectedPageDetail()
             safetyStatus = repository.safetyStatus
             errorMessage = nil
             return true
@@ -234,6 +254,7 @@ final class OpenNotionStore {
             try reloadPages()
             try reloadDeletedPages()
             selectedPageID = pages.contains(where: { $0.id == pageID }) ? pageID : selectedPageID
+            try reloadSelectedPageDetail()
             safetyStatus = repository.safetyStatus
             errorMessage = nil
             return true
@@ -267,6 +288,7 @@ final class OpenNotionStore {
             } else {
                 selectedPageID = pages.first?.id
             }
+            try reloadSelectedPageDetail()
             safetyStatus = repository.safetyStatus
             errorMessage = nil
             return true
@@ -287,6 +309,16 @@ final class OpenNotionStore {
 
     private func reloadDeletedPages() throws {
         deletedPages = try repository.listDeletedPages()
+    }
+
+    private func reloadSelectedPageDetail() throws {
+        guard let selectedPageID,
+              pages.contains(where: { $0.id == selectedPageID }) else {
+            selectedPageDetail = nil
+            return
+        }
+
+        selectedPageDetail = try repository.page(id: selectedPageID)
     }
 
     @discardableResult
@@ -323,6 +355,7 @@ private struct UnavailablePageRepository: PageRepository {
     func bootstrap() throws { throw error }
     func listPages() throws -> [Page] { throw error }
     func listDeletedPages() throws -> [Page] { throw error }
+    func page(id: String) throws -> Page? { throw error }
     func searchPages(query: String) throws -> [Page] { throw error }
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page { throw error }
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws { throw error }
