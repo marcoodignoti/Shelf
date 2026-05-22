@@ -6,7 +6,6 @@ import OpenNotionCore
 @Observable
 final class OpenNotionStore {
     var pages: [Page] = []
-    var deletedPages: [Page] = []
     var selectedPageID: String?
     var isLoading = false
     var errorMessage: String?
@@ -99,7 +98,6 @@ final class OpenNotionStore {
                 createdAt: now
             )
             pages.insert(page, at: 0)
-            deletedPages = try repository.listDeletedPages()
             selectedPageID = page.id
             safetyStatus = repository.safetyStatus
             errorMessage = nil
@@ -203,22 +201,6 @@ final class OpenNotionStore {
         return deletePage(pageID: pageID)
     }
 
-    @discardableResult
-    func restorePage(pageID: String) -> Bool {
-        do {
-            let now = dateFormatter.string(from: Date())
-            try repository.updatePage(id: pageID, updates: PageUpdates(isDeleted: 0), updatedAt: now)
-            try reloadPages()
-            selectedPageID = pageID
-            safetyStatus = repository.safetyStatus
-            errorMessage = nil
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
-    }
-
     func search(_ query: String) -> [Page] {
         do {
             return try repository.searchPages(query: query)
@@ -259,7 +241,6 @@ final class OpenNotionStore {
 
     private func reloadPages() throws {
         pages = try repository.listPages()
-        deletedPages = try repository.listDeletedPages()
     }
 
     private func pageID(from url: URL) -> String? {

@@ -45,7 +45,7 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.searchPages(query: "missing"), [])
     }
 
-    func testDeletePageSoftDeletesPageTreeInsteadOfRemovingRows() throws {
+    func testDeletePagePermanentlyRemovesPageTree() throws {
         let databasePath = temporaryDatabasePath()
         let repository = try SQLitePageRepository(databasePath: databasePath)
         try repository.bootstrap()
@@ -66,14 +66,13 @@ final class SQLitePageRepositoryTests: XCTestCase {
 
         XCTAssertEqual(try repository.listPages(), [])
         let database = try DatabaseQueue(path: databasePath)
-        let rows = try database.read { db in
-            try Row.fetchAll(db, sql: "SELECT id, is_deleted FROM pages ORDER BY id")
+        let remainingIDs = try database.read { db in
+            try String.fetchAll(db, sql: "SELECT id FROM pages ORDER BY id")
         }
-        XCTAssertEqual(rows.map { $0["id"] as String }, ["child", "parent"])
-        XCTAssertEqual(rows.map { $0["is_deleted"] as Int }, [1, 1])
+        XCTAssertEqual(remainingIDs, [])
     }
 
-    func testListDeletedPagesReturnsSoftDeletedPages() throws {
+    func testListDeletedPagesStaysEmptyAfterPermanentDelete() throws {
         let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
         try repository.bootstrap()
         _ = try repository.createPage(
@@ -85,7 +84,7 @@ final class SQLitePageRepositoryTests: XCTestCase {
         try repository.deletePage(id: "deleted")
 
         XCTAssertEqual(try repository.listPages(), [])
-        XCTAssertEqual(try repository.listDeletedPages().map(\.id), ["deleted"])
+        XCTAssertEqual(try repository.listDeletedPages(), [])
     }
 
     private func temporaryDatabasePath() -> String {
