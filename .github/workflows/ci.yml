@@ -57,10 +57,19 @@ jobs:
               native-macos/*)
                 native=true
                 ;;
+              script/*)
+                native=true
+                ;;
+              scripts/package-native-macos.sh|scripts/verify-native-macos-release.sh|scripts/verify-macos-release.sh|scripts/test-native-release-pipeline.sh)
+                native=true
+                ;;
+              .github/workflows/ci.yml|.github/workflows/macos-release.yml|.github/workflows/unsigned-beta-release.yml)
+                native=true
+                ;;
             esac
 
             case "$file" in
-              src/*|src-tauri/*|tests/*|public/*|scripts/*|script/*)
+              src/*|src-tauri/*|tests/*|public/*)
                 tauri=true
                 ;;
               package.json|package-lock.json|index.html)
@@ -95,11 +104,19 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Native release contract
+        run: ../scripts/test-native-release-pipeline.sh
+
       - name: Swift tests
         run: swift test
 
       - name: Swift build
         run: swift build
+
+      - name: Native unsigned package smoke
+        run: |
+          SIGNING_IDENTITY=- NOTARIZE=false ../scripts/package-native-macos.sh
+          ../scripts/verify-native-macos-release.sh
 
   tauri:
     name: Tauri build, test, audit
