@@ -3,18 +3,65 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/native-macos"
-DIST_DIR="${NATIVE_RELEASE_DIR:-$ROOT_DIR/dist/native-release}"
+OUTPUT_DIR="${NATIVE_RELEASE_DIR:-$ROOT_DIR/dist/native-release}"
 APP_NAME="${APP_NAME:-OpenNotion}"
 EXECUTABLE_NAME="${EXECUTABLE_NAME:-OpenNotionNative}"
-BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-org.opennotion.desktop}"
+BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-org.opennotion.native}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-14.0}"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-$ROOT_DIR/src-tauri/Entitlements.plist}"
 ICON_PATH="${ICON_PATH:-$ROOT_DIR/src-tauri/icons/icon.icns}"
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-${SIGNING_IDENTITY:--}}"
 NOTARIZE="${NOTARIZE:-false}"
 
+fail() {
+  echo "native macOS packaging failed: $*" >&2
+  exit 1
+}
+
+resolve_path() {
+  node -e "const path = require('path'); process.stdout.write(path.resolve(process.argv[1]));" "$1"
+}
+
+validate_output_dir() {
+  local candidate="$1"
+  local resolved_dist
+  local resolved_home=""
+  local resolved_output
+  local resolved_root
+
+  [[ -n "$candidate" ]] || fail "NATIVE_RELEASE_DIR cannot be empty"
+
+  resolved_output="$(resolve_path "$candidate")"
+  resolved_root="$(resolve_path "$ROOT_DIR")"
+  resolved_dist="$(resolve_path "$ROOT_DIR/dist")"
+  if [[ -n "${HOME:-}" ]]; then
+    resolved_home="$(resolve_path "$HOME")"
+  fi
+
+  case "$resolved_output" in
+    "/" | "$resolved_root" | "$resolved_dist")
+      fail "NATIVE_RELEASE_DIR is not safe to remove: $resolved_output"
+      ;;
+  esac
+
+  if [[ -n "$resolved_home" && "$resolved_output" == "$resolved_home" ]]; then
+    fail "NATIVE_RELEASE_DIR is not safe to remove: $resolved_output"
+  fi
+
+  case "$resolved_output" in
+    "$resolved_dist"/*)
+      printf '%s\n' "$resolved_output"
+      ;;
+    *)
+      fail "NATIVE_RELEASE_DIR must resolve inside $resolved_dist: $resolved_output"
+      ;;
+  esac
+}
+
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('$ROOT_DIR/package.json', 'utf8')).version")"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opennotion-native-package.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
 RAW_ARCH="$(uname -m)"
 
 case "$RAW_ARCH" in
@@ -29,15 +76,18 @@ case "$RAW_ARCH" in
     ;;
 esac
 
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+OUTPUT_DIR="$(validate_output_dir "$OUTPUT_DIR")"
+APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$EXECUTABLE_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-DMG_ROOT="$DIST_DIR/dmg-root"
-DMG_PATH="$DIST_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
-ZIP_PATH="$DIST_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.zip"
+DMG_ROOT="$WORK_DIR/dmg-root"
+DMG_PATH="$WORK_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
+ZIP_PATH="$WORK_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.zip"
+OUTPUT_APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
+OUTPUT_DMG_PATH="$OUTPUT_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
 
 if [[ "${1:-}" == "--help" ]]; then
   cat <<EOF
@@ -49,7 +99,7 @@ Environment:
   APPLE_API_KEY_PATH                         App Store Connect API key path
   APPLE_API_KEY                              App Store Connect key ID
   APPLE_API_ISSUER                           App Store Connect issuer ID
-  NATIVE_RELEASE_DIR                         output directory, defaults to dist/native-release
+  NATIVE_RELEASE_DIR                         output directory under dist/, defaults to dist/native-release
 EOF
   exit 0
 fi
@@ -76,7 +126,8 @@ submit_for_notarization() {
     --wait
 }
 
-rm -rf "$DIST_DIR"
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 
 swift build --configuration release --package-path "$PACKAGE_DIR" --product "$EXECUTABLE_NAME"
@@ -176,5 +227,9 @@ if [[ "$NOTARIZE" == "true" ]]; then
   xcrun stapler validate "$DMG_PATH"
 fi
 
-echo "app=$APP_BUNDLE"
-echo "dmg=$DMG_PATH"
+ditto --norsrc "$APP_BUNDLE" "$OUTPUT_APP_BUNDLE"
+ditto --norsrc "$DMG_PATH" "$OUTPUT_DMG_PATH"
+cleanup_xattrs "$OUTPUT_APP_BUNDLE" "$OUTPUT_DMG_PATH"
+
+echo "app=$OUTPUT_APP_BUNDLE"
+echo "dmg=$OUTPUT_DMG_PATH"

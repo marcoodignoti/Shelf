@@ -121,7 +121,10 @@ public enum BlockNoteCodec {
     private static func encodeBlock(_ block: Block) -> [String: Any] {
         if let rawJSON = block.rawJSON,
            let data = rawJSON.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+           var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if !block.kind.isUnsupported {
+                object["content"] = inlineContent(from: block.text, preserving: object["content"])
+            }
             return object
         }
 
@@ -185,6 +188,58 @@ public enum BlockNoteCodec {
             "text": text,
             "styles": [:]
         ]]
+    }
+
+    private static func inlineContent(from text: String, preserving value: Any?) -> [[String: Any]] {
+        guard !text.isEmpty else {
+            return []
+        }
+
+        let templates = inlineContentTemplates(from: value)
+        guard !templates.isEmpty else {
+            return inlineContent(from: text)
+        }
+
+        let nsText = text as NSString
+        var offset = 0
+        return templates.enumerated().compactMap { index, template in
+            guard offset < nsText.length else {
+                return nil
+            }
+
+            let originalLength = max((template["text"] as? String)?.utf16.count ?? 0, 0)
+            let remainingLength = nsText.length - offset
+            let segmentLength = index == templates.indices.last ? remainingLength : min(originalLength, remainingLength)
+            guard segmentLength > 0 else {
+                return nil
+            }
+
+            var next = template
+            next["text"] = nsText.substring(with: NSRange(location: offset, length: segmentLength))
+            offset += segmentLength
+            return next
+        }
+    }
+
+    private static func inlineContentTemplates(from value: Any?) -> [[String: Any]] {
+        guard let items = value as? [Any] else {
+            return []
+        }
+
+        return items.compactMap { item in
+            if let string = item as? String {
+                return [
+                    "type": "text",
+                    "text": string,
+                    "styles": [:]
+                ]
+            }
+            if let object = item as? [String: Any],
+               object["text"] is String {
+                return object
+            }
+            return nil
+        }
     }
 
     private static func rawJSONString(from object: [String: Any]) -> String? {

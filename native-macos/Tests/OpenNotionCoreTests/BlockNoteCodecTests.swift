@@ -90,4 +90,61 @@ final class BlockNoteCodecTests: XCTestCase {
         XCTAssertEqual(firstStyles["bold"] as? Bool, true)
         XCTAssertEqual(secondStyles["italic"] as? Bool, true)
     }
+
+    func testEditingStyledKnownBlockPreservesInlineStyles() throws {
+        let json = """
+        [
+          {
+            "id": "styled",
+            "type": "paragraph",
+            "content": [
+              {"type": "text", "text": "Hello", "styles": {"bold": true}},
+              {"type": "text", "text": " world", "styles": {"italic": true}}
+            ]
+          }
+        ]
+        """
+
+        var document = try BlockNoteCodec.decode(json)
+        document.updateText(id: "styled", text: "Hello brave world")
+
+        let encoded = try BlockNoteCodec.encode(document)
+        let blocks = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
+        let content = try XCTUnwrap(blocks.first?["content"] as? [[String: Any]])
+        let firstStyles = try XCTUnwrap(content.first?["styles"] as? [String: Any])
+        let secondStyles = try XCTUnwrap(content.dropFirst().first?["styles"] as? [String: Any])
+
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[0]["text"] as? String, "Hello")
+        XCTAssertEqual(content[1]["text"] as? String, " brave world")
+        XCTAssertEqual(firstStyles["bold"] as? Bool, true)
+        XCTAssertEqual(secondStyles["italic"] as? Bool, true)
+    }
+
+    func testEditingKnownBlockPreservesRawBlockProps() throws {
+        let json = """
+        [
+          {
+            "id": "heading",
+            "type": "heading",
+            "props": {"level": 2, "textColor": "red"},
+            "content": [{"type": "text", "text": "Old", "styles": {"underline": true}}]
+          }
+        ]
+        """
+
+        var document = try BlockNoteCodec.decode(json)
+        document.updateText(id: "heading", text: "New")
+
+        let encoded = try BlockNoteCodec.encode(document)
+        let blocks = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
+        let props = try XCTUnwrap(blocks.first?["props"] as? [String: Any])
+        let content = try XCTUnwrap(blocks.first?["content"] as? [[String: Any]])
+        let styles = try XCTUnwrap(content.first?["styles"] as? [String: Any])
+
+        XCTAssertEqual(props["level"] as? Int, 2)
+        XCTAssertEqual(props["textColor"] as? String, "red")
+        XCTAssertEqual(content.first?["text"] as? String, "New")
+        XCTAssertEqual(styles["underline"] as? Bool, true)
+    }
 }

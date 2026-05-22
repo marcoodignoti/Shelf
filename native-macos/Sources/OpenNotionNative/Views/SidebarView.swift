@@ -51,6 +51,18 @@ struct SidebarView: View {
                     )
                 }
             }
+
+            if !isSearching, !store.deletedPages.isEmpty {
+                Section("Trash") {
+                    ForEach(store.deletedPages) { page in
+                        PageRow(page: page)
+                            .foregroundStyle(.secondary)
+                            .contextMenu {
+                                trashContextMenu(for: page)
+                            }
+                    }
+                }
+            }
         }
         .listStyle(.sidebar)
         .navigationTitle("OpenNotion")
@@ -103,8 +115,21 @@ struct SidebarView: View {
 
         Divider()
 
-        Button("Delete Permanently", role: .destructive) {
+        Button("Move to Trash", role: .destructive) {
             store.requestDeletePage(pageID: page.id)
+        }
+    }
+
+    @ViewBuilder
+    private func trashContextMenu(for page: Page) -> some View {
+        Button("Restore") {
+            store.restorePage(pageID: page.id)
+        }
+
+        Divider()
+
+        Button("Delete Permanently", role: .destructive) {
+            store.requestPermanentDeletePage(pageID: page.id)
         }
     }
 }
