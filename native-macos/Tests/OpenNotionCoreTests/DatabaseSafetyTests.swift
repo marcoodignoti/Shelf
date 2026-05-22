@@ -2,6 +2,30 @@ import XCTest
 @testable import OpenNotionCore
 
 final class DatabaseSafetyTests: XCTestCase {
+    func testDefaultNativeDatabasePathIsSeparateFromTauriDatabasePath() throws {
+        let path = try ApplicationSupportResolver.defaultDatabasePath()
+
+        XCTAssertTrue(path.contains("org.opennotion.native"))
+        XCTAssertTrue(path.hasSuffix("opennotion-native.db"))
+        XCTAssertFalse(path.contains("org.opennotion.desktop"))
+        XCTAssertFalse(path.hasSuffix("opennotion.db"))
+    }
+
+    func testDefaultNativeDatabaseSessionWarningDoesNotMentionTauriDatabase() throws {
+        let session = try DatabaseSafety.defaultSession(environment: [:])
+        let status = DatabaseSafetyStatus(
+            activeDatabasePath: session.activeDatabasePath,
+            sourceDatabasePath: session.sourceDatabasePath,
+            isLiveDatabase: session.isLiveDatabase,
+            isTestingCopy: session.isTestingCopy,
+            warningMessage: session.warningMessage,
+            backupPath: nil
+        )
+
+        XCTAssertTrue(status.isLiveDatabase)
+        XCTAssertFalse(status.warningMessage?.contains("Tauri") ?? false)
+    }
+
     func testTestingCopyModeWritesToCopyAndLeavesSourceDatabaseUntouched() throws {
         let sourcePath = temporaryDatabasePath("source.sqlite")
         let sourceRepository = try SQLitePageRepository(databasePath: sourcePath)
@@ -50,6 +74,7 @@ final class DatabaseSafetyTests: XCTestCase {
             )
         )
         try liveRepository.bootstrap()
+        XCTAssertFalse(liveRepository.safetyStatus.warningMessage?.contains("Tauri") ?? false)
         _ = try liveRepository.createPage(
             id: "new-page",
             title: "New",

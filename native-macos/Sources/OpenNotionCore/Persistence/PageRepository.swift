@@ -10,4 +10,6 @@ public protocol PageRepository: Sendable {
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws
     func deletePage(id: String) throws
+    func restorePage(id: String) throws
+    func permanentlyDeletePage(id: String) throws
 }

@@ -38,6 +38,8 @@ assert_executable "scripts/verify-native-macos-release.sh"
 assert_contains "scripts/package-native-macos.sh" "swift build --configuration release"
 assert_contains "scripts/package-native-macos.sh" 'APP_NAME.*OpenNotion'
 assert_contains "scripts/package-native-macos.sh" 'APP_BUNDLE=.*APP_NAME.*\.app'
+assert_contains "scripts/package-native-macos.sh" "org.opennotion.native"
+assert_not_contains "scripts/package-native-macos.sh" 'BUNDLE_IDENTIFIER=.*org.opennotion.desktop'
 assert_contains "scripts/package-native-macos.sh" "codesign"
 assert_contains "scripts/package-native-macos.sh" "hdiutil create"
 assert_contains "scripts/package-native-macos.sh" "notarytool submit"
@@ -46,6 +48,8 @@ assert_contains "scripts/verify-native-macos-release.sh" "codesign --verify"
 assert_contains "scripts/verify-native-macos-release.sh" "REQUIRE_DEVELOPER_ID"
 assert_contains "scripts/verify-native-macos-release.sh" "spctl --assess"
 assert_contains "scripts/verify-native-macos-release.sh" "OpenNotionNative"
+assert_contains "scripts/verify-native-macos-release.sh" "org.opennotion.native"
+assert_contains "scripts/verify-native-macos-release.sh" "CFBundleIdentifier"
 
 assert_contains "package.json" "\"release:package:macos\""
 assert_contains "package.json" "\"release:verify:macos\""

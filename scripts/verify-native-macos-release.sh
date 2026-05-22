@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="${APP_NAME:-OpenNotion}"
 EXECUTABLE_NAME="${EXECUTABLE_NAME:-OpenNotionNative}"
+BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-org.opennotion.native}"
 DIST_DIR="${NATIVE_RELEASE_DIR:-$ROOT_DIR/dist/native-release}"
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('$ROOT_DIR/package.json', 'utf8')).version")"
 REQUIRE_DEVELOPER_ID="${REQUIRE_DEVELOPER_ID:-false}"
@@ -41,6 +42,7 @@ fail() {
 
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$INFO_PLIST")" == "APPL" ]] || fail "CFBundlePackageType is not APPL"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")" == "$EXECUTABLE_NAME" ]] || fail "CFBundleExecutable mismatch"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")" == "$BUNDLE_IDENTIFIER" ]] || fail "CFBundleIdentifier mismatch"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")" == "$VERSION" ]] || fail "version mismatch"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$INFO_PLIST" | grep -qx "opennotion" || fail "missing opennotion URL scheme"
 

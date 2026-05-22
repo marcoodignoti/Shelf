@@ -6,11 +6,13 @@ import OpenNotionCore
 @Observable
 final class OpenNotionStore {
     var pages: [Page] = []
+    var deletedPages: [Page] = []
     var selectedPageID: String?
     var isLoading = false
     var errorMessage: String?
     var safetyStatus: DatabaseSafetyStatus = .unavailable
     var pendingDeletePageID: String?
+    var pendingPermanentDeletePageID: String?
 
     private let repository: PageRepository
     private let dateFormatter = ISO8601DateFormatter()
@@ -52,6 +54,7 @@ final class OpenNotionStore {
         do {
             try repository.bootstrap()
             try reloadPages()
+            try reloadDeletedPages()
             if let pendingOpenPageID,
                pages.contains(where: { $0.id == pendingOpenPageID }) {
                 selectedPageID = pendingOpenPageID
@@ -156,6 +159,7 @@ final class OpenNotionStore {
         do {
             try repository.deletePage(id: pageID)
             try reloadPages()
+            try reloadDeletedPages()
             if let selectedPageIDBeforeDelete,
                pages.contains(where: { $0.id == selectedPageIDBeforeDelete }) {
                 selectedPageID = selectedPageIDBeforeDelete
@@ -201,6 +205,44 @@ final class OpenNotionStore {
         return deletePage(pageID: pageID)
     }
 
+    func requestPermanentDeletePage(pageID: String) {
+        guard deletedPages.contains(where: { $0.id == pageID }) else {
+            return
+        }
+
+        pendingPermanentDeletePageID = pageID
+    }
+
+    func cancelPendingPermanentPageDeletion() {
+        pendingPermanentDeletePageID = nil
+    }
+
+    @discardableResult
+    func confirmPendingPermanentPageDeletion() -> Bool {
+        guard let pageID = pendingPermanentDeletePageID else {
+            return false
+        }
+
+        pendingPermanentDeletePageID = nil
+        return permanentlyDeletePage(pageID: pageID)
+    }
+
+    @discardableResult
+    func restorePage(pageID: String) -> Bool {
+        do {
+            try repository.restorePage(id: pageID)
+            try reloadPages()
+            try reloadDeletedPages()
+            selectedPageID = pages.contains(where: { $0.id == pageID }) ? pageID : selectedPageID
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func search(_ query: String) -> [Page] {
         do {
             return try repository.searchPages(query: query)
@@ -243,6 +285,24 @@ final class OpenNotionStore {
         pages = try repository.listPages()
     }
 
+    private func reloadDeletedPages() throws {
+        deletedPages = try repository.listDeletedPages()
+    }
+
+    @discardableResult
+    private func permanentlyDeletePage(pageID: String) -> Bool {
+        do {
+            try repository.permanentlyDeletePage(id: pageID)
+            try reloadDeletedPages()
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     private func pageID(from url: URL) -> String? {
         let pathParts = url.pathComponents.filter { $0 != "/" }
         if url.host == "page" {
@@ -267,4 +327,6 @@ private struct UnavailablePageRepository: PageRepository {
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page { throw error }
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws { throw error }
     func deletePage(id: String) throws { throw error }
+    func restorePage(id: String) throws { throw error }
+    func permanentlyDeletePage(id: String) throws { throw error }
 }

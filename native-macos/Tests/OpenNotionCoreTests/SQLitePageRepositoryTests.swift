@@ -45,7 +45,7 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.searchPages(query: "missing"), [])
     }
 
-    func testDeletePagePermanentlyRemovesPageTree() throws {
+    func testDeletePageMovesPageTreeToTrash() throws {
         let databasePath = temporaryDatabasePath()
         let repository = try SQLitePageRepository(databasePath: databasePath)
         try repository.bootstrap()
@@ -65,26 +65,57 @@ final class SQLitePageRepositoryTests: XCTestCase {
         try repository.deletePage(id: "parent")
 
         XCTAssertEqual(try repository.listPages(), [])
+        XCTAssertEqual(try repository.listDeletedPages().map(\.id), ["child", "parent"])
+    }
+
+    func testRestorePageReturnsPageTreeToActivePages() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "child",
+            title: "Child",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:01:00.000Z"
+        )
+        try repository.deletePage(id: "parent")
+
+        try repository.restorePage(id: "parent")
+
+        XCTAssertEqual(try repository.listDeletedPages(), [])
+        XCTAssertEqual(try repository.listPages().map(\.id), ["child", "parent"])
+    }
+
+    func testPermanentlyDeletePageRemovesPageTreeFromTrash() throws {
+        let databasePath = temporaryDatabasePath()
+        let repository = try SQLitePageRepository(databasePath: databasePath)
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "child",
+            title: "Child",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:01:00.000Z"
+        )
+        try repository.deletePage(id: "parent")
+
+        try repository.permanentlyDeletePage(id: "parent")
+
         let database = try DatabaseQueue(path: databasePath)
         let remainingIDs = try database.read { db in
             try String.fetchAll(db, sql: "SELECT id FROM pages ORDER BY id")
         }
         XCTAssertEqual(remainingIDs, [])
-    }
-
-    func testListDeletedPagesStaysEmptyAfterPermanentDelete() throws {
-        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
-        try repository.bootstrap()
-        _ = try repository.createPage(
-            id: "deleted",
-            title: "Deleted",
-            parentID: nil,
-            createdAt: "2026-05-21T10:00:00.000Z"
-        )
-        try repository.deletePage(id: "deleted")
-
-        XCTAssertEqual(try repository.listPages(), [])
-        XCTAssertEqual(try repository.listDeletedPages(), [])
     }
 
     private func temporaryDatabasePath() -> String {

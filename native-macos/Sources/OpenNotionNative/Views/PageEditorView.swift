@@ -135,7 +135,7 @@ struct PageEditorView: View {
                 .help(page.isFavorite == 1 ? "Remove from favorites" : "Add to favorites")
 
                 Menu {
-                    Button("Delete Permanently", role: .destructive) {
+                    Button("Move to Trash", role: .destructive) {
                         onDelete()
                     }
                 } label: {

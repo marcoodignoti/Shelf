@@ -38,7 +38,7 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
             sourceDatabasePath: livePath,
             isLiveDatabase: isLive,
             isTestingCopy: false,
-            warningMessage: isLive ? "Native beta is writing to the shared Tauri database. A backup is created before the first write." : nil,
+            warningMessage: isLive ? "Native app is writing to its local database. A backup is created before the first write." : nil,
             backupPath: currentBackupPath
         )
     }
@@ -217,6 +217,46 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
     }
 
     public func deletePage(id: String) throws {
+        try backupBeforeFirstLiveWriteIfNeeded()
+
+        try databasePool.write { db in
+            try db.execute(
+                sql: """
+                    WITH RECURSIVE descendants(id) AS (
+                        SELECT id FROM pages WHERE id = ?
+                        UNION
+                        SELECT pages.id FROM pages
+                        JOIN descendants ON pages.parent_id = descendants.id
+                    )
+                    UPDATE pages
+                    SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE id IN (SELECT id FROM descendants)
+                    """,
+                arguments: [id])
+        }
+    }
+
+    public func restorePage(id: String) throws {
+        try backupBeforeFirstLiveWriteIfNeeded()
+
+        try databasePool.write { db in
+            try db.execute(
+                sql: """
+                    WITH RECURSIVE descendants(id) AS (
+                        SELECT id FROM pages WHERE id = ?
+                        UNION
+                        SELECT pages.id FROM pages
+                        JOIN descendants ON pages.parent_id = descendants.id
+                    )
+                    UPDATE pages
+                    SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE id IN (SELECT id FROM descendants)
+                    """,
+                arguments: [id])
+        }
+    }
+
+    public func permanentlyDeletePage(id: String) throws {
         try backupBeforeFirstLiveWriteIfNeeded()
 
         try databasePool.write { db in

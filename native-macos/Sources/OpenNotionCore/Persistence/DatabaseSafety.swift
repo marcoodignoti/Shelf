@@ -22,10 +22,10 @@ public struct DatabaseSession: Equatable, Sendable {
 
     public var warningMessage: String? {
         if isLiveDatabase {
-            return "Native beta is writing to the shared Tauri database. A backup is created before the first write."
+            return "Native app is writing to its local database. A backup is created before the first write."
         }
 
-        return "Testing copy mode is active. Writes do not affect the shared Tauri database."
+        return "Testing copy mode is active. Writes do not affect the native local database."
     }
 }
 

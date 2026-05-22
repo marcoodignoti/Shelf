@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/native-macos"
-DIST_DIR="${NATIVE_RELEASE_DIR:-$ROOT_DIR/dist/native-release}"
+OUTPUT_DIR="${NATIVE_RELEASE_DIR:-$ROOT_DIR/dist/native-release}"
 APP_NAME="${APP_NAME:-OpenNotion}"
 EXECUTABLE_NAME="${EXECUTABLE_NAME:-OpenNotionNative}"
-BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-org.opennotion.desktop}"
+BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-org.opennotion.native}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-14.0}"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-$ROOT_DIR/src-tauri/Entitlements.plist}"
 ICON_PATH="${ICON_PATH:-$ROOT_DIR/src-tauri/icons/icon.icns}"
@@ -15,6 +15,8 @@ NOTARIZE="${NOTARIZE:-false}"
 
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('$ROOT_DIR/package.json', 'utf8')).version")"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opennotion-native-package.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
 RAW_ARCH="$(uname -m)"
 
 case "$RAW_ARCH" in
@@ -29,15 +31,17 @@ case "$RAW_ARCH" in
     ;;
 esac
 
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$EXECUTABLE_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-DMG_ROOT="$DIST_DIR/dmg-root"
-DMG_PATH="$DIST_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
-ZIP_PATH="$DIST_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.zip"
+DMG_ROOT="$WORK_DIR/dmg-root"
+DMG_PATH="$WORK_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
+ZIP_PATH="$WORK_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.zip"
+OUTPUT_APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
+OUTPUT_DMG_PATH="$OUTPUT_DIR/${APP_NAME}_${VERSION}_${BUNDLE_ARCH}.dmg"
 
 if [[ "${1:-}" == "--help" ]]; then
   cat <<EOF
@@ -76,7 +80,8 @@ submit_for_notarization() {
     --wait
 }
 
-rm -rf "$DIST_DIR"
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 
 swift build --configuration release --package-path "$PACKAGE_DIR" --product "$EXECUTABLE_NAME"
@@ -176,5 +181,9 @@ if [[ "$NOTARIZE" == "true" ]]; then
   xcrun stapler validate "$DMG_PATH"
 fi
 
-echo "app=$APP_BUNDLE"
-echo "dmg=$DMG_PATH"
+ditto --norsrc "$APP_BUNDLE" "$OUTPUT_APP_BUNDLE"
+ditto --norsrc "$DMG_PATH" "$OUTPUT_DMG_PATH"
+cleanup_xattrs "$OUTPUT_APP_BUNDLE" "$OUTPUT_DMG_PATH"
+
+echo "app=$OUTPUT_APP_BUNDLE"
+echo "dmg=$OUTPUT_DMG_PATH"

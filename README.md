@@ -16,12 +16,16 @@ OpenNotion is a local-first notes app. The active macOS app is native SwiftUI wi
 - Storage: SQLite through GRDB.
 - Package: SwiftPM in `native-macos`.
 - Release artifact: native `.app` and DMG from `scripts/package-native-macos.sh`.
+- Data path: `~/Library/Application Support/org.opennotion.native/opennotion-native.db`.
 
 ## Legacy Tauri Stack
 
 - Frontend: React, TypeScript, Vite, Tailwind CSS, BlockNote.
 - Desktop shell: Tauri 2.
 - Storage: SQLite through Rust `sqlx`.
+- Data path: `~/Library/Application Support/org.opennotion.desktop/opennotion.db`.
+
+The native macOS app and the legacy Tauri app intentionally use separate bundle identifiers and separate databases.
 
 ## Development
 
