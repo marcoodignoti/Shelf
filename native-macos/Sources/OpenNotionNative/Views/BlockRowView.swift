@@ -159,7 +159,7 @@ struct BlockRowView: View {
 
     private func applySlashCommand(_ style: EditorBlockStyle) {
         document.replaceKind(id: block.id, with: style.kind)
-        if block.kind.acceptsText {
+        if style.kind.acceptsText {
             document.updateText(id: block.id, text: "")
         }
         focusedBlockID = block.id
