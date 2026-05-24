@@ -161,6 +161,31 @@ final class OpenNotionStore {
     }
 
     @discardableResult
+    func movePage(pageID: String, parentID: String?) -> Bool {
+        let selectedPageIDBeforeMove = selectedPageID
+        do {
+            let now = dateFormatter.string(from: Date())
+            try repository.movePage(id: pageID, parentID: parentID, updatedAt: now)
+            try reloadPages()
+            if let selectedPageIDBeforeMove,
+               pages.contains(where: { $0.id == selectedPageIDBeforeMove }) {
+                selectedPageID = selectedPageIDBeforeMove
+            } else if pages.contains(where: { $0.id == pageID }) {
+                selectedPageID = pageID
+            } else {
+                selectedPageID = pages.first?.id
+            }
+            try reloadSelectedPageDetail()
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
     func save(pageID: String, title: String, document: BlockDocument) -> Bool {
         let selectedPageIDBeforeSave = selectedPageID
         do {
@@ -380,6 +405,7 @@ private struct UnavailablePageRepository: PageRepository {
     func searchPages(query: String) throws -> [Page] { throw error }
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page { throw error }
     func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page { throw error }
+    func movePage(id: String, parentID: String?, updatedAt: String) throws { throw error }
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws { throw error }
     func deletePage(id: String) throws { throw error }
     func restorePage(id: String) throws { throw error }

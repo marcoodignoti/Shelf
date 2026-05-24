@@ -14,6 +14,7 @@ public protocol PageRepository: Sendable {
     func searchPages(query: String) throws -> [Page]
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page
     func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page
+    func movePage(id: String, parentID: String?, updatedAt: String) throws
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws
     func deletePage(id: String) throws
     func restorePage(id: String) throws

@@ -92,6 +92,38 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(repository.pages.first?.parentID, "parent")
     }
 
+    func testMovingPageUpdatesParentAndKeepsSelection() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "selected", title: "Selected", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.select(repository.pages[1])
+
+        XCTAssertTrue(store.movePage(pageID: "selected", parentID: "target"))
+
+        XCTAssertEqual(repository.movedPages, [MovedPage(id: "selected", parentID: "target")])
+        XCTAssertEqual(store.pages.first { $0.id == "selected" }?.parentID, "target")
+        XCTAssertEqual(store.selectedPageID, "selected")
+    }
+
+    func testMovingPageToRootClearsParent() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "parent", title: "Parent", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "child", title: "Child", parentID: "parent", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.select(repository.pages[1])
+
+        XCTAssertTrue(store.movePage(pageID: "child", parentID: nil))
+
+        XCTAssertEqual(repository.movedPages, [MovedPage(id: "child", parentID: nil)])
+        XCTAssertNil(store.pages.first { $0.id == "child" }?.parentID)
+        XCTAssertEqual(store.selectedPageID, "child")
+    }
+
     func testLoadFetchesSelectedPageBodyAfterMetadata() {
         let repository = RecordingPageRepository(pages: [
             Page(
@@ -338,6 +370,11 @@ final class OpenNotionStoreTests: XCTestCase {
     }
 }
 
+private struct MovedPage: Equatable {
+    let id: String
+    let parentID: String?
+}
+
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
     var pages: [Page]
     private(set) var updatedPageIDs: [String] = []
@@ -346,6 +383,7 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
     private(set) var permanentlyDeletedPageIDs: [String] = []
     private(set) var fetchedPageIDs: [String] = []
     private(set) var duplicatedPageIDs: [String] = []
+    private(set) var movedPages: [MovedPage] = []
 
     init(pages: [Page]) {
         self.pages = pages
@@ -399,6 +437,15 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
         )
         pages.insert(page, at: 0)
         return page
+    }
+
+    func movePage(id: String, parentID: String?, updatedAt: String) throws {
+        movedPages.append(MovedPage(id: id, parentID: parentID))
+        guard let index = pages.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        pages[index].parentID = parentID
+        pages[index].updatedAt = updatedAt
     }
 
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws {
