@@ -322,11 +322,15 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
                     sql: "UPDATE pages SET content = ?, search_text = ?, updated_at = ? WHERE id = ?",
                     arguments: [content, searchText, updatedAt, id])
             }
-            if let icon = updates.icon {
-                try update(db, id: id, column: "icon", value: icon, updatedAt: updatedAt)
+            if updates.clearIcon {
+                try updateOptionalText(db, id: id, column: "icon", value: nil, updatedAt: updatedAt)
+            } else if let icon = updates.icon {
+                try updateOptionalText(db, id: id, column: "icon", value: icon, updatedAt: updatedAt)
             }
-            if let coverURL = updates.coverURL {
-                try update(db, id: id, column: "cover_url", value: coverURL, updatedAt: updatedAt)
+            if updates.clearCoverURL {
+                try updateOptionalText(db, id: id, column: "cover_url", value: nil, updatedAt: updatedAt)
+            } else if let coverURL = updates.coverURL {
+                try updateOptionalText(db, id: id, column: "cover_url", value: coverURL, updatedAt: updatedAt)
             }
             if let isDeleted = updates.isDeleted {
                 try update(db, id: id, column: "is_deleted", value: isDeleted, updatedAt: updatedAt)
@@ -470,6 +474,12 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
         try db.execute(
             sql: "UPDATE pages SET \(column) = ?, updated_at = ? WHERE id = ?",
             arguments: StatementArguments([value.databaseValue, updatedAt.databaseValue, id.databaseValue]))
+    }
+
+    private func updateOptionalText(_ db: Database, id: String, column: String, value: String?, updatedAt: String) throws {
+        try db.execute(
+            sql: "UPDATE pages SET \(column) = ?, updated_at = ? WHERE id = ?",
+            arguments: StatementArguments([value?.databaseValue ?? DatabaseValue.null, updatedAt.databaseValue, id.databaseValue]))
     }
 }
 

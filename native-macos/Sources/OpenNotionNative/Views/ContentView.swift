@@ -117,6 +117,18 @@ private struct DetailView: View {
                     title: title,
                     document: document
                 )
+            } onSaveMetadata: { icon, coverURL in
+                store.updatePageMetadata(
+                    pageID: page.id,
+                    icon: icon,
+                    coverURL: coverURL
+                )
+            } onImportCoverImage: { sourceURL, icon in
+                store.importCoverImage(
+                    pageID: page.id,
+                    sourceURL: sourceURL,
+                    icon: icon
+                )
             } onToggleFavorite: {
                 store.toggleFavorite(pageID: page.id)
             } onDuplicate: {

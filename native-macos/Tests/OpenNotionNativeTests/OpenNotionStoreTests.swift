@@ -65,6 +65,57 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedPageID, "selected")
     }
 
+    func testUpdatingPageMetadataStoresIconAndCoverAndKeepsSelection() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "target", title: "Target", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z"),
+            Page(id: "selected", title: "Selected", createdAt: "2026-05-21T10:01:00.000Z", updatedAt: "2026-05-21T10:01:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+        store.select(repository.pages[1])
+
+        XCTAssertTrue(store.updatePageMetadata(pageID: "target", icon: "📌", coverURL: "file:///tmp/cover.png"))
+
+        XCTAssertEqual(repository.updatedPageIDs, ["target"])
+        XCTAssertEqual(repository.pages.first { $0.id == "target" }?.icon, "📌")
+        XCTAssertEqual(repository.pages.first { $0.id == "target" }?.coverURL, "file:///tmp/cover.png")
+        XCTAssertEqual(store.pages.first { $0.id == "target" }?.icon, "📌")
+        XCTAssertEqual(store.pages.first { $0.id == "target" }?.coverURL, "file:///tmp/cover.png")
+        XCTAssertEqual(store.selectedPageID, "selected")
+    }
+
+    func testPageMetadataControlsUseHoverVisibility() {
+        XCTAssertEqual(pageMetadataControlsOpacity(isHovering: false, isIconPickerPresented: false, isCoverURLFieldPresented: false), 0)
+        XCTAssertEqual(pageMetadataControlsOpacity(isHovering: true, isIconPickerPresented: false, isCoverURLFieldPresented: false), 1)
+        XCTAssertEqual(pageMetadataControlsOpacity(isHovering: false, isIconPickerPresented: true, isCoverURLFieldPresented: false), 1)
+        XCTAssertEqual(pageMetadataControlsOpacity(isHovering: false, isIconPickerPresented: false, isCoverURLFieldPresented: true), 1)
+
+        XCTAssertEqual(coverActionsOpacity(isHovering: false), 0)
+        XCTAssertEqual(coverActionsOpacity(isHovering: true), 1)
+    }
+
+    func testClearingPageMetadataStoresNilIconAndCover() {
+        let repository = RecordingPageRepository(pages: [
+            Page(
+                id: "target",
+                title: "Target",
+                icon: "📌",
+                coverURL: "file:///tmp/cover.png",
+                createdAt: "2026-05-21T10:00:00.000Z",
+                updatedAt: "2026-05-21T10:00:00.000Z"
+            )
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        XCTAssertTrue(store.updatePageMetadata(pageID: "target", icon: nil, coverURL: nil))
+
+        XCTAssertNil(repository.pages.first?.icon)
+        XCTAssertNil(repository.pages.first?.coverURL)
+        XCTAssertNil(store.selectedPage?.icon)
+        XCTAssertNil(store.selectedPage?.coverURL)
+    }
+
     func testDuplicatingPageSelectsDuplicateAndLoadsDetail() {
         let repository = RecordingPageRepository(pages: [
             Page(id: "one", title: "One", content: "body", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
@@ -464,6 +515,16 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
         }
         if let searchText = updates.searchText {
             pages[index].searchText = searchText
+        }
+        if updates.clearIcon {
+            pages[index].icon = nil
+        } else if let icon = updates.icon {
+            pages[index].icon = icon
+        }
+        if updates.clearCoverURL {
+            pages[index].coverURL = nil
+        } else if let coverURL = updates.coverURL {
+            pages[index].coverURL = coverURL
         }
         if let isFavorite = updates.isFavorite {
             pages[index].isFavorite = isFavorite

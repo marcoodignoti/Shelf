@@ -68,6 +68,8 @@ public struct PageUpdates: Equatable, Sendable {
     public var isDatabase: Int?
     public var databaseSchema: String?
     public var properties: String?
+    public var clearIcon: Bool
+    public var clearCoverURL: Bool
 
     public init(
         title: String? = nil,
@@ -81,7 +83,9 @@ public struct PageUpdates: Equatable, Sendable {
         isTemplate: Int? = nil,
         isDatabase: Int? = nil,
         databaseSchema: String? = nil,
-        properties: String? = nil
+        properties: String? = nil,
+        clearIcon: Bool = false,
+        clearCoverURL: Bool = false
     ) {
         self.title = title
         self.parentID = parentID
@@ -95,5 +99,7 @@ public struct PageUpdates: Equatable, Sendable {
         self.isDatabase = isDatabase
         self.databaseSchema = databaseSchema
         self.properties = properties
+        self.clearIcon = clearIcon
+        self.clearCoverURL = clearCoverURL
     }
 }
