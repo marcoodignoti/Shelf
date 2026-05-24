@@ -60,6 +60,9 @@ struct PageEditorView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 44, weight: .bold, design: .default))
                         .focused($isTitleFocused)
+                        .onSubmit {
+                            focusFirstBodyBlock()
+                        }
                         .onTapGesture {
                             focusedBlockID = nil
                         }
@@ -187,6 +190,11 @@ struct PageEditorView: View {
             didCopyLink = false
         }
     }
+
+    private func focusFirstBodyBlock() {
+        isTitleFocused = false
+        focusedBlockID = PageEditorFocus.firstEditableBlockID(in: draft.document)
+    }
 }
 
 private enum PageEditorSaveState {
@@ -214,6 +222,8 @@ private struct BlockEditorView: View {
     @Binding var focusedBlockID: String?
     @State private var draggingBlockID: String?
     @State private var activeDropLocation: BlockDropLocation?
+    @State private var selectionOffsets: [String: Int] = [:]
+    @State private var undoStack = BlockEditorUndoStack()
 
     var body: some View {
         ScrollViewReader { scrollProxy in
@@ -229,6 +239,8 @@ private struct BlockEditorView: View {
                                 focusedBlockID: $focusedBlockID,
                                 draggingBlockID: $draggingBlockID,
                                 activeDropLocation: $activeDropLocation,
+                                selectionOffsets: $selectionOffsets,
+                                undoStack: $undoStack,
                                 prefix: prefix(for: block)
                             ) { id, anchor in
                                 requestScroll(to: id, anchor: anchor, using: scrollProxy)
