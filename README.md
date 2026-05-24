@@ -4,11 +4,13 @@ OpenNotion is a local-first notes app. The active macOS app is native SwiftUI wi
 
 ## Current Scope
 
-- Create, edit, and permanently delete pages after explicit confirmation.
-- Persist page titles and BlockNote document content in local SQLite storage.
-- Search pages by title and content through a Rust-backed database command.
-- Export the full local workspace as JSON.
-- Keep database access behind narrow Tauri commands instead of exposing raw SQL to the renderer.
+- Create, edit, move to Trash, restore, and permanently delete pages after explicit confirmation.
+- Persist page titles, metadata, and BlockNote-compatible document content in native SQLite storage.
+- Search pages by title and content through the native GRDB repository.
+- Edit basic native blocks: paragraph, headings, lists, checklist, code, divider, slash menu, and drag/drop ordering.
+- Package unsigned or signed native macOS `.app` and DMG artifacts.
+
+See `docs/native-parity-roadmap.md` for remaining Tauri-to-native parity work.
 
 ## Native macOS Stack
 
@@ -35,29 +37,15 @@ Install dependencies:
 npm install
 ```
 
-Run frontend build:
+Run native macOS checks:
 
 ```sh
-npm run build
+npm run check:native
 ```
 
-Run Rust checks/tests:
+Build and launch native macOS app:
 
 ```sh
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Build desktop app:
-
-```sh
-npm run tauri build
-```
-
-Build native macOS app:
-
-```sh
-swift test --package-path native-macos
 script/build_and_run.sh --verify
 ```
 
@@ -68,7 +56,43 @@ npm run release:package:macos
 npm run release:verify:macos
 ```
 
-Production signing and notarization use `.github/workflows/macos-release.yml`.
+Run legacy Tauri checks:
+
+```sh
+npm run check:tauri
+```
+
+Build legacy Tauri app:
+
+```sh
+npm run tauri build
+```
+
+Production native signing and notarization use `.github/workflows/macos-release.yml`.
+
+Run all repo checks:
+
+```sh
+npm run check
+```
+
+## Native Parity Target
+
+The native app is the primary macOS product. Legacy Tauri remains as a comparison implementation until parity is complete. Port work must keep:
+
+- native bundle ID: `org.opennotion.native`
+- native database path: `~/Library/Application Support/org.opennotion.native/opennotion-native.db`
+- legacy Tauri bundle ID: `org.opennotion.desktop`
+- legacy Tauri database path: `~/Library/Application Support/org.opennotion.desktop/opennotion.db`
+
+Any migration or import between native and Tauri databases must be an explicit user action.
+
+## Native Development
+
+```sh
+swift test --package-path native-macos
+script/build_and_run.sh --verify
+```
 
 ## Repository Hygiene
 

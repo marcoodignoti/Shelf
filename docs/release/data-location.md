@@ -1,14 +1,42 @@
 # Data Location
 
-OpenNotion stores local app data in the per-user application support directory.
+OpenNotion stores local app data in per-user Application Support directories.
+The native macOS app and the legacy Tauri app are separate products and must not
+share persistence defaults.
 
-## Current Bundle Identifier
+## Native macOS App
+
+Bundle identifier:
+
+```text
+org.opennotion.native
+```
+
+Default data directory:
+
+```sh
+~/Library/Application Support/org.opennotion.native/
+```
+
+Main files:
+
+```text
+opennotion-native.db
+native-backups/
+```
+
+The native app creates a backup before the first live write to an existing
+native database.
+
+## Legacy Tauri App
+
+Bundle identifier:
 
 ```text
 org.opennotion.desktop
 ```
 
-On macOS, data is stored here:
+Default data directory:
 
 ```sh
 ~/Library/Application Support/org.opennotion.desktop/
@@ -35,13 +63,10 @@ Those builds stored data here:
 ~/Library/Application Support/com.marcodignoti.opennotion/
 ```
 
-The identifier was changed before public beta use to avoid personal naming in the app bundle. Existing local development data under the old identifier is not automatically migrated.
+Existing local development data under the old identifier is not automatically
+migrated.
 
-To migrate manually:
+## Migration Rule
 
-```sh
-mkdir -p "$HOME/Library/Application Support/org.opennotion.desktop"
-cp -R "$HOME/Library/Application Support/com.marcodignoti.opennotion/"* "$HOME/Library/Application Support/org.opennotion.desktop/"
-```
-
-To start from a clean database, do nothing. The app creates a new database on first launch.
+Native and Tauri data migration must be explicit. Do not copy or import legacy
+Tauri data at native startup.
