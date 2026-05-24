@@ -236,13 +236,28 @@ final class EditorNSTextView: NSTextView {
         super.insertText(insertString, replacementRange: replacementRange)
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlesStructuralUndo(event) {
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
-           event.charactersIgnoringModifiers?.lowercased() == "z",
-           commandHandler?(.undoStructuralEdit) == true {
+        if handlesStructuralUndo(event) {
             return
         }
 
         super.keyDown(with: event)
+    }
+
+    private func handlesStructuralUndo(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+              event.charactersIgnoringModifiers?.lowercased() == "z" else {
+            return false
+        }
+
+        return commandHandler?(.undoStructuralEdit) == true
     }
 }

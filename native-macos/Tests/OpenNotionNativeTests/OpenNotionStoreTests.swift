@@ -203,6 +203,30 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(textView.string, "#")
     }
 
+    func testEditorTextViewCommandZTriggersStructuralUndoCommand() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertTrue(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [.undoStructuralEdit])
+    }
+
     func testEditorTextViewClampsSelectionOffset() {
         let textView = EditorNSTextView(frame: .zero)
         textView.string = "Hello"
