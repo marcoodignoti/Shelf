@@ -142,6 +142,61 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.listDeletedPages().map(\.id), ["child", "parent"])
     }
 
+    func testMovePageReparentsToTargetAndRoot() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "child",
+            title: "Child",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:01:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "target",
+            title: "Target",
+            parentID: nil,
+            createdAt: "2026-05-21T10:02:00.000Z"
+        )
+
+        try repository.movePage(id: "child", parentID: "target", updatedAt: "2026-05-21T10:03:00.000Z")
+        XCTAssertEqual(try repository.page(id: "child")?.parentID, "target")
+
+        try repository.movePage(id: "child", parentID: nil, updatedAt: "2026-05-21T10:04:00.000Z")
+        XCTAssertNil(try repository.page(id: "child")?.parentID)
+    }
+
+    func testMovePageRejectsSelfAndDescendantTargets() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "child",
+            title: "Child",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:01:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "grandchild",
+            title: "Grandchild",
+            parentID: "child",
+            createdAt: "2026-05-21T10:02:00.000Z"
+        )
+
+        XCTAssertThrowsError(try repository.movePage(id: "child", parentID: "child", updatedAt: "2026-05-21T10:03:00.000Z"))
+        XCTAssertThrowsError(try repository.movePage(id: "child", parentID: "grandchild", updatedAt: "2026-05-21T10:04:00.000Z"))
+    }
+
     func testRestorePageReturnsPageTreeToActivePages() throws {
         let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
         try repository.bootstrap()

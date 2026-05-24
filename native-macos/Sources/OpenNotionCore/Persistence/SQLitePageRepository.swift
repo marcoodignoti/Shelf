@@ -1,6 +1,10 @@
 import Foundation
 import GRDB
 
+public enum SQLitePageRepositoryError: Error, Equatable {
+    case invalidMove(String)
+}
+
 public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
     private let databasePool: DatabasePool
     private let databasePath: String
@@ -251,6 +255,54 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
                 createdAt: createdAt,
                 updatedAt: createdAt
             )
+        }
+    }
+
+    public func movePage(id: String, parentID: String?, updatedAt: String) throws {
+        try backupBeforeFirstLiveWriteIfNeeded()
+
+        try databasePool.write { db in
+            if let parentID {
+                guard parentID != id else {
+                    throw SQLitePageRepositoryError.invalidMove("page cannot be moved under itself")
+                }
+
+                let parentExists = try String.fetchOne(
+                    db,
+                    sql: "SELECT id FROM pages WHERE id = ? AND is_deleted = 0",
+                    arguments: [parentID])
+                guard parentExists != nil else {
+                    throw SQLitePageRepositoryError.invalidMove("target parent page does not exist")
+                }
+
+                let descendantMatch = try String.fetchOne(
+                    db,
+                    sql: """
+                        WITH RECURSIVE descendants(id) AS (
+                            SELECT id FROM pages WHERE parent_id = ?
+                            UNION ALL
+                            SELECT pages.id FROM pages
+                            JOIN descendants ON pages.parent_id = descendants.id
+                        )
+                        SELECT id FROM descendants WHERE id = ? LIMIT 1
+                        """,
+                    arguments: [id, parentID])
+                guard descendantMatch == nil else {
+                    throw SQLitePageRepositoryError.invalidMove("page cannot be moved under one of its descendants")
+                }
+            }
+
+            try db.execute(
+                sql: "UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?",
+                arguments: StatementArguments([
+                    parentID?.databaseValue ?? DatabaseValue.null,
+                    updatedAt.databaseValue,
+                    id.databaseValue
+                ]))
+
+            guard db.changesCount > 0 else {
+                throw SQLitePageRepositoryError.invalidMove("page does not exist")
+            }
         }
     }
 

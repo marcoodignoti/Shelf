@@ -117,10 +117,41 @@ struct SidebarView: View {
             store.duplicatePage(pageID: page.id)
         }
 
+        Menu("Move to") {
+            Button("Top Level") {
+                store.movePage(pageID: page.id, parentID: nil)
+            }
+            .disabled(page.parentID == nil)
+
+            Divider()
+
+            ForEach(moveTargetPages(for: page)) { target in
+                Button(target.title.isEmpty ? "Untitled" : target.title) {
+                    expandedPageIDs.insert(target.id)
+                    store.movePage(pageID: page.id, parentID: target.id)
+                }
+                .disabled(page.parentID == target.id)
+            }
+        }
+
         Divider()
 
         Button("Move to Trash", role: .destructive) {
             store.requestDeletePage(pageID: page.id)
+        }
+    }
+
+    private func moveTargetPages(for page: Page) -> [Page] {
+        let excludedIDs = Set([page.id] + descendantIDs(of: page.id))
+        return store.pages.filter { candidate in
+            !excludedIDs.contains(candidate.id)
+        }
+    }
+
+    private func descendantIDs(of pageID: String) -> [String] {
+        let children = store.pages.filter { $0.parentID == pageID }
+        return children.flatMap { child in
+            [child.id] + descendantIDs(of: child.id)
         }
     }
 
