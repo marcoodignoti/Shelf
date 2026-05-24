@@ -68,6 +68,57 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(detail.content, "[{\"type\":\"paragraph\",\"content\":\"Body\"}]")
     }
 
+    func testDuplicatePageCopiesContentMetadataAndParentOnly() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "parent",
+            title: "Parent",
+            parentID: nil,
+            createdAt: "2026-05-21T09:00:00.000Z"
+        )
+        _ = try repository.createPage(
+            id: "source",
+            title: "Original",
+            parentID: "parent",
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        try repository.updatePage(
+            id: "source",
+            updates: PageUpdates(
+                content: "source content",
+                searchText: "source search",
+                icon: "pin",
+                coverURL: "asset://cover.png",
+                isFavorite: 1,
+                isTemplate: 1,
+                isDatabase: 1,
+                databaseSchema: "{\"columns\":[]}",
+                properties: "{\"status\":\"todo\"}"
+            ),
+            updatedAt: "2026-05-21T10:01:00.000Z"
+        )
+
+        let duplicate = try repository.duplicatePage(
+            sourceID: "source",
+            id: "copy",
+            createdAt: "2026-05-21T10:02:00.000Z"
+        )
+
+        XCTAssertEqual(duplicate.id, "copy")
+        XCTAssertEqual(duplicate.title, "Copy of Original")
+        XCTAssertEqual(duplicate.parentID, "parent")
+        XCTAssertEqual(duplicate.content, "source content")
+        XCTAssertEqual(duplicate.searchText, "source search")
+        XCTAssertEqual(duplicate.icon, "pin")
+        XCTAssertEqual(duplicate.coverURL, "asset://cover.png")
+        XCTAssertEqual(duplicate.isFavorite, 0)
+        XCTAssertEqual(duplicate.isTemplate, 0)
+        XCTAssertEqual(duplicate.isDatabase, 1)
+        XCTAssertEqual(duplicate.databaseSchema, "{\"columns\":[]}")
+        XCTAssertEqual(duplicate.properties, "{\"status\":\"todo\"}")
+    }
+
     func testDeletePageMovesPageTreeToTrash() throws {
         let databasePath = temporaryDatabasePath()
         let repository = try SQLitePageRepository(databasePath: databasePath)

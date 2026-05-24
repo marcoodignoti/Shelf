@@ -1,5 +1,9 @@
 import Foundation
 
+public enum PageRepositoryError: Error, Equatable {
+    case pageNotFound
+}
+
 public protocol PageRepository: Sendable {
     var safetyStatus: DatabaseSafetyStatus { get }
 
@@ -9,6 +13,7 @@ public protocol PageRepository: Sendable {
     func page(id: String) throws -> Page?
     func searchPages(query: String) throws -> [Page]
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page
+    func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws
     func deletePage(id: String) throws
     func restorePage(id: String) throws
