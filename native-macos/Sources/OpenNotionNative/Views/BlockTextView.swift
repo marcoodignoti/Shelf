@@ -63,6 +63,7 @@ struct BlockTextView: NSViewRepresentable {
         textView.isSelectable = isEditable
 
         if textView.string != text {
+            textView.hasUserTextUndo = false
             textView.string = text
         }
 
@@ -98,6 +99,10 @@ struct BlockTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView,
                   parent.text != textView.string else {
                 return
+            }
+            if let editorTextView = textView as? EditorNSTextView,
+               !editorTextView.isApplyingUndo {
+                editorTextView.hasUserTextUndo = true
             }
             parent.text = textView.string
             updateMeasuredHeight(for: textView)
@@ -143,6 +148,8 @@ struct BlockTextView: NSViewRepresentable {
 final class EditorNSTextView: NSTextView {
     var commandHandler: ((BlockTextCommand) -> Bool)?
     var focusHandler: (() -> Void)?
+    var hasUserTextUndo = false
+    var isApplyingUndo = false
     private var layoutHandler: (() -> Void)?
 
     func setLayoutHandler(_ handler: @escaping (EditorNSTextView) -> Void) {
@@ -237,7 +244,7 @@ final class EditorNSTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if handlesStructuralUndo(event) {
+        if handlesUndo(event) {
             return true
         }
 
@@ -245,21 +252,40 @@ final class EditorNSTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if handlesStructuralUndo(event) {
+        if handlesUndo(event) {
             return
         }
 
         super.keyDown(with: event)
     }
 
-    private func handlesStructuralUndo(_ event: NSEvent) -> Bool {
+    override func tryToPerform(_ action: Selector, with object: Any?) -> Bool {
+        if action == Selector(("undo:")),
+           performUndo() {
+            return true
+        }
+
+        return super.tryToPerform(action, with: object)
+    }
+
+    private func handlesUndo(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
               event.charactersIgnoringModifiers?.lowercased() == "z" else {
             return false
         }
 
-        if undoManager?.canUndo == true {
-            return false
+        return performUndo()
+    }
+
+    private func performUndo() -> Bool {
+        if hasUserTextUndo,
+           undoManager?.canUndo == true {
+            isApplyingUndo = true
+            undoManager?.undo()
+            didChangeText()
+            isApplyingUndo = false
+            hasUserTextUndo = undoManager?.canUndo == true
+            return true
         }
 
         return commandHandler?(.undoStructuralEdit) == true

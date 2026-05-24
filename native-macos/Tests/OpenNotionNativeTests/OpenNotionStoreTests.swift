@@ -309,6 +309,7 @@ final class OpenNotionStoreTests: XCTestCase {
             return true
         }
         textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.hasUserTextUndo = true
         XCTAssertEqual(textView.string, "x")
         XCTAssertEqual(textView.undoManager?.canUndo, true)
         let event = try XCTUnwrap(NSEvent.keyEvent(
@@ -324,7 +325,8 @@ final class OpenNotionStoreTests: XCTestCase {
             keyCode: 6
         ))
 
-        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        XCTAssertTrue(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(textView.string, "")
         XCTAssertEqual(commands, [])
     }
 
