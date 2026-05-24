@@ -253,8 +253,12 @@ final class EditorNSTextView: NSTextView {
     }
 
     private func handlesStructuralUndo(_ event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
               event.charactersIgnoringModifiers?.lowercased() == "z" else {
+            return false
+        }
+
+        if undoManager?.canUndo == true {
             return false
         }
 

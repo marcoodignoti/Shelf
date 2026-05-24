@@ -240,6 +240,62 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(commands, [.undoStructuralEdit])
     }
 
+    func testEditorTextViewCommandShiftZDoesNotTriggerStructuralUndoCommand() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command, .shift],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "Z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [])
+    }
+
+    func testEditorTextViewCommandZKeepsTextUndoPriority() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        textView.allowsUndo = true
+        textView.string = ""
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120), styleMask: [], backing: .buffered, defer: false)
+        window.contentView = textView
+        window.makeFirstResponder(textView)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(textView.string, "x")
+        XCTAssertEqual(textView.undoManager?.canUndo, true)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [])
+    }
+
     func testEditorTextViewClampsSelectionOffset() {
         let textView = EditorNSTextView(frame: .zero)
         textView.string = "Hello"
