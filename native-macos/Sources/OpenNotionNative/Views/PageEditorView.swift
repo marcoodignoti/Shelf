@@ -6,6 +6,8 @@ struct PageEditorView: View {
     let page: Page
     let onSave: (String, BlockDocument) -> Bool
     let onToggleFavorite: () -> Bool
+    let onDuplicate: () -> Bool
+    let onCreateSubpage: () -> Void
     let onDelete: () -> Void
 
     @State private var draft: PageEditorDraft
@@ -25,6 +27,8 @@ struct PageEditorView: View {
         page: Page,
         onSave: @escaping (String, BlockDocument) -> Bool,
         onToggleFavorite: @escaping () -> Bool,
+        onDuplicate: @escaping () -> Bool,
+        onCreateSubpage: @escaping () -> Void,
         onDelete: @escaping () -> Void
     ) {
         let decodedDocument = (try? BlockNoteCodec.decode(page.content)) ?? .empty
@@ -34,6 +38,8 @@ struct PageEditorView: View {
         self.page = page
         self.onSave = onSave
         self.onToggleFavorite = onToggleFavorite
+        self.onDuplicate = onDuplicate
+        self.onCreateSubpage = onCreateSubpage
         self.onDelete = onDelete
         self.startsAsUntitledEmptyPage = isUntitledEmptyPage
         _draft = State(initialValue: PageEditorDraft(
@@ -137,6 +143,16 @@ struct PageEditorView: View {
                 .help(page.isFavorite == 1 ? "Remove from favorites" : "Add to favorites")
 
                 Menu {
+                    Button("New Subpage") {
+                        onCreateSubpage()
+                    }
+
+                    Button("Duplicate") {
+                        _ = onDuplicate()
+                    }
+
+                    Divider()
+
                     Button("Move to Trash", role: .destructive) {
                         onDelete()
                     }

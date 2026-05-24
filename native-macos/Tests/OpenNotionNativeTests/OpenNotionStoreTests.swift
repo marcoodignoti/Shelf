@@ -79,6 +79,19 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedPage?.id, "copy-one")
     }
 
+    func testCreatingSubpageSelectsChildAndSetsParent() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "parent", title: "Parent", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        store.createPage(parentID: "parent")
+
+        XCTAssertEqual(store.selectedPage?.parentID, "parent")
+        XCTAssertEqual(repository.pages.first?.parentID, "parent")
+    }
+
     func testLoadFetchesSelectedPageBodyAfterMetadata() {
         let repository = RecordingPageRepository(pages: [
             Page(
