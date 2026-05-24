@@ -65,6 +65,33 @@ final class OpenNotionStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedPageID, "selected")
     }
 
+    func testDuplicatingPageSelectsDuplicateAndLoadsDetail() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "one", title: "One", content: "body", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        XCTAssertTrue(store.duplicatePage(pageID: "one"))
+
+        XCTAssertEqual(repository.duplicatedPageIDs, ["one"])
+        XCTAssertEqual(store.selectedPageID, "copy-one")
+        XCTAssertEqual(store.selectedPage?.id, "copy-one")
+    }
+
+    func testCreatingSubpageSelectsChildAndSetsParent() {
+        let repository = RecordingPageRepository(pages: [
+            Page(id: "parent", title: "Parent", createdAt: "2026-05-21T10:00:00.000Z", updatedAt: "2026-05-21T10:00:00.000Z")
+        ])
+        let store = OpenNotionStore(repository: repository)
+        store.load()
+
+        store.createPage(parentID: "parent")
+
+        XCTAssertEqual(store.selectedPage?.parentID, "parent")
+        XCTAssertEqual(repository.pages.first?.parentID, "parent")
+    }
+
     func testLoadFetchesSelectedPageBodyAfterMetadata() {
         let repository = RecordingPageRepository(pages: [
             Page(
@@ -172,6 +199,143 @@ final class OpenNotionStoreTests: XCTestCase {
 
         XCTAssertTrue(receivedTextView === textView)
     }
+
+    func testEditorTextViewSpaceTriggersMarkdownShortcutCommand() {
+        let textView = EditorNSTextView(frame: .zero)
+        var commands: [BlockTextCommand] = []
+        textView.string = "#"
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+
+        textView.insertText(" ", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(commands, [.applyMarkdownShortcut])
+        XCTAssertEqual(textView.string, "#")
+    }
+
+    func testEditorTextViewCommandZTriggersStructuralUndoCommand() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertTrue(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [.undoStructuralEdit])
+    }
+
+    func testEditorTextViewCommandShiftZDoesNotTriggerStructuralUndoCommand() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command, .shift],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "Z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [])
+    }
+
+    func testEditorTextViewCommandZKeepsTextUndoPriority() throws {
+        let textView = EditorNSTextView(frame: .zero)
+        textView.allowsUndo = true
+        textView.string = ""
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120), styleMask: [], backing: .buffered, defer: false)
+        window.contentView = textView
+        window.makeFirstResponder(textView)
+        var commands: [BlockTextCommand] = []
+        textView.commandHandler = { command in
+            commands.append(command)
+            return true
+        }
+        textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(textView.string, "x")
+        XCTAssertEqual(textView.undoManager?.canUndo, true)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+
+        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        XCTAssertEqual(commands, [])
+    }
+
+    func testEditorTextViewClampsSelectionOffset() {
+        let textView = EditorNSTextView(frame: .zero)
+        textView.string = "Hello"
+
+        textView.setSelectedUTF16Offset(99)
+
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+    }
+
+    func testTitleSubmitFocusesFirstEditableBodyBlock() {
+        let document = BlockDocument(blocks: [
+            Block(id: "divider", kind: .divider, text: "", rawJSON: nil),
+            Block(id: "body", kind: .paragraph, text: "", rawJSON: nil)
+        ])
+
+        XCTAssertEqual(PageEditorFocus.firstEditableBlockID(in: document), "body")
+    }
+
+    func testBlockEditorUndoStackRestoresDocumentFocusAndSelection() {
+        var document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "Hello", rawJSON: nil),
+            Block(id: "b", kind: .paragraph, text: "World", rawJSON: nil)
+        ])
+        var focusedBlockID: String? = "b"
+        var selectionOffsets = ["b": 0]
+        var undoStack = BlockEditorUndoStack()
+
+        undoStack.record(document: document, focusedBlockID: focusedBlockID, selectionOffsets: selectionOffsets)
+        document = BlockDocument(blocks: [
+            Block(id: "a", kind: .paragraph, text: "HelloWorld", rawJSON: nil)
+        ])
+        focusedBlockID = "a"
+        selectionOffsets = ["a": 5]
+
+        XCTAssertTrue(undoStack.restorePrevious(document: &document, focusedBlockID: &focusedBlockID, selectionOffsets: &selectionOffsets))
+        XCTAssertEqual(document.blocks.map(\.id), ["a", "b"])
+        XCTAssertEqual(document.blocks.map(\.text), ["Hello", "World"])
+        XCTAssertEqual(focusedBlockID, "b")
+        XCTAssertEqual(selectionOffsets, ["b": 0])
+    }
 }
 
 private final class RecordingPageRepository: PageRepository, @unchecked Sendable {
@@ -181,6 +345,7 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
     private(set) var restoredPageIDs: [String] = []
     private(set) var permanentlyDeletedPageIDs: [String] = []
     private(set) var fetchedPageIDs: [String] = []
+    private(set) var duplicatedPageIDs: [String] = []
 
     init(pages: [Page]) {
         self.pages = pages
@@ -209,6 +374,29 @@ private final class RecordingPageRepository: PageRepository, @unchecked Sendable
 
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page {
         let page = Page(id: id, title: title, parentID: parentID, createdAt: createdAt, updatedAt: createdAt)
+        pages.insert(page, at: 0)
+        return page
+    }
+
+    func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page {
+        duplicatedPageIDs.append(sourceID)
+        guard let source = pages.first(where: { $0.id == sourceID }) else {
+            throw PageRepositoryError.pageNotFound
+        }
+        let page = Page(
+            id: "copy-\(source.id)",
+            title: "Copy of \(source.title)",
+            parentID: source.parentID,
+            content: source.content,
+            searchText: source.searchText,
+            icon: source.icon,
+            coverURL: source.coverURL,
+            isDatabase: source.isDatabase,
+            databaseSchema: source.databaseSchema,
+            properties: source.properties,
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
         pages.insert(page, at: 0)
         return page
     }

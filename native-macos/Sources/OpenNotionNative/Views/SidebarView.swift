@@ -113,6 +113,10 @@ struct SidebarView: View {
             store.toggleFavorite(pageID: page.id)
         }
 
+        Button("Duplicate") {
+            store.duplicatePage(pageID: page.id)
+        }
+
         Divider()
 
         Button("Move to Trash", role: .destructive) {

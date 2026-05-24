@@ -8,6 +8,8 @@ struct BlockRowView: View {
     @Binding var focusedBlockID: String?
     @Binding var draggingBlockID: String?
     @Binding var activeDropLocation: BlockDropLocation?
+    @Binding var selectionOffsets: [String: Int]
+    @Binding var undoStack: BlockEditorUndoStack
     let prefix: EditorBlockPrefix
     let onRequestScroll: (String, UnitPoint) -> Void
     @State private var isHovering = false
@@ -240,11 +242,15 @@ struct BlockRowView: View {
                     ),
                     measuredHeight: $measuredTextHeight,
                     isFocused: isFocused,
+                    selectionOffset: selectionOffsets[block.id],
                     font: textFont,
                     textColor: .labelColor,
                     isEditable: block.kind.acceptsText,
                     onFocus: {
                         focusedBlockID = block.id
+                    },
+                    onSelectionApplied: {
+                        selectionOffsets[block.id] = nil
                     },
                     onCommand: handleCommand
                 )
@@ -351,17 +357,29 @@ struct BlockRowView: View {
             if case .code = block.kind {
                 return false
             }
-            guard let focusID = document.splitBlock(id: block.id, at: location) else {
+            let snapshot = undoSnapshot
+            guard let focus = document.splitBlockForEditing(id: block.id, at: location) else {
                 return false
             }
-            focusedBlockID = focusID
+            undoStack.record(snapshot)
+            selectionOffsets[focus.blockID] = focus.utf16Offset
+            focusedBlockID = focus.blockID
             return true
         case .deleteBackwardAtBeginning:
+            let snapshot = undoSnapshot
+            if let focus = document.mergeBlockWithPrevious(id: block.id) {
+                undoStack.record(snapshot)
+                selectionOffsets[focus.blockID] = focus.utf16Offset
+                focusedBlockID = focus.blockID
+                return true
+            }
+
             guard block.text.isEmpty,
                   let focusID = document.deleteBlock(id: block.id),
                   focusID != block.id else {
                 return false
             }
+            undoStack.record(snapshot)
             focusedBlockID = focusID
             return true
         case .moveToPreviousBlock:
@@ -392,6 +410,14 @@ struct BlockRowView: View {
             selectedSlashIndex = min(slashStyles.count - 1, selectedSlashIndex + 1)
             onRequestScroll(block.id, .center)
             return true
+        case .applyMarkdownShortcut:
+            let snapshot = undoSnapshot
+            guard document.applyMarkdownShortcut(id: block.id) else {
+                return false
+            }
+            undoStack.record(snapshot)
+            focusedBlockID = block.id
+            return true
         case .cancelMenu:
             guard shouldShowSlashMenu else {
                 return false
@@ -399,7 +425,21 @@ struct BlockRowView: View {
             dismissedSlashText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
             selectedSlashIndex = 0
             return true
+        case .undoStructuralEdit:
+            return undoStack.restorePrevious(
+                document: &document,
+                focusedBlockID: &focusedBlockID,
+                selectionOffsets: &selectionOffsets
+            )
         }
+    }
+
+    private var undoSnapshot: BlockEditorUndoSnapshot {
+        BlockEditorUndoSnapshot(
+            document: document,
+            focusedBlockID: focusedBlockID,
+            selectionOffsets: selectionOffsets
+        )
     }
 }
 

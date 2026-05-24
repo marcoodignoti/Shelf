@@ -1,24 +1,28 @@
 import AppKit
 import SwiftUI
 
-enum BlockTextCommand {
+enum BlockTextCommand: Equatable {
     case insertNewline(Int)
     case deleteBackwardAtBeginning
     case moveToPreviousBlock
     case moveToNextBlock
     case moveToPreviousMenuItem
     case moveToNextMenuItem
+    case applyMarkdownShortcut
     case cancelMenu
+    case undoStructuralEdit
 }
 
 struct BlockTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var measuredHeight: CGFloat
     let isFocused: Bool
+    let selectionOffset: Int?
     let font: NSFont
     let textColor: NSColor
     let isEditable: Bool
     let onFocus: () -> Void
+    let onSelectionApplied: () -> Void
     let onCommand: (BlockTextCommand) -> Bool
 
     func makeCoordinator() -> Coordinator {
@@ -67,10 +71,18 @@ struct BlockTextView: NSViewRepresentable {
 
             guard isFocused,
                   textView.window?.firstResponder !== textView else {
+                if isFocused, let selectionOffset {
+                    textView.setSelectedUTF16Offset(selectionOffset)
+                    onSelectionApplied()
+                }
                 return
             }
 
             textView.window?.makeFirstResponder(textView)
+            if let selectionOffset {
+                textView.setSelectedUTF16Offset(selectionOffset)
+                onSelectionApplied()
+            }
         }
     }
 
@@ -155,6 +167,11 @@ final class EditorNSTextView: NSTextView {
         layoutHandler?()
     }
 
+    func setSelectedUTF16Offset(_ offset: Int) {
+        let clampedOffset = min(max(offset, 0), string.utf16.count)
+        setSelectedRange(NSRange(location: clampedOffset, length: 0))
+    }
+
     override func doCommand(by selector: Selector) {
         let range = selectedRange()
 
@@ -196,5 +213,55 @@ final class EditorNSTextView: NSTextView {
         }
 
         super.doCommand(by: selector)
+    }
+
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        let insertedText: String?
+        if let string = insertString as? String {
+            insertedText = string
+        } else if let attributedString = insertString as? NSAttributedString {
+            insertedText = attributedString.string
+        } else {
+            insertedText = nil
+        }
+
+        let range = selectedRange()
+        if insertedText == " ",
+           range.length == 0,
+           range.location == string.utf16.count,
+           commandHandler?(.applyMarkdownShortcut) == true {
+            return
+        }
+
+        super.insertText(insertString, replacementRange: replacementRange)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlesStructuralUndo(event) {
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if handlesStructuralUndo(event) {
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
+    private func handlesStructuralUndo(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "z" else {
+            return false
+        }
+
+        if undoManager?.canUndo == true {
+            return false
+        }
+
+        return commandHandler?(.undoStructuralEdit) == true
     }
 }

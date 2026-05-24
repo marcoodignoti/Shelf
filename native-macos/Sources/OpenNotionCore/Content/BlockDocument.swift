@@ -43,6 +43,40 @@ public struct BlockDocument: Equatable, Sendable {
     }
 
     @discardableResult
+    public mutating func applyMarkdownShortcut(id: String) -> Bool {
+        guard let index = blocks.firstIndex(where: { $0.id == id }),
+              blocks[index].kind.acceptsText,
+              blocks[index].kind != .code,
+              let nextKind = BlockKind.markdownShortcut(blocks[index].text) else {
+            return false
+        }
+
+        blocks[index].kind = nextKind
+        blocks[index].text = ""
+        blocks[index].rawJSON = nil
+        return true
+    }
+
+    @discardableResult
+    public mutating func mergeBlockWithPrevious(id: String) -> BlockFocusTarget? {
+        guard blocks.count > 1,
+              let index = blocks.firstIndex(where: { $0.id == id }),
+              index > 0,
+              blocks[index].kind.acceptsText,
+              blocks[index - 1].kind.acceptsText else {
+            return nil
+        }
+
+        let current = blocks[index]
+        let previous = blocks[index - 1]
+        let caretOffset = previous.text.utf16.count
+        blocks[index - 1].text = previous.text + current.text
+        blocks[index - 1].rawJSON = nil
+        blocks.remove(at: index)
+        return BlockFocusTarget(blockID: previous.id, utf16Offset: caretOffset)
+    }
+
+    @discardableResult
     public mutating func splitBlock(id: String, at utf16Offset: Int, newID: String = UUID().uuidString) -> String? {
         guard let index = blocks.firstIndex(where: { $0.id == id }) else {
             return nil
@@ -74,6 +108,19 @@ public struct BlockDocument: Equatable, Sendable {
             at: index + 1
         )
         return newID
+    }
+
+    @discardableResult
+    public mutating func splitBlockForEditing(
+        id: String,
+        at utf16Offset: Int,
+        newID: String = UUID().uuidString
+    ) -> BlockFocusTarget? {
+        guard let focusID = splitBlock(id: id, at: utf16Offset, newID: newID) else {
+            return nil
+        }
+
+        return BlockFocusTarget(blockID: focusID, utf16Offset: 0)
     }
 
     @discardableResult
@@ -139,6 +186,16 @@ public struct Block: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct BlockFocusTarget: Equatable, Sendable {
+    public var blockID: String
+    public var utf16Offset: Int
+
+    public init(blockID: String, utf16Offset: Int) {
+        self.blockID = blockID
+        self.utf16Offset = utf16Offset
+    }
+}
+
 public enum BlockKind: Equatable, Sendable {
     case paragraph
     case heading(level: Int)
@@ -193,6 +250,31 @@ public enum BlockKind: Equatable, Sendable {
             return self
         case .divider, .unknown:
             return .paragraph
+        }
+    }
+
+    fileprivate static func markdownShortcut(_ text: String) -> BlockKind? {
+        switch text {
+        case "#":
+            return .heading(level: 1)
+        case "##":
+            return .heading(level: 2)
+        case "###":
+            return .heading(level: 3)
+        case "####":
+            return .heading(level: 4)
+        case "-", "*":
+            return .bulletListItem
+        case "1.":
+            return .numberedListItem
+        case "[]", "[ ]":
+            return .checkListItem(checked: false)
+        case "```":
+            return .code
+        case "---":
+            return .divider
+        default:
+            return nil
         }
     }
 }

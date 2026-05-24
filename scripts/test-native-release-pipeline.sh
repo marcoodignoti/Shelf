@@ -39,7 +39,11 @@ assert_contains "scripts/package-native-macos.sh" "swift build --configuration r
 assert_contains "scripts/package-native-macos.sh" 'APP_NAME.*OpenNotion'
 assert_contains "scripts/package-native-macos.sh" 'APP_BUNDLE=.*APP_NAME.*\.app'
 assert_contains "scripts/package-native-macos.sh" "org.opennotion.native"
+assert_contains "scripts/package-native-macos.sh" "native-macos/Resources/Entitlements.plist"
+assert_contains "scripts/package-native-macos.sh" "native-macos/Resources/AppIcon.icns"
 assert_not_contains "scripts/package-native-macos.sh" 'BUNDLE_IDENTIFIER=.*org.opennotion.desktop'
+assert_not_contains "scripts/package-native-macos.sh" "src-tauri/Entitlements.plist"
+assert_not_contains "scripts/package-native-macos.sh" "src-tauri/icons/icon.icns"
 assert_contains "scripts/package-native-macos.sh" "codesign"
 assert_contains "scripts/package-native-macos.sh" "hdiutil create"
 assert_contains "scripts/package-native-macos.sh" "notarytool submit"
@@ -64,5 +68,10 @@ assert_not_contains ".github/workflows/unsigned-beta-release.yml" "windows-lates
 
 assert_contains ".github/workflows/ci.yml" "scripts/package-native-macos.sh"
 assert_contains ".github/workflows/ci.yml" "Native release contract"
+
+assert_contains "docs/release/macos.md" "native-macos"
+assert_contains "docs/release/macos.md" "dist/native-release"
+assert_not_contains "docs/release/macos.md" "npm run tauri build"
+assert_not_contains "docs/release/macos.md" "src-tauri/target"
 
 echo "native release pipeline contract ok"

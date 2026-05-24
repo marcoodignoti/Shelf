@@ -128,6 +128,27 @@ final class OpenNotionStore {
     }
 
     @discardableResult
+    func duplicatePage(pageID: String) -> Bool {
+        do {
+            let now = dateFormatter.string(from: Date())
+            let page = try repository.duplicatePage(
+                sourceID: pageID,
+                id: UUID().uuidString,
+                createdAt: now
+            )
+            try reloadPages()
+            selectedPageID = page.id
+            selectedPageDetail = page
+            safetyStatus = repository.safetyStatus
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
     func toggleFavorite(pageID: String) -> Bool {
         guard let page = pages.first(where: { $0.id == pageID }) else {
             return false
@@ -358,6 +379,7 @@ private struct UnavailablePageRepository: PageRepository {
     func page(id: String) throws -> Page? { throw error }
     func searchPages(query: String) throws -> [Page] { throw error }
     func createPage(id: String, title: String, parentID: String?, createdAt: String) throws -> Page { throw error }
+    func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page { throw error }
     func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws { throw error }
     func deletePage(id: String) throws { throw error }
     func restorePage(id: String) throws { throw error }

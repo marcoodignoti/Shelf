@@ -185,6 +185,75 @@ public final class SQLitePageRepository: PageRepository, @unchecked Sendable {
         }
     }
 
+    public func duplicatePage(sourceID: String, id: String, createdAt: String) throws -> Page {
+        try backupBeforeFirstLiveWriteIfNeeded()
+
+        return try databasePool.write { db in
+            guard let sourceRow = try Row.fetchOne(
+                db,
+                sql: Self.pageSelectSQL + "WHERE id = ? AND is_deleted = 0",
+                arguments: [sourceID]
+            ) else {
+                throw PageRepositoryError.pageNotFound
+            }
+
+            let source = Page(row: sourceRow)
+            let sortOrder = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COALESCE(MIN(sort_order), 0) - 1
+                    FROM pages
+                    WHERE is_deleted = 0
+                      AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
+                    """,
+                arguments: [source.parentID, source.parentID]) ?? -1
+            let title = "Copy of \(source.title)"
+
+            try db.execute(
+                sql: """
+                    INSERT INTO pages (
+                        id, title, parent_id, content, search_text, icon, cover_url,
+                        is_deleted, is_favorite, is_template, is_database,
+                        database_schema, properties, sort_order, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)
+                    """,
+                arguments: [
+                    id,
+                    title,
+                    source.parentID,
+                    source.content,
+                    source.searchText,
+                    source.icon,
+                    source.coverURL,
+                    source.isDatabase,
+                    source.databaseSchema,
+                    source.properties,
+                    sortOrder,
+                    createdAt,
+                    createdAt
+                ])
+
+            return Page(
+                id: id,
+                title: title,
+                parentID: source.parentID,
+                content: source.content,
+                searchText: source.searchText,
+                icon: source.icon,
+                coverURL: source.coverURL,
+                isFavorite: 0,
+                isTemplate: 0,
+                isDatabase: source.isDatabase,
+                databaseSchema: source.databaseSchema,
+                properties: source.properties,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            )
+        }
+    }
+
     public func updatePage(id: String, updates: PageUpdates, updatedAt: String) throws {
         try backupBeforeFirstLiveWriteIfNeeded()
 

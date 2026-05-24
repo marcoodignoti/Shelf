@@ -119,6 +119,10 @@ private struct DetailView: View {
                 )
             } onToggleFavorite: {
                 store.toggleFavorite(pageID: page.id)
+            } onDuplicate: {
+                store.duplicatePage(pageID: page.id)
+            } onCreateSubpage: {
+                store.createPage(parentID: page.id)
             } onDelete: {
                 store.requestDeletePage(pageID: page.id)
             }

@@ -1,30 +1,19 @@
-# macOS Release Checklist
+# Native macOS Release Checklist
 
-OpenNotion can build an unsigned local app without Apple credentials. Public production distribution needs Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
+OpenNotion's active macOS product is the native SwiftUI app in `native-macos`.
+Public distribution needs Developer ID signing, hardened runtime, notarization,
+stapling, and Gatekeeper verification.
 
 ## Current Status
 
-Production macOS distribution is blocked until an Apple Developer Program account is available. This is not a code or CI failure:
+Unsigned/ad-hoc native builds are supported for development and private testing.
+Production distribution is blocked until an Apple Developer Program account and
+Developer ID Application certificate are available.
 
-- unsigned/ad-hoc local builds are supported for development and private testing
-- public distribution needs a Developer ID Application certificate
-- Developer ID certificates require a paid Apple Developer Program account
-- notarization also requires Apple developer credentials
-
-Until that account exists, `npm run release:verify:macos` must fail with an ad-hoc signing or missing Team ID message. That failure is the intended release gate.
-
-Allowed work before Apple Developer enrollment:
-
-- keep CI, tests, E2E, and unsigned Tauri bundles green
-- improve data safety, backup/restore, updater prep, logging, QA checklist, and app UX
-- share private tester builds only with the expectation that macOS will show unidentified developer warnings
+Until those credentials exist, local verification may pass only the unsigned
+artifact checks. A public release must run with `REQUIRE_DEVELOPER_ID=1`.
 
 ## Required Secrets
-
-- Apple Developer ID Application certificate in the signing keychain.
-- Apple Developer ID Installer certificate if adding installer package formats.
-- App Store Connect API key or a configured `notarytool` keychain profile.
-- Tauri signing/notarization configuration wired to those credentials.
 
 For GitHub Actions, configure these repository secrets:
 
@@ -38,41 +27,52 @@ APPLE_API_KEY_P8
 APPLE_TEAM_ID
 ```
 
-`APPLE_CERTIFICATE` is the base64 encoded `.p12` export of the Developer ID Application certificate. `APPLE_API_KEY_P8` is the full private key text downloaded from App Store Connect. The manual/tag workflow in `.github/workflows/macos-release.yml` writes that key to a temporary file and passes `APPLE_API_KEY_PATH` to Tauri.
+`APPLE_CERTIFICATE` is the base64 encoded `.p12` export of the Developer ID
+Application certificate. `APPLE_API_KEY_P8` is the full private key text
+downloaded from App Store Connect. The release workflow writes that key to a
+temporary file and passes `APPLE_API_KEY_PATH` to `scripts/package-native-macos.sh`.
 
 ## Local Release Gate
 
-Run these commands before any public build is considered releasable:
+Run these commands before any native build is considered ready for distribution:
 
 ```sh
 npm ci
-npm run check
-npm run tauri build
+npm run check:native
+scripts/test-native-release-pipeline.sh
+npm run release:package:macos
 npm run release:verify:macos
 ```
 
-`npm run release:verify:macos` is expected to fail for ad-hoc local builds. A releasable artifact must pass:
+Unsigned private builds may pass `npm run release:verify:macos` without
+Developer ID checks. A public release must also pass:
 
 ```sh
-codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/OpenNotion.app
-spctl --assess --type execute --verbose=4 src-tauri/target/release/bundle/macos/OpenNotion.app
-spctl --assess --type open --verbose=4 src-tauri/target/release/bundle/dmg/OpenNotion_<version>_<arch>.dmg
+REQUIRE_DEVELOPER_ID=1 npm run release:verify:macos
 ```
 
-The DMG filename depends on the app version and build architecture. `scripts/verify-macos-release.sh` derives the default name from `package.json` and the local machine architecture.
+The default native artifacts live in:
+
+```text
+dist/native-release/OpenNotion.app
+dist/native-release/OpenNotion_<version>_<arch>.dmg
+```
 
 ## Acceptance Criteria
 
-- `codesign -dv --verbose=4` does not report `Signature=adhoc`.
-- `codesign -dv --verbose=4` reports a real `TeamIdentifier`.
-- `codesign -dv --verbose=4` reports `Runtime Version`, proving hardened runtime is enabled.
-- `spctl` accepts both the app and DMG.
+- `CFBundleIdentifier` is `org.opennotion.native`.
+- The app executable is `OpenNotionNative`.
+- The app has the `opennotion://` URL scheme.
+- `codesign --verify --deep --strict --verbose=2` accepts the app.
+- For public releases, `codesign -dv --verbose=4` does not report `Signature=adhoc`.
+- For public releases, `codesign -dv --verbose=4` reports a real `TeamIdentifier`.
+- For public releases, `spctl` accepts both the app and DMG.
 - The DMG is stapled after successful notarization.
-- The app version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` matches the release tag.
 
 ## GitHub Release Workflow
 
-The `macOS Release` workflow runs only on manual dispatch or `v*` tags. It is separate from CI because unsigned PR builds must stay fast and green, while release builds require Apple credentials.
+The `macOS Release` workflow runs only on manual dispatch or `v*` tags. It is
+separate from CI because release builds require Apple credentials.
 
 Run it after secrets are configured:
 
