@@ -35,6 +35,10 @@ function textFromInlineContent(content: unknown): string {
       if (typeof item === "string") return item;
       if (typeof item !== "object" || item === null || Array.isArray(item)) return "";
       if ("text" in item && typeof item.text === "string") return item.text;
+      if ("type" in item && item.type === "math") {
+        const props = "props" in item && typeof item.props === "object" && item.props !== null ? item.props : {};
+        return "formula" in props && typeof props.formula === "string" ? props.formula : "";
+      }
       return "";
     })
     .filter(Boolean)

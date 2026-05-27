@@ -148,3 +148,28 @@ test("create, edit, reload, and search preserves page content", async ({ page })
   await expect(commandPalette.getByText(pageTitle, { exact: true })).toBeVisible();
   await expect(commandPalette.getByText(bodyText, { exact: true })).toBeVisible();
 });
+
+test("renders inline math typed with dollar delimiters", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Math Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
+
+  await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => (page.content ?? "").includes('"type":"math"') && (page.search_text ?? "").includes("\\nabla"));
+    },
+    { key: storageKey }
+  );
+
+  await page.reload();
+
+  await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("Math Smoke");
+  await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
+});

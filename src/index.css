@@ -272,6 +272,30 @@
     cursor: grabbing;
   }
 
+  .on-inline-math {
+    display: inline-flex;
+    max-width: min(100%, 48rem);
+    align-items: baseline;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0.35rem;
+    background: hsl(var(--muted) / 0.5);
+    color: hsl(var(--foreground));
+    padding: 0.05rem 0.25rem;
+    font: inherit;
+    vertical-align: baseline;
+    cursor: text;
+  }
+
+  .on-inline-math:hover {
+    background: hsl(var(--accent) / 0.75);
+  }
+
+  .on-inline-math .katex {
+    font-size: 1em;
+    line-height: 1.2;
+  }
+
   .opennotion-block-drag-handle {
     cursor: grab;
   }

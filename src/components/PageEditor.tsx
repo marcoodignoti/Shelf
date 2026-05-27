@@ -3,6 +3,7 @@ import "@blocknote/core/fonts/inter.css";
 import { SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
+import "katex/dist/katex.min.css";
 import { AddBlockButton, SideMenu, SideMenuController, useBlockNoteEditor, useExtensionState } from "@blocknote/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -14,6 +15,7 @@ import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
+import { normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
@@ -235,6 +237,7 @@ export function Editor({
   const saveTimeoutRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Partial<Page>>({});
   const isSavingRef = useRef(false);
+  const isNormalizingMathRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const subpageMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -279,6 +282,7 @@ export function Editor({
   const editor = useMemo(
     () =>
       BlockNoteEditor.create({
+        schema: openNotionEditorSchema,
         initialContent,
         uploadFile: async (file) => {
           const importedPath = await importEditorImage(file, page.id);
@@ -404,6 +408,14 @@ export function Editor({
   };
 
   const handleEditorChange = () => {
+    if (!isNormalizingMathRef.current) {
+      isNormalizingMathRef.current = true;
+      const normalized = normalizeMathInlineContentInEditor(editor);
+      isNormalizingMathRef.current = false;
+
+      if (normalized) return;
+    }
+
     const content = JSON.stringify(editor.document as Block[]);
     queueSave({ content, search_text: pageContentToSearchText(content) });
   };

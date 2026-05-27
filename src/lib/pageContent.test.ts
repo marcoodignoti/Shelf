@@ -47,6 +47,7 @@ describe("pageContentToSearchText", () => {
         type: "paragraph",
         content: [
           { type: "text", text: "Alpha", styles: {} },
+          { type: "math", props: { formula: "\\nabla \\cdot \\vec{E}" } },
           { type: "text", text: "Beta", styles: {} },
         ],
         children: [
@@ -64,7 +65,7 @@ describe("pageContentToSearchText", () => {
       },
     ]);
 
-    expect(pageContentToSearchText(content)).toBe("Alpha Beta Nested item Roadmap");
+    expect(pageContentToSearchText(content)).toBe("Alpha \\nabla \\cdot \\vec{E} Beta Nested item Roadmap");
   });
 
   it("keeps legacy plain text searchable", () => {
