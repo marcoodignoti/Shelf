@@ -9,10 +9,10 @@ export function AppNotice() {
   return (
     <div className="pointer-events-none fixed left-1/2 top-8 z-[120] w-[min(520px,calc(100vw-32px))] -translate-x-1/2">
       <div
-        className={`pointer-events-auto flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg ${
+        className={`on-notice pointer-events-auto flex items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm ${
           notice.kind === "error"
-            ? "border-destructive/30 bg-card text-destructive"
-            : "border-border bg-card text-foreground"
+            ? "on-notice-error"
+            : "text-foreground"
         }`}
       >
         <span>{notice.message}</span>

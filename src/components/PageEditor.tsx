@@ -163,7 +163,7 @@ function PageHeadingRail({
                 <span
                   className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
                 />
-                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 max-w-64 -translate-y-1/2 truncate rounded-lg border border-border bg-popover/95 px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-lg backdrop-blur-xl transition-all duration-150 group-hover/rail:-translate-x-1 group-hover/rail:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:-translate-x-1 group-focus-visible/railitem:opacity-100 ${isActive ? "border-foreground/20 text-foreground" : ""}`}>
+                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 max-w-64 -translate-y-1/2 truncate rounded-lg px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 transition-all duration-150 group-hover/rail:-translate-x-1 group-hover/rail:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:-translate-x-1 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
                   {item.title}
                 </span>
               </button>
@@ -475,7 +475,7 @@ function SubpageCreateMenu({
       width={224}
       placement={align === "end" ? "bottom-end" : "bottom-start"}
       onOpenChange={onOpenChange}
-      className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+      className="on-popover"
     >
       <button
         type="button"
@@ -1135,7 +1135,7 @@ export function Editor({
               width={224}
               placement="bottom-end"
               onOpenChange={setPageMenuOpen}
-              className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+              className="on-popover"
             >
               <button
                 type="button"
@@ -1196,7 +1196,7 @@ export function Editor({
               width={288}
               placement="bottom-end"
               onOpenChange={setMoveMenuOpen}
-              className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+              className="on-popover"
             >
               <div className="border-b border-border p-2">
                 <input
@@ -1283,7 +1283,7 @@ export function Editor({
               open={isIconMenuOpen}
               width={256}
               onOpenChange={setIsIconMenuOpen}
-              className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+              className="on-popover p-2"
             >
               <button
                 type="button"

@@ -402,7 +402,7 @@ export function DatabaseTableView({
                       draggable
                       role="button"
                       tabIndex={0}
-                      className={`w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background ${
+                      className={`on-liquid-card w-full rounded-md px-3 py-2 text-left text-sm ${
                         draggedRowId === row.id ? "opacity-45" : ""
                       }`}
                       onClick={() => {
@@ -493,7 +493,7 @@ export function DatabaseTableView({
                   onOpenChange={(open) => {
                     if (!open) setOpenPropertyId(null);
                   }}
-                  className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+                  className="on-popover p-2"
                 >
                   <PropertyEditor
                     property={property}
@@ -657,7 +657,7 @@ export function DatabaseTableView({
             open={templateMenuOpen}
             width={224}
             onOpenChange={setTemplateMenuOpen}
-            className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+            className="on-popover"
           >
             {rowTemplates.map((template) => (
               <button
@@ -675,7 +675,7 @@ export function DatabaseTableView({
       )}
       {rowContextMenu && contextMenuRow && (
         <div
-          className="fixed z-[160] w-44 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          className="fixed z-[160] w-44 overflow-y-auto on-popover"
           style={{
             left: rowContextMenu.left,
             top: rowContextMenu.top,

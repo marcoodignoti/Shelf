@@ -83,19 +83,37 @@
 
 @layer components {
   .on-icon-button {
-    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50;
+    border: 1px solid hsl(var(--border) / 0.34);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.22), transparent 42%),
+      hsl(var(--background) / 0.34);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(18px) saturate(1.25);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.28), 0 10px 26px hsl(222 28% 12% / 0.08);
+  }
+
+  .on-icon-button:hover {
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.28), transparent 42%),
+      hsl(var(--accent) / 0.55);
   }
 
   .on-glass-sidebar {
-    border-right: 1px solid hsl(var(--border) / 0.72);
-    background: hsl(var(--secondary) / 0.78);
-    backdrop-filter: blur(22px) saturate(1.15);
-    box-shadow: inset -1px 0 0 hsl(0 0% 100% / 0.22), 18px 0 44px hsl(222 28% 12% / 0.07);
+    border-right: 1px solid hsl(var(--border) / 0.56);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.2), transparent 32%),
+      hsl(var(--secondary) / 0.54);
+    -webkit-backdrop-filter: blur(30px) saturate(1.35);
+    backdrop-filter: blur(30px) saturate(1.35);
+    box-shadow: inset -1px 0 0 hsl(0 0% 100% / 0.22), 18px 0 48px hsl(222 28% 12% / 0.1);
   }
 
   .dark .on-glass-sidebar {
-    background: hsl(var(--secondary) / 0.72);
-    box-shadow: inset -1px 0 0 hsl(0 0% 100% / 0.06), 18px 0 44px hsl(0 0% 0% / 0.22);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.08), transparent 34%),
+      hsl(var(--secondary) / 0.52);
+    box-shadow: inset -1px 0 0 hsl(0 0% 100% / 0.08), 18px 0 52px hsl(0 0% 0% / 0.34);
   }
 
   @supports not ((backdrop-filter: blur(1px))) {
@@ -107,9 +125,12 @@
   .on-mode-switch {
     display: flex;
     border-radius: 0.75rem;
-    border: 1px solid hsl(var(--border) / 0.65);
-    background: hsl(var(--background) / 0.42);
+    border: 1px solid hsl(var(--border) / 0.42);
+    background: hsl(var(--background) / 0.34);
     padding: 3px;
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    backdrop-filter: blur(18px) saturate(1.2);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.18);
   }
 
   .on-mode-switch-segment {
@@ -127,9 +148,9 @@
   }
 
   .on-mode-switch-segment-active {
-    background: hsl(var(--background) / 0.88);
+    background: hsl(var(--background) / 0.7);
     color: hsl(var(--foreground));
-    box-shadow: 0 1px 8px hsl(222 28% 12% / 0.08);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), 0 8px 20px hsl(222 28% 12% / 0.08);
   }
 
   .on-studio-import-button {
@@ -141,7 +162,11 @@
   }
 
   .on-shell-row-active {
-    @apply bg-accent/75 text-foreground;
+    @apply text-foreground;
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.18), transparent 44%),
+      hsl(var(--accent) / 0.52);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.2), 0 8px 20px hsl(222 28% 12% / 0.06);
   }
 
   .on-scroll-fade {
@@ -259,7 +284,11 @@
   }
 
   .on-menu-item {
-    @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-popover-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+    @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-popover-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .on-menu-item:hover {
+    background: hsl(var(--accent) / 0.56);
   }
 
   .on-menu-item-danger {
@@ -267,7 +296,14 @@
   }
 
   .on-popover {
-    @apply overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl;
+    @apply overflow-hidden rounded-xl p-1 text-popover-foreground;
+    border: 1px solid hsl(var(--border) / 0.5);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.22), transparent 38%),
+      hsl(var(--popover) / 0.74);
+    -webkit-backdrop-filter: blur(26px) saturate(1.32);
+    backdrop-filter: blur(26px) saturate(1.32);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.24), 0 22px 60px hsl(222 28% 12% / 0.18);
   }
 
   .on-modal-overlay {
@@ -275,7 +311,32 @@
   }
 
   .on-modal-panel {
-    @apply overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl;
+    @apply overflow-hidden rounded-xl text-card-foreground;
+    border: 1px solid hsl(var(--border) / 0.52);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.22), transparent 38%),
+      hsl(var(--card) / 0.76);
+    -webkit-backdrop-filter: blur(28px) saturate(1.32);
+    backdrop-filter: blur(28px) saturate(1.32);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), 0 28px 72px hsl(222 28% 12% / 0.22);
+  }
+
+  .on-notice {
+    border: 1px solid hsl(var(--border) / 0.5);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.22), transparent 38%),
+      hsl(var(--card) / 0.76);
+    -webkit-backdrop-filter: blur(24px) saturate(1.28);
+    backdrop-filter: blur(24px) saturate(1.28);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), 0 20px 52px hsl(222 28% 12% / 0.18);
+  }
+
+  .on-notice-error {
+    border-color: hsl(var(--destructive) / 0.32);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.2), transparent 38%),
+      hsl(var(--card) / 0.78);
+    color: hsl(var(--destructive));
   }
 
   .on-modal-header {
@@ -291,7 +352,20 @@
   }
 
   .on-button-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-border bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+    @apply inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+    border: 1px solid hsl(var(--border) / 0.48);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.2), transparent 42%),
+      hsl(var(--secondary) / 0.58);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    backdrop-filter: blur(18px) saturate(1.2);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.2), 0 12px 28px hsl(222 28% 12% / 0.08);
+  }
+
+  .on-button-secondary:hover {
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.24), transparent 42%),
+      hsl(var(--accent) / 0.62);
   }
 
   .on-button-danger {
@@ -306,12 +380,99 @@
     @apply border-primary bg-accent text-foreground shadow-sm;
   }
 
+  .on-liquid-card {
+    border: 1px solid hsl(var(--border) / 0.46);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.18), transparent 42%),
+      hsl(var(--card) / 0.64);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+    backdrop-filter: blur(18px) saturate(1.18);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.18), 0 12px 30px hsl(222 28% 12% / 0.08);
+  }
+
+  .on-liquid-card:hover {
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.22), transparent 42%),
+      hsl(var(--background) / 0.68);
+  }
+
   .on-kbd {
     @apply rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground;
   }
 
   .on-heading-rail-arrow {
-    @apply flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-30;
+    @apply flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-30;
+    border: 1px solid hsl(var(--border) / 0.35);
+    background: hsl(var(--background) / 0.38);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.2), 0 10px 24px hsl(222 28% 12% / 0.08);
+  }
+
+  .on-heading-rail-arrow:hover {
+    background: hsl(var(--accent) / 0.58);
+  }
+
+  .on-heading-rail-preview {
+    border-color: hsl(var(--border) / 0.52);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.2), transparent 40%),
+      hsl(var(--popover) / 0.76);
+    -webkit-backdrop-filter: blur(24px) saturate(1.28);
+    backdrop-filter: blur(24px) saturate(1.28);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), 0 18px 44px hsl(222 28% 12% / 0.18);
+  }
+
+  .dark .on-popover,
+  .dark .on-modal-panel,
+  .dark .on-heading-rail-preview {
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.1), transparent 40%),
+      hsl(var(--popover) / 0.62);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.1), 0 24px 68px hsl(0 0% 0% / 0.38);
+  }
+
+  .bn-mantine .bn-toolbar,
+  .bn-mantine .mantine-Menu-dropdown,
+  .bn-mantine .bn-menu-dropdown,
+  .bn-mantine .bn-panel-popover,
+  .bn-mantine .bn-emoji-picker-popover,
+  .bn-mantine .bn-form-popover,
+  .bn-mantine .bn-suggestion-menu {
+    border: 1px solid hsl(var(--border) / 0.5) !important;
+    border-radius: 0.9rem !important;
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.2), transparent 38%),
+      hsl(var(--popover) / 0.72) !important;
+    color: hsl(var(--popover-foreground)) !important;
+    -webkit-backdrop-filter: blur(26px) saturate(1.32);
+    backdrop-filter: blur(26px) saturate(1.32);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), 0 22px 60px hsl(222 28% 12% / 0.18) !important;
+  }
+
+  .bn-toolbar .mantine-Button-root,
+  .bn-toolbar .mantine-ActionIcon-root,
+  .bn-mantine .mantine-Button-root[aria-controls*="dropdown"] {
+    border: 1px solid hsl(var(--border) / 0.32) !important;
+    border-radius: 0.65rem !important;
+    background: hsl(var(--background) / 0.36) !important;
+    color: hsl(var(--foreground)) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.16);
+    backdrop-filter: blur(14px) saturate(1.16);
+  }
+
+  .bn-toolbar .mantine-Button-root:hover,
+  .bn-toolbar .mantine-ActionIcon-root:hover,
+  .bn-mantine .mantine-Menu-item:hover,
+  .bn-mantine .bn-suggestion-menu-item:hover {
+    background: hsl(var(--accent) / 0.58) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .bn-toolbar .mantine-Button-root[data-selected],
+  .bn-toolbar .mantine-ActionIcon-root[data-selected] {
+    background: hsl(var(--accent) / 0.68) !important;
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.18), 0 8px 22px hsl(222 28% 12% / 0.08);
   }
 
   .bn-container,
@@ -423,13 +584,17 @@
     resize: vertical;
     border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;
-    background: hsl(var(--muted) / 0.35);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.16), transparent 44%),
+      hsl(var(--muted) / 0.36);
     color: hsl(var(--foreground));
     padding: 0.65rem 0.75rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 0.9rem;
     line-height: 1.45;
     outline: none;
+    -webkit-backdrop-filter: blur(16px) saturate(1.16);
+    backdrop-filter: blur(16px) saturate(1.16);
   }
 
   .on-formula-input:focus {
@@ -457,8 +622,12 @@
 
   .on-formula-preview-button:hover,
   .on-formula-preview-button:focus-visible {
-    background: hsl(var(--muted) / 0.24);
-    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.12);
+    background:
+      linear-gradient(135deg, hsl(0 0% 100% / 0.18), transparent 42%),
+      hsl(var(--muted) / 0.24);
+    -webkit-backdrop-filter: blur(16px) saturate(1.16);
+    backdrop-filter: blur(16px) saturate(1.16);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.18), 0 0 0 2px hsl(var(--ring) / 0.12);
     outline: none;
   }
 
