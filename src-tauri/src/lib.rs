@@ -10,7 +10,7 @@ use tauri::{Manager, Runtime};
 
 const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
-const STUDIO_PDF_MAX_BYTES: u64 = 200 * 1024 * 1024;
+const STUDIO_PDF_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const APP_SCHEMA_VERSION: &str = "1";
 
 #[derive(Clone)]
@@ -883,7 +883,7 @@ fn validated_pdf_file(path: &Path) -> Result<&'static str, String> {
 
     let file_size = metadata(path).map_err(|error| error.to_string())?.len();
     if file_size > STUDIO_PDF_MAX_BYTES {
-        return Err("PDF must be 200 MB or smaller".to_string());
+        return Err("PDF must be 512 MB or smaller".to_string());
     }
 
     let mut file = File::open(path).map_err(|error| error.to_string())?;
@@ -1685,6 +1685,23 @@ mod tests {
         let error = validated_pdf_file(&text_path).expect_err("reject text");
         assert_eq!(error, "PDF content is not valid");
         let _ = remove_file(&text_path);
+    }
+
+    #[test]
+    fn studio_pdf_validation_rejects_oversized_pdf() {
+        let large_path = temp_path("large.pdf");
+        let file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&large_path)
+            .expect("create large pdf");
+        file.set_len(STUDIO_PDF_MAX_BYTES + 1)
+            .expect("make sparse large pdf");
+
+        let error = validated_pdf_file(&large_path).expect_err("reject large pdf");
+        assert_eq!(error, "PDF must be 512 MB or smaller");
+
+        let _ = remove_file(&large_path);
     }
 
     #[test]

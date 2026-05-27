@@ -1,5 +1,5 @@
 import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Page } from "../lib/db";
 import { StudioDocument, studioPdfSrc } from "../lib/studio";
 import { Editor } from "./PageEditor";
@@ -23,10 +23,29 @@ export function StudioWorkspace({
   onUpdateViewer,
 }: StudioWorkspaceProps) {
   const pdfSrc = useMemo(() => studioPdfSrc(document), [document]);
+  const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
   const pdfPanel = (
-    <section className="on-studio-panel min-w-0">
-      <iframe key={pdfSrc} title={document.title} src={pdfSrc} className="h-full w-full bg-background" />
+    <section className="on-studio-panel min-w-0 bg-muted/20">
+      {pdfLoadFailed ? (
+        <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
+          <div>
+            <div className="font-medium text-foreground">PDF preview unavailable</div>
+            <div className="mt-2 max-w-sm">
+              The document was imported, but the built-in preview could not render it.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <iframe
+          key={pdfSrc}
+          title={document.title}
+          src={pdfSrc}
+          className="h-full w-full bg-background"
+          onLoad={() => setPdfLoadFailed(false)}
+          onError={() => setPdfLoadFailed(true)}
+        />
+      )}
     </section>
   );
   const notePanel = (
