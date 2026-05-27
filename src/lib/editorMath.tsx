@@ -127,24 +127,37 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
   changed: boolean;
   content: InlineContent[];
 } {
+  const standaloneFormula = standaloneLatexFormula(text);
+  if (standaloneFormula) {
+    const leadingWhitespace = text.match(/^\s*/)?.[0] ?? "";
+    const trailingWhitespace = text.match(/\s*$/)?.[0] ?? "";
+    const content: InlineContent[] = [];
+
+    pushText(content, leadingWhitespace, styles);
+    content.push({ type: "math", props: { formula: standaloneFormula } });
+    pushText(content, trailingWhitespace, styles);
+
+    return { changed: true, content };
+  }
+
   const items: InlineContent[] = [];
   let changed = false;
   let cursor = 0;
 
   while (cursor < text.length) {
-    const start = findUnescapedDollar(text, cursor);
-    if (start === -1) break;
+    const token = findNextFormulaToken(text, cursor);
+    if (!token) break;
 
-    const end = findUnescapedDollar(text, start + 1);
+    const end = findUnescapedDelimiter(text, token.close, token.start + 1);
     if (end === -1) break;
 
-    const formula = text.slice(start + 1, end).trim();
-    if (!formula || formula.includes("\n")) {
+    const formula = text.slice(token.start + 1, end).trim();
+    if (!isInlineFormula(formula, token.open)) {
       cursor = end + 1;
       continue;
     }
 
-    pushText(items, text.slice(cursor, start), styles);
+    pushText(items, text.slice(cursor, token.start), styles);
     items.push({ type: "math", props: { formula } });
     changed = true;
     cursor = end + 1;
@@ -157,14 +170,53 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
   };
 }
 
-function findUnescapedDollar(text: string, startIndex: number): number {
+function findNextFormulaToken(text: string, startIndex: number): { start: number; open: "$" | "["; close: "$" | "]" } | null {
+  let nextToken: { start: number; open: "$" | "["; close: "$" | "]" } | null = null;
+
   for (let index = startIndex; index < text.length; index += 1) {
     if (text[index] === "$" && text[index - 1] !== "\\") {
+      nextToken = { start: index, open: "$", close: "$" };
+      break;
+    }
+
+    if (text[index] === "[" && text[index - 1] !== "\\") {
+      nextToken = { start: index, open: "[", close: "]" };
+      break;
+    }
+  }
+
+  return nextToken;
+}
+
+function findUnescapedDelimiter(text: string, delimiter: "$" | "]", startIndex: number): number {
+  for (let index = startIndex; index < text.length; index += 1) {
+    if (text[index] === delimiter && text[index - 1] !== "\\") {
       return index;
     }
   }
 
   return -1;
+}
+
+function isInlineFormula(formula: string, delimiter: "$" | "["): boolean {
+  if (!formula || formula.includes("\n")) return false;
+  return delimiter === "$" || isLikelyLatexFormula(formula);
+}
+
+function standaloneLatexFormula(text: string): string | null {
+  const formula = text.trim();
+
+  if (!formula.startsWith("\\") || !isLikelyLatexFormula(formula)) {
+    return null;
+  }
+
+  return formula;
+}
+
+function isLikelyLatexFormula(value: string): boolean {
+  return /\\(?:oint|int|nabla|vec|cdot|frac|partial|Sigma|Gamma|Delta|Phi|varepsilon|mu|rho|text)\b/.test(value) ||
+    /[_^][{\\\w]/.test(value) ||
+    /\\[a-zA-Z]+\{/.test(value);
 }
 
 function pushText(items: InlineContent[], text: string, styles: Record<string, unknown>) {
