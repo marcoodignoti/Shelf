@@ -9,7 +9,7 @@ describe("computeFloatingPosition", () => {
         { width: 160, height: 120 },
         { width: 500, height: 400 }
       )
-    ).toEqual({ left: 40, top: 66, maxWidth: 476, maxHeight: 376 });
+    ).toEqual({ left: 40, top: 66, maxWidth: 448, maxHeight: 322 });
   });
 
   it("keeps a popover inside the right and bottom viewport edges", () => {
@@ -19,7 +19,7 @@ describe("computeFloatingPosition", () => {
         { width: 160, height: 120 },
         { width: 500, height: 400 }
       )
-    ).toEqual({ left: 328, top: 174, maxWidth: 476, maxHeight: 376 });
+    ).toEqual({ left: 328, top: 174, maxWidth: 160, maxHeight: 214 });
   });
 
   it("keeps a popover inside the left and top viewport edges", () => {
@@ -29,6 +29,16 @@ describe("computeFloatingPosition", () => {
         { width: 160, height: 120 },
         { width: 500, height: 400 }
       )
-    ).toEqual({ left: 12, top: 40, maxWidth: 476, maxHeight: 376 });
+    ).toEqual({ left: 12, top: 40, maxWidth: 476, maxHeight: 348 });
+  });
+
+  it("limits maximum height from the final clamped position", () => {
+    expect(
+      computeFloatingPosition(
+        { left: 250, right: 290, top: 150, bottom: 180, width: 40, height: 30 },
+        { width: 180, height: 500 },
+        { width: 320, height: 260 }
+      )
+    ).toEqual({ left: 128, top: 12, maxWidth: 180, maxHeight: 236 });
   });
 });

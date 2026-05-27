@@ -334,7 +334,12 @@ function PageItem({
       {isMoveOpen && moveMenuPosition && (
         <div
           className="fixed z-[130] w-56 on-popover"
-          style={{ top: moveMenuPosition.top, left: moveMenuPosition.left }}
+          style={{
+            top: moveMenuPosition.top,
+            left: moveMenuPosition.left,
+            maxHeight: Math.max(120, window.innerHeight - moveMenuPosition.top - 12),
+            overflowY: 'auto',
+          }}
           onClick={(event) => event.stopPropagation()}
         >
           <div className="border-b border-border p-2">
@@ -374,7 +379,12 @@ function PageItem({
       {contextMenuPosition && (
         <div
           className="fixed z-[140] w-44 on-popover"
-          style={{ left: contextMenuPosition.left, top: contextMenuPosition.top }}
+          style={{
+            left: contextMenuPosition.left,
+            top: contextMenuPosition.top,
+            maxHeight: Math.max(120, window.innerHeight - contextMenuPosition.top - 12),
+            overflowY: 'auto',
+          }}
           onClick={(event) => event.stopPropagation()}
         >
           <button
@@ -820,7 +830,12 @@ export function Sidebar() {
         {newPageMenuPosition && (
           <div
             className="fixed z-[140] w-56 on-popover"
-            style={{ left: newPageMenuPosition.left, top: newPageMenuPosition.top }}
+            style={{
+              left: newPageMenuPosition.left,
+              top: newPageMenuPosition.top,
+              maxHeight: Math.max(120, window.innerHeight - newPageMenuPosition.top - 12),
+              overflowY: 'auto',
+            }}
           >
             <button
               className="on-menu-item"

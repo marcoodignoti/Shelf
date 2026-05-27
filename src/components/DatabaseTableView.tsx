@@ -675,8 +675,12 @@ export function DatabaseTableView({
       )}
       {rowContextMenu && contextMenuRow && (
         <div
-          className="fixed z-[160] w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
-          style={{ left: rowContextMenu.left, top: rowContextMenu.top }}
+          className="fixed z-[160] w-44 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          style={{
+            left: rowContextMenu.left,
+            top: rowContextMenu.top,
+            maxHeight: Math.max(120, window.innerHeight - rowContextMenu.top - 12),
+          }}
           onClick={(event) => event.stopPropagation()}
         >
           <button
