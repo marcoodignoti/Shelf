@@ -1,33 +1,82 @@
 # OpenNotion
 
-OpenNotion is a local-first notes app. The active macOS app is native SwiftUI with GRDB-backed SQLite storage. The older Tauri/React implementation remains in the repository for legacy comparison and web/Tauri checks.
+OpenNotion is a local-first workspace for notes, study, and research. It keeps your pages, documents, and working context on your Mac, with a Notion-inspired editor and a focused Study/Research flow for reading sources while writing notes.
 
-## Current Scope
+The active macOS product is the native SwiftUI app. The Tauri/React app remains in the repository as a legacy implementation and parity reference while native features continue to catch up.
 
-- Create, edit, move to Trash, restore, and permanently delete pages after explicit confirmation.
-- Persist page titles, metadata, and BlockNote-compatible document content in native SQLite storage.
-- Search pages by title and content through the native GRDB repository.
-- Edit basic native blocks: paragraph, headings, lists, checklist, code, divider, slash menu, and drag/drop ordering.
-- Package unsigned or signed native macOS `.app` and DMG artifacts.
+![OpenNotion notes workspace](docs/assets/opennotion-notes-workspace.png)
 
-See `docs/native-parity-roadmap.md` for remaining Tauri-to-native parity work.
+## Why OpenNotion
 
-## Native macOS Stack
+- Local-first by default: your workspace lives in app data, not a remote account.
+- Notion-style writing: pages, subpages, icons, favorites, slash-style blocks, lists, checklist, code, divider, and drag/drop ordering.
+- Study mode: import a PDF, keep the document on one side, and write the linked note on the other.
+- Research workspace: native macOS browser workspace with linked notes, tags, checklist, citations, favorites, archive, and search.
+- Safe native storage: the native app uses a separate bundle ID and database from the legacy Tauri app.
+- Developer-friendly stack: SwiftUI + GRDB for native macOS, React/Tauri retained for comparison and migration work.
 
-- App shell: SwiftUI.
+## Study Mode
+
+Studio is built for students and researchers who need to read and write in the same place. Import a local PDF, keep the PDF and its note tied together, and return later with viewer state intact.
+
+![OpenNotion Studio workspace](docs/assets/opennotion-studio-workspace.png)
+
+Current Studio capabilities in the Tauri reference app:
+
+- PDF import through local file copy.
+- One linked note per PDF.
+- PDF left / note right by default, with layout switch support.
+- Resizable split view.
+- Zoom and current page controls.
+- Recent documents and all documents in the Studio sidebar.
+- Rename and delete document actions.
+- Persisted viewer page, zoom, and panel layout.
+
+Native parity work tracks this behavior in `docs/native-parity-roadmap.md`.
+
+## Native Research Workspace
+
+The native macOS app now includes a Research section designed around source-driven note taking:
+
+- Workspace sidebar for research areas.
+- Embedded browser view for websites, documentation, papers, and local PDFs.
+- Linked note panel with tags, checklist, citations, and related notes.
+- JSON-backed research repository for lightweight local persistence.
+- Favorites, recents, archive, and search across titles, URLs, and note fields.
+
+This is separate from the legacy Tauri Studio implementation and lives in the native SwiftPM package under `native-macos`.
+
+## Core Notes Experience
+
+OpenNotion supports the everyday workspace loop:
+
+1. Create a page or subpage.
+2. Add an icon, title, and structured blocks.
+3. Move pages through the sidebar.
+4. Favorite important pages.
+5. Search by title and content.
+6. Move pages to Trash, restore them, or permanently delete after confirmation.
+
+The native editor stores BlockNote-compatible document content so the project can keep interoperability with the original Tauri editor while moving toward a fully native macOS experience.
+
+## Architecture
+
+### Native macOS
+
+- UI: SwiftUI.
 - Storage: SQLite through GRDB.
 - Package: SwiftPM in `native-macos`.
-- Release artifact: native `.app` and DMG from `scripts/package-native-macos.sh`.
 - Data path: `~/Library/Application Support/org.opennotion.native/opennotion-native.db`.
+- Release artifact: native `.app` and DMG from `scripts/package-native-macos.sh`.
 
-## Legacy Tauri Stack
+### Legacy Tauri
 
 - Frontend: React, TypeScript, Vite, Tailwind CSS, BlockNote.
 - Desktop shell: Tauri 2.
 - Storage: SQLite through Rust `sqlx`.
 - Data path: `~/Library/Application Support/org.opennotion.desktop/opennotion.db`.
 
-The native macOS app and the legacy Tauri app intentionally use separate bundle identifiers and separate databases.
+The native app and the legacy Tauri app intentionally use different bundle identifiers and different databases. Any migration or import between them must be an explicit user action.
 
 ## Development
 
@@ -43,7 +92,7 @@ Run native macOS checks:
 npm run check:native
 ```
 
-Build and launch native macOS app:
+Build and launch the native macOS app:
 
 ```sh
 script/build_and_run.sh --verify
@@ -62,37 +111,19 @@ Run legacy Tauri checks:
 npm run check:tauri
 ```
 
-Build legacy Tauri app:
+Build the legacy Tauri app:
 
 ```sh
 npm run tauri build
 ```
 
-Production native signing and notarization use `.github/workflows/macos-release.yml`.
-
-Run all repo checks:
+Run all checks:
 
 ```sh
 npm run check
 ```
 
-## Native Parity Target
-
-The native app is the primary macOS product. Legacy Tauri remains as a comparison implementation until parity is complete. Port work must keep:
-
-- native bundle ID: `org.opennotion.native`
-- native database path: `~/Library/Application Support/org.opennotion.native/opennotion-native.db`
-- legacy Tauri bundle ID: `org.opennotion.desktop`
-- legacy Tauri database path: `~/Library/Application Support/org.opennotion.desktop/opennotion.db`
-
-Any migration or import between native and Tauri databases must be an explicit user action.
-
-## Native Development
-
-```sh
-swift test --package-path native-macos
-script/build_and_run.sh --verify
-```
+Production native signing and notarization use `.github/workflows/macos-release.yml`.
 
 ## Repository Hygiene
 
@@ -103,4 +134,4 @@ Generated artifacts are ignored:
 - `src-tauri/target`
 - local SQLite databases
 
-Keep source, config, lockfiles, and tests under version control.
+Keep source, config, lockfiles, screenshots, docs, and tests under version control.
