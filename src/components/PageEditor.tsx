@@ -401,6 +401,7 @@ export function Editor({
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
+  const titleEnterModifierRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -619,7 +620,9 @@ export function Editor({
   const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter") return;
 
-    if (event.altKey) {
+    titleEnterModifierRef.current = event.altKey || event.shiftKey;
+
+    if (titleEnterModifierRef.current) {
       event.preventDefault();
       const element = event.currentTarget;
       const selectionStart = element.selectionStart;
@@ -633,6 +636,24 @@ export function Editor({
     event.preventDefault();
     event.currentTarget.blur();
     focusEditorBody();
+  };
+
+  const handleTitleBeforeInput = (event: React.FormEvent<HTMLTextAreaElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    if (nativeEvent.inputType !== "insertLineBreak") return;
+
+    if (!titleEnterModifierRef.current) {
+      event.preventDefault();
+      event.currentTarget.blur();
+      focusEditorBody();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      handleTitleChange(event.currentTarget.value);
+      resizeTitleInput();
+      titleEnterModifierRef.current = false;
+    });
   };
 
   useEffect(() => {
@@ -1134,6 +1155,7 @@ export function Editor({
             spellCheck={false}
             onChange={(event) => handleTitleChange(event.target.value)}
             onInput={resizeTitleInput}
+            onBeforeInput={handleTitleBeforeInput}
             onKeyDown={handleTitleKeyDown}
           />
           {!isStudioVariant && subpageMode !== "list" && (
