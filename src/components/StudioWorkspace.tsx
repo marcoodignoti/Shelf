@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Columns2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Page } from "../lib/db";
+import { useAppStore } from "../store/useAppStore";
 import {
   buildStudioPanelGridColumns,
   clampStudioPage,
@@ -30,6 +31,7 @@ export function StudioWorkspace({
   onSelectPage,
   onUpdateViewer,
 }: StudioWorkspaceProps) {
+  const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
   const pdfSrc = useMemo(() => studioPdfSrc(document), [document]);
   const currentPage = clampStudioPage(document.viewer_page);
   const currentZoom = clampStudioZoom(document.viewer_zoom);
@@ -136,7 +138,7 @@ export function StudioWorkspace({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border/70 px-4">
+      <div className={`flex h-12 flex-shrink-0 items-center justify-between border-b border-border/70 px-4 ${isSidebarOpen ? "" : "pl-36"}`}>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-foreground">{document.title}</div>
           <div className="truncate text-xs text-muted-foreground">{document.original_filename}</div>

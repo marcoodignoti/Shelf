@@ -91,3 +91,18 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.getByTitle("Swap panels").click();
   await expect(page.getByText("100%")).toBeVisible();
 });
+
+test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  await page.getByTitle("Toggle sidebar").click();
+
+  const toggleBox = await page.getByTitle("Toggle sidebar").boundingBox();
+  const filenameBox = await page.getByText("civil-law.pdf").boundingBox();
+
+  expect(toggleBox).not.toBeNull();
+  expect(filenameBox).not.toBeNull();
+  expect(filenameBox!.x).toBeGreaterThan(toggleBox!.x + toggleBox!.width + 16);
+});
