@@ -225,6 +225,10 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
 
   const rail = page.getByRole("navigation", { name: "Page sections" });
   await expect(rail).toBeVisible();
+  await rail.hover();
+  await expect.poll(async () =>
+    page.locator(".on-heading-rail-preview").first().evaluate((element) => Number(getComputedStyle(element).opacity))
+  ).toBeGreaterThan(0.9);
 
   const secondSectionButton = page.getByRole("button", { name: "Go to Second section" });
   await expect(secondSectionButton).toBeVisible();

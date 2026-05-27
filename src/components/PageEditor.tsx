@@ -133,7 +133,7 @@ function PageHeadingRail({
   return (
     <nav
       aria-label="Page sections"
-      className="absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center xl:flex"
+      className="group/rail absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center overflow-visible xl:flex"
     >
       <div className="flex h-full max-h-[34rem] flex-col items-center justify-between gap-2 rounded-full py-1 text-muted-foreground/70 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
         <button
@@ -145,7 +145,7 @@ function PageHeadingRail({
         >
           <ChevronUp className="h-4 w-4" />
         </button>
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-y-auto py-1">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-visible py-1">
           {items.map((item) => {
             const isActive = item.id === activeId;
             const tickWidth = item.level <= 1 ? "w-8" : item.level === 2 ? "w-6" : "w-4";
@@ -163,7 +163,7 @@ function PageHeadingRail({
                 <span
                   className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
                 />
-                <span className="pointer-events-none absolute right-9 top-1/2 max-w-72 -translate-y-1/2 truncate rounded-xl border border-border bg-popover/95 px-3 py-2 text-sm font-medium text-popover-foreground opacity-0 shadow-xl backdrop-blur-xl transition-opacity group-hover/railitem:opacity-100 group-focus-visible/railitem:opacity-100">
+                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 max-w-64 -translate-y-1/2 truncate rounded-lg border border-border bg-popover/95 px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-lg backdrop-blur-xl transition-all duration-150 group-hover/rail:-translate-x-1 group-hover/rail:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:-translate-x-1 group-focus-visible/railitem:opacity-100 ${isActive ? "border-foreground/20 text-foreground" : ""}`}>
                   {item.title}
                 </span>
               </button>
