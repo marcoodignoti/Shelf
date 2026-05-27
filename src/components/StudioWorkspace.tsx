@@ -1,7 +1,14 @@
 import { ChevronLeft, ChevronRight, Columns2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Page } from "../lib/db";
-import { clampStudioPage, clampStudioZoom, StudioDocument, studioPdfSrc } from "../lib/studio";
+import {
+  buildStudioPanelGridColumns,
+  clampStudioPage,
+  clampStudioPanelRatio,
+  clampStudioZoom,
+  StudioDocument,
+  studioPdfSrc,
+} from "../lib/studio";
 import { Editor } from "./PageEditor";
 
 type StudioWorkspaceProps = {
@@ -26,13 +33,19 @@ export function StudioWorkspace({
   const currentPage = clampStudioPage(document.viewer_page);
   const currentZoom = clampStudioZoom(document.viewer_zoom);
   const [pageDraft, setPageDraft] = useState(String(currentPage));
+  const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
+  const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
 
   useEffect(() => {
     setPageDraft(String(currentPage));
     setPdfLoadFailed(false);
   }, [currentPage, pdfSrc]);
+
+  useEffect(() => {
+    setPdfPanelRatio(getStoredPanelRatio(document.id));
+  }, [document.id]);
 
   const updatePage = (page: number) => {
     const viewerPage = clampStudioPage(page);
@@ -46,6 +59,42 @@ export function StudioWorkspace({
 
   const updateZoom = (zoom: number) => {
     onUpdateViewer(document.id, { viewer_zoom: clampStudioZoom(zoom) });
+  };
+
+  const handleSplitterPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const container = event.currentTarget.parentElement;
+    if (!container) return;
+
+    event.preventDefault();
+    window.document.body.style.cursor = "col-resize";
+    window.document.body.style.userSelect = "none";
+
+    const containerRect = container.getBoundingClientRect();
+    const updateRatio = (clientX: number) => {
+      const pointerRatio = ((clientX - containerRect.left) / containerRect.width) * 100;
+      const nextRatio = document.panel_layout === "pdf-left" ? pointerRatio : 100 - pointerRatio;
+      const clampedRatio = clampStudioPanelRatio(nextRatio);
+      setPdfPanelRatio(clampedRatio);
+      storePanelRatio(document.id, clampedRatio);
+    };
+
+    updateRatio(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateRatio(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      window.document.body.style.cursor = "";
+      window.document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   const pdfPanel = (
@@ -159,19 +208,49 @@ export function StudioWorkspace({
           )}
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-px bg-border/70">
+      <div
+        className="on-studio-split min-h-0 flex-1 bg-border/70"
+        style={{ gridTemplateColumns: panelGridColumns }}
+      >
         {document.panel_layout === "pdf-left" ? (
           <>
             {pdfPanel}
+            <StudioSplitter onPointerDown={handleSplitterPointerDown} />
             {notePanel}
           </>
         ) : (
           <>
             {notePanel}
+            <StudioSplitter onPointerDown={handleSplitterPointerDown} />
             {pdfPanel}
           </>
         )}
       </div>
     </div>
   );
+}
+
+function StudioSplitter({ onPointerDown }: { onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }) {
+  return (
+    <div
+      className="on-studio-splitter"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Studio panels"
+      onPointerDown={onPointerDown}
+    />
+  );
+}
+
+function panelRatioStorageKey(documentId: string): string {
+  return `opennotion-studio-panel-ratio-${documentId}`;
+}
+
+function getStoredPanelRatio(documentId: string): number {
+  const storedRatio = Number(localStorage.getItem(panelRatioStorageKey(documentId)));
+  return clampStudioPanelRatio(Number.isFinite(storedRatio) ? storedRatio : 50);
+}
+
+function storePanelRatio(documentId: string, ratio: number): void {
+  localStorage.setItem(panelRatioStorageKey(documentId), String(clampStudioPanelRatio(ratio)));
 }

@@ -60,6 +60,18 @@ export function buildStudioPdfHash({ page, zoom }: { page: number; zoom: number 
   return `#page=${clampStudioPage(page)}&zoom=${clampStudioZoom(zoom)}`;
 }
 
+export function clampStudioPanelRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return 50;
+  return Math.max(30, Math.min(70, Math.round(ratio)));
+}
+
+export function buildStudioPanelGridColumns(layout: StudioPanelLayout, pdfRatio: number): string {
+  const clampedRatio = clampStudioPanelRatio(pdfRatio);
+  const leftRatio = layout === "pdf-left" ? clampedRatio : 100 - clampedRatio;
+  const rightRatio = 100 - leftRatio;
+  return `${leftRatio}% 6px ${rightRatio}%`;
+}
+
 export function studioPdfSrc(document: StudioDocument): string {
   return `${convertFileSrc(document.stored_file_path)}${buildStudioPdfHash({
     page: document.viewer_page,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildStudioPdfHash, clampStudioPage, clampStudioZoom } from "./studio";
+import {
+  buildStudioPanelGridColumns,
+  buildStudioPdfHash,
+  clampStudioPage,
+  clampStudioPanelRatio,
+  clampStudioZoom,
+} from "./studio";
 
 describe("studio viewer helpers", () => {
   it("clamps viewer zoom to supported bounds", () => {
@@ -16,5 +22,16 @@ describe("studio viewer helpers", () => {
 
   it("builds a PDF hash with persisted page and zoom", () => {
     expect(buildStudioPdfHash({ page: 3, zoom: 150 })).toBe("#page=3&zoom=150");
+  });
+
+  it("clamps Studio panel ratio to usable bounds", () => {
+    expect(clampStudioPanelRatio(10)).toBe(30);
+    expect(clampStudioPanelRatio(55.4)).toBe(55);
+    expect(clampStudioPanelRatio(90)).toBe(70);
+  });
+
+  it("builds panel columns based on PDF side", () => {
+    expect(buildStudioPanelGridColumns("pdf-left", 60)).toBe("60% 6px 40%");
+    expect(buildStudioPanelGridColumns("note-left", 60)).toBe("40% 6px 60%");
   });
 });
