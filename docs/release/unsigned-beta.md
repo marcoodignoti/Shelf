@@ -15,7 +15,7 @@ Unsigned beta releases are for public testing before paid signing credentials ex
 - Windows SmartScreen trust
 - production-grade public distribution
 
-## Create A Beta Release
+## Create A Beta Release On GitHub
 
 Use a beta tag:
 
@@ -26,7 +26,22 @@ git tag v0.1.0-beta.1
 git push origin v0.1.0-beta.1
 ```
 
-Build the unsigned desktop artifacts on the target platform:
+Pushing a `v*-beta.*` tag starts the `Tauri Beta Release` workflow. The workflow builds:
+
+- macOS Apple Silicon DMG/app bundle
+- Windows installer/bundle
+
+It then creates a GitHub prerelease and uploads the generated artifacts.
+
+You can also rerun the workflow manually against an existing beta tag:
+
+```sh
+gh workflow run "Tauri Beta Release" --ref main -f tag=v0.1.0-beta.1
+```
+
+## Build Locally
+
+Build unsigned desktop artifacts on the target platform:
 
 ```sh
 npm ci
@@ -34,7 +49,7 @@ npm run check:tauri
 npm run tauri build
 ```
 
-Upload the generated Tauri artifacts from `src-tauri/target/release/bundle/` to a GitHub prerelease.
+Local Tauri artifacts are generated under `src-tauri/target/release/bundle/`.
 
 ## User Warning
 
