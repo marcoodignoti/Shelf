@@ -39,9 +39,11 @@ export function StudioWorkspace({
   const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+  const [isStackedLayout, setIsStackedLayout] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
-  const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
+  const panelGridColumns = isStackedLayout ? "1fr" : buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
+  const panelGridRows = isStackedLayout ? "minmax(280px, 45vh) minmax(0, 1fr)" : undefined;
 
   useEffect(() => {
     setPageDraft(String(currentPage));
@@ -51,6 +53,21 @@ export function StudioWorkspace({
   useEffect(() => {
     setPdfPanelRatio(getStoredPanelRatio(document.id));
   }, [document.id]);
+
+  useEffect(() => {
+    const splitElement = splitRef.current;
+    if (!splitElement) return;
+
+    const updateLayout = () => {
+      setIsStackedLayout(splitElement.getBoundingClientRect().width < 900);
+    };
+    const observer = new ResizeObserver(updateLayout);
+
+    updateLayout();
+    observer.observe(splitElement);
+
+    return () => observer.disconnect();
+  }, []);
 
   const updatePage = (page: number) => {
     const viewerPage = clampStudioPage(page);
@@ -68,7 +85,7 @@ export function StudioWorkspace({
 
   const handleSplitterPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const container = event.currentTarget.parentElement;
-    if (!container) return;
+    if (!container || isStackedLayout) return;
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -216,19 +233,19 @@ export function StudioWorkspace({
       </div>
       <div
         ref={splitRef}
-        className="on-studio-split min-h-0 flex-1 bg-border/70"
-        style={{ gridTemplateColumns: panelGridColumns }}
+        className={`on-studio-split min-h-0 flex-1 bg-border/70 ${isStackedLayout ? "on-studio-split-stacked" : ""}`}
+        style={{ gridTemplateColumns: panelGridColumns, gridTemplateRows: panelGridRows }}
       >
         {document.panel_layout === "pdf-left" ? (
           <>
             {pdfPanel}
-            <StudioSplitter onPointerDown={handleSplitterPointerDown} />
+            {!isStackedLayout && <StudioSplitter onPointerDown={handleSplitterPointerDown} />}
             {notePanel}
           </>
         ) : (
           <>
             {notePanel}
-            <StudioSplitter onPointerDown={handleSplitterPointerDown} />
+            {!isStackedLayout && <StudioSplitter onPointerDown={handleSplitterPointerDown} />}
             {pdfPanel}
           </>
         )}

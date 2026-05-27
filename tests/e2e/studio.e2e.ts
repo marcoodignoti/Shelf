@@ -106,3 +106,17 @@ test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", 
   expect(filenameBox).not.toBeNull();
   expect(filenameBox!.x).toBeGreaterThan(toggleBox!.x + toggleBox!.width + 16);
 });
+
+test("stacks Studio panels when resized below usable split width", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  const pdfBox = await page.locator("iframe[title='civil-law']").boundingBox();
+  const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
+
+  expect(pdfBox).not.toBeNull();
+  expect(noteTitleBox).not.toBeNull();
+  expect(noteTitleBox!.y).toBeGreaterThan(pdfBox!.y + pdfBox!.height);
+});
