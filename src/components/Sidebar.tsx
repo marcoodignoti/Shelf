@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Star, Copy } from 'lucide-react';
+import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy } from 'lucide-react';
 import { Page } from '../lib/db';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
 import { SettingsModal } from './SettingsModal';
@@ -95,7 +95,6 @@ function PageItem({
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState(page.title || 'Untitled');
   const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
-  const moveButtonRef = useRef<HTMLButtonElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [moveMenuPosition, setMoveMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
@@ -162,6 +161,28 @@ function PageItem({
     };
   }, [contextMenuPosition]);
 
+  useEffect(() => {
+    if (!isMoveOpen) return;
+
+    const closeMenu = () => {
+      setIsMoveOpen(false);
+      setMoveMenuPosition(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMoveOpen]);
+
   const handleAddSubpage = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setExpanded(true);
@@ -223,23 +244,6 @@ function PageItem({
   const cancelRename = () => {
     setDraftTitle(page.title || 'Untitled');
     setIsRenaming(false);
-  };
-
-  const toggleMoveMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    const nextOpen = !isMoveOpen;
-    setIsMoveOpen(nextOpen);
-
-    if (!nextOpen) {
-      setMoveMenuPosition(null);
-      return;
-    }
-
-    const rect = moveButtonRef.current?.getBoundingClientRect();
-    if (rect) {
-      const position = computeFloatingPosition(rect, { width: 224, height: 280 }, { width: window.innerWidth, height: window.innerHeight }, { placement: 'bottom-end' });
-      setMoveMenuPosition({ top: position.top, left: position.left });
-    }
   };
 
   const openMoveMenuAt = (left: number, top: number) => {
@@ -320,77 +324,52 @@ function PageItem({
             title={page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
             onClick={(event) => void handleToggleFavorite(event)}
           >
-            <Star
+            <Pin
               className={`h-3.5 w-3.5 ${page.is_favorite === 1 ? 'fill-current text-muted-foreground' : 'text-muted-foreground'}`}
             />
           </button>
         </div>
-        <div className={`flex items-center transition-opacity flex-shrink-0 ${isRenaming ? 'hidden' : 'opacity-0 group-hover:opacity-100'}`}>
-          <div className="relative">
+      </div>
+
+      {isMoveOpen && moveMenuPosition && (
+        <div
+          className="fixed z-[130] w-56 on-popover"
+          style={{ top: moveMenuPosition.top, left: moveMenuPosition.left }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="border-b border-border p-2">
+            <input
+              className="w-full rounded-md bg-muted px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground"
+              placeholder="Move to..."
+              value={moveQuery}
+              onChange={(event) => setMoveQuery(event.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto p-1">
             <button
-              ref={moveButtonRef}
-              className="on-icon-button mr-0.5 h-6 w-6 rounded-md"
-              title="Move page"
-              onClick={toggleMoveMenu}
+              className="on-menu-item justify-between"
+              onClick={() => void handleMovePage(null)}
             >
-              <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>Root</span>
+              {page.parent_id === null && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
             </button>
-            {isMoveOpen && moveMenuPosition && (
-              <div
-                className="fixed z-[130] w-56 on-popover"
-                style={{ top: moveMenuPosition.top, left: moveMenuPosition.left }}
-                onClick={(event) => event.stopPropagation()}
+            {moveTargets.map(target => (
+              <button
+                key={target.id}
+                className="on-menu-item justify-between"
+                onClick={() => void handleMovePage(target.id)}
               >
-                <div className="border-b border-border p-2">
-                  <input
-                    className="w-full rounded-md bg-muted px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground"
-                    placeholder="Move to..."
-                    value={moveQuery}
-                    onChange={(event) => setMoveQuery(event.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="max-h-56 overflow-y-auto p-1">
-                  <button
-                    className="on-menu-item justify-between"
-                    onClick={() => void handleMovePage(null)}
-                  >
-                    <span>Root</span>
-                    {page.parent_id === null && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
-                  </button>
-                  {moveTargets.map(target => (
-                    <button
-                      key={target.id}
-                      className="on-menu-item justify-between"
-                      onClick={() => void handleMovePage(target.id)}
-                    >
-                      <span className="truncate">{target.title || 'Untitled'}</span>
-                      {page.parent_id === target.id && <Check className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
-                    </button>
-                  ))}
-                  {moveTargets.length === 0 && moveQuery.trim() && (
-                    <div className="px-2 py-2 text-xs text-muted-foreground">No pages found.</div>
-                  )}
-                </div>
-              </div>
+                <span className="truncate">{target.title || 'Untitled'}</span>
+                {page.parent_id === target.id && <Check className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
+              </button>
+            ))}
+            {moveTargets.length === 0 && moveQuery.trim() && (
+              <div className="px-2 py-2 text-xs text-muted-foreground">No pages found.</div>
             )}
           </div>
-          <button
-            className="on-icon-button mr-0.5 h-6 w-6 rounded-md"
-            onClick={handleAddSubpage}
-            title="Add subpage"
-          >
-            <Plus className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
-          <button
-            className="on-icon-button h-6 w-6 rounded-md"
-            onClick={handleDeletePage}
-            title="Delete page"
-          >
-            <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-          </button>
         </div>
-      </div>
+      )}
 
       {contextMenuPosition && (
         <div
@@ -419,7 +398,7 @@ function PageItem({
             className="on-menu-item"
             onClick={(event) => void handleToggleFavorite(event)}
           >
-            <Star className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? 'fill-current' : ''}`} />
+            <Pin className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? 'fill-current' : ''}`} />
             {page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
           </button>
           <button
@@ -925,7 +904,7 @@ export function Sidebar() {
                     void toggleFavoriteAction(page.id, false);
                   }}
                 >
-                  <Star className="h-3.5 w-3.5 fill-current text-muted-foreground" />
+                  <Pin className="h-3.5 w-3.5 fill-current text-muted-foreground" />
                 </button>
               </div>
             ))}

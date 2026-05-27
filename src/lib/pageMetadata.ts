@@ -1,5 +1,15 @@
 export function normalizePageIcon(value: string): string | null {
-  const icon = Array.from(value.trim()).slice(0, 8).join("");
+  const trimmed = value.trim();
+  const Segmenter = (Intl as typeof Intl & {
+    Segmenter?: new (
+      locale?: string,
+      options?: { granularity: "grapheme" }
+    ) => { segment: (input: string) => Iterable<{ segment: string }> };
+  }).Segmenter;
+  const icon = Segmenter
+    ? new Segmenter(undefined, { granularity: "grapheme" }).segment(trimmed)[Symbol.iterator]().next().value?.segment ?? ""
+    : Array.from(trimmed)[0] ?? "";
+
   return icon || null;
 }
 

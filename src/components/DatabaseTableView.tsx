@@ -490,6 +490,9 @@ export function DatabaseTableView({
                   open={openPropertyId === property.id}
                   width={240}
                   placement="bottom-end"
+                  onOpenChange={(open) => {
+                    if (!open) setOpenPropertyId(null);
+                  }}
                   className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
                 >
                   <PropertyEditor
@@ -653,6 +656,7 @@ export function DatabaseTableView({
             anchorElement={templateMenuButtonRef.current}
             open={templateMenuOpen}
             width={224}
+            onOpenChange={setTemplateMenuOpen}
             className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
           >
             {rowTemplates.map((template) => (

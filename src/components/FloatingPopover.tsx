@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { computeFloatingPosition, FloatingPlacement } from "../lib/floatingPosition";
 
@@ -10,6 +10,7 @@ type FloatingPopoverProps = {
   width?: number;
   placement?: FloatingPlacement;
   zIndex?: number;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function FloatingPopover({
@@ -20,6 +21,7 @@ export function FloatingPopover({
   width = 240,
   placement = "bottom-start",
   zIndex = 160,
+  onOpenChange,
 }: FloatingPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties | null>(null);
@@ -98,6 +100,33 @@ export function FloatingPopover({
       window.removeEventListener("scroll", handleViewportChange, true);
     };
   }, [anchorElement, open, placement, width, zIndex]);
+
+  useEffect(() => {
+    if (!open || !anchorElement || !onOpenChange) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      if (anchorElement.contains(target) || popoverRef.current?.contains(target)) {
+        return;
+      }
+
+      onOpenChange(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [anchorElement, onOpenChange, open]);
 
   if (!open || !anchorElement) return null;
 

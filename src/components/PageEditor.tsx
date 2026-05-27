@@ -4,6 +4,7 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import { AddBlockButton, SideMenu, SideMenuController, useBlockNoteEditor, useExtensionState } from "@blocknote/react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AlertTriangle, Check, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Smile, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -173,6 +174,7 @@ function SubpageCreateMenu({
   templatePages,
   onCreateBlank,
   onCreateFromTemplate,
+  onOpenChange,
 }: {
   anchorElement: HTMLElement | null;
   open: boolean;
@@ -180,6 +182,7 @@ function SubpageCreateMenu({
   templatePages: Page[];
   onCreateBlank: () => void;
   onCreateFromTemplate: (templateId: string) => void;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
     <FloatingPopover
@@ -187,6 +190,7 @@ function SubpageCreateMenu({
       open={open}
       width={224}
       placement={align === "end" ? "bottom-end" : "bottom-start"}
+      onOpenChange={onOpenChange}
       className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
     >
       <button
@@ -414,6 +418,12 @@ export function Editor({
     queueSave({ icon: null });
   };
 
+  const handleOpenNativeIconPicker = () => {
+    void invoke("show_character_palette").catch((error: unknown) => {
+      console.error("Failed to open character palette:", error);
+    });
+  };
+
   const handleCreateSubpage = async () => {
     const newPage = await addPage("Untitled", page.id);
     setSubpageMenuOpen(false);
@@ -608,6 +618,7 @@ export function Editor({
               open={pageMenuOpen}
               width={224}
               placement="bottom-end"
+              onOpenChange={setPageMenuOpen}
               className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
             >
               <button
@@ -668,6 +679,7 @@ export function Editor({
               open={moveMenuOpen}
               width={288}
               placement="bottom-end"
+              onOpenChange={setMoveMenuOpen}
               className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
             >
               <div className="border-b border-border p-2">
@@ -754,8 +766,17 @@ export function Editor({
               anchorElement={iconMenuButtonRef.current}
               open={isIconMenuOpen}
               width={256}
+              onOpenChange={setIsIconMenuOpen}
               className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
             >
+              <button
+                type="button"
+                className="mb-2 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                onClick={handleOpenNativeIconPicker}
+              >
+                <Smile className="h-3.5 w-3.5 text-muted-foreground" />
+                Open native picker
+              </button>
               <div className="grid grid-cols-6 gap-1">
                 {ICON_OPTIONS.map((option) => (
                   <button
@@ -831,6 +852,7 @@ export function Editor({
                   open={subpageMenuOpen}
                   align="end"
                   templatePages={templatePages}
+                  onOpenChange={setSubpageMenuOpen}
                   onCreateBlank={() => void handleCreateSubpage()}
                   onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
                 />
@@ -868,6 +890,7 @@ export function Editor({
               open={subpageMenuOpen}
               align="start"
               templatePages={templatePages}
+              onOpenChange={setSubpageMenuOpen}
               onCreateBlank={() => void handleCreateSubpage()}
               onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
             />

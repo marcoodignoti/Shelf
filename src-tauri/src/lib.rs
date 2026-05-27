@@ -1338,6 +1338,24 @@ async fn import_cover_image<R: Runtime>(
     copy_cover_image(&app, Path::new(&source_path), &page_id)
 }
 
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn show_character_palette<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    app.run_on_main_thread(|| {
+        if let Some(marker) = objc2::MainThreadMarker::new() {
+            let application = objc2_app_kit::NSApplication::sharedApplication(marker);
+            application.orderFrontCharacterPalette(None);
+        }
+    })
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn show_character_palette<R: Runtime>(_app: tauri::AppHandle<R>) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1384,7 +1402,8 @@ pub fn run() {
             toggle_template,
             create_page_from_template,
             duplicate_page,
-            import_cover_image
+            import_cover_image,
+            show_character_palette
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

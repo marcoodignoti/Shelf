@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { normalizeCoverUrl, normalizePageIcon } from "./pageMetadata";
 
 describe("normalizePageIcon", () => {
-  it("trims and limits icon text", () => {
-    expect(normalizePageIcon("  🚀 launching  ")).toBe("🚀 launch");
+  it("trims and keeps one icon grapheme", () => {
+    expect(normalizePageIcon("  🚀 launching  ")).toBe("🚀");
+    expect(normalizePageIcon("  🤖🤖  ")).toBe("🤖");
   });
 
   it("stores empty icon as null", () => {
