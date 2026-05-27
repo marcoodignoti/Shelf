@@ -5,6 +5,7 @@ import {
   clampStudioPage,
   clampStudioPanelRatio,
   clampStudioZoom,
+  studioPanelRatioFromPointer,
 } from "./studio";
 
 describe("studio viewer helpers", () => {
@@ -33,5 +34,10 @@ describe("studio viewer helpers", () => {
   it("builds panel columns based on PDF side", () => {
     expect(buildStudioPanelGridColumns("pdf-left", 60)).toBe("60% 6px 40%");
     expect(buildStudioPanelGridColumns("note-left", 60)).toBe("40% 6px 60%");
+  });
+
+  it("calculates PDF ratio from pointer for either panel order", () => {
+    expect(studioPanelRatioFromPointer("pdf-left", 700, { left: 100, width: 1000 })).toBe(60);
+    expect(studioPanelRatioFromPointer("note-left", 700, { left: 100, width: 1000 })).toBe(40);
   });
 });

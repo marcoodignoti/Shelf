@@ -72,6 +72,17 @@ export function buildStudioPanelGridColumns(layout: StudioPanelLayout, pdfRatio:
   return `${leftRatio}% 6px ${rightRatio}%`;
 }
 
+export function studioPanelRatioFromPointer(
+  layout: StudioPanelLayout,
+  clientX: number,
+  container: { left: number; width: number }
+): number {
+  if (container.width <= 0) return 50;
+  const pointerRatio = ((clientX - container.left) / container.width) * 100;
+  const pdfRatio = layout === "pdf-left" ? pointerRatio : 100 - pointerRatio;
+  return clampStudioPanelRatio(pdfRatio);
+}
+
 export function studioPdfSrc(document: StudioDocument): string {
   return `${convertFileSrc(document.stored_file_path)}${buildStudioPdfHash({
     page: document.viewer_page,

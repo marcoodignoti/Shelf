@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Columns2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Page } from "../lib/db";
 import {
   buildStudioPanelGridColumns,
@@ -7,6 +7,7 @@ import {
   clampStudioPanelRatio,
   clampStudioZoom,
   StudioDocument,
+  studioPanelRatioFromPointer,
   studioPdfSrc,
 } from "../lib/studio";
 import { Editor } from "./PageEditor";
@@ -34,7 +35,9 @@ export function StudioWorkspace({
   const currentZoom = clampStudioZoom(document.viewer_zoom);
   const [pageDraft, setPageDraft] = useState(String(currentPage));
   const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
+  const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+  const splitRef = useRef<HTMLDivElement>(null);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
   const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
 
@@ -66,14 +69,14 @@ export function StudioWorkspace({
     if (!container) return;
 
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsResizingPanels(true);
     window.document.body.style.cursor = "col-resize";
     window.document.body.style.userSelect = "none";
 
     const containerRect = container.getBoundingClientRect();
     const updateRatio = (clientX: number) => {
-      const pointerRatio = ((clientX - containerRect.left) / containerRect.width) * 100;
-      const nextRatio = document.panel_layout === "pdf-left" ? pointerRatio : 100 - pointerRatio;
-      const clampedRatio = clampStudioPanelRatio(nextRatio);
+      const clampedRatio = studioPanelRatioFromPointer(document.panel_layout, clientX, containerRect);
       setPdfPanelRatio(clampedRatio);
       storePanelRatio(document.id, clampedRatio);
     };
@@ -85,6 +88,7 @@ export function StudioWorkspace({
     };
 
     const handlePointerUp = () => {
+      setIsResizingPanels(false);
       window.document.body.style.cursor = "";
       window.document.body.style.userSelect = "";
       window.removeEventListener("pointermove", handlePointerMove);
@@ -209,6 +213,7 @@ export function StudioWorkspace({
         </div>
       </div>
       <div
+        ref={splitRef}
         className="on-studio-split min-h-0 flex-1 bg-border/70"
         style={{ gridTemplateColumns: panelGridColumns }}
       >
@@ -226,6 +231,20 @@ export function StudioWorkspace({
           </>
         )}
       </div>
+      {isResizingPanels && (
+        <div
+          className="fixed inset-0 z-[220] cursor-col-resize"
+          onPointerMove={(event) => {
+            const rect = splitRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const nextRatio = studioPanelRatioFromPointer(document.panel_layout, event.clientX, rect);
+            setPdfPanelRatio(nextRatio);
+            storePanelRatio(document.id, nextRatio);
+          }}
+          onPointerUp={() => setIsResizingPanels(false)}
+          onPointerCancel={() => setIsResizingPanels(false)}
+        />
+      )}
     </div>
   );
 }
