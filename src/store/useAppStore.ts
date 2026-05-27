@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
-import { importStudioDocument, listStudioDocuments, StudioDocument, StudioPanelLayout, updateStudioDocumentViewerState } from '../lib/studio';
+import { deleteStudioDocument, importStudioDocument, listStudioDocuments, renameStudioDocument, StudioDocument, StudioPanelLayout, updateStudioDocumentViewerState } from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
 type WorkspaceMode = 'notes' | 'studio';
@@ -26,6 +26,8 @@ interface AppState {
   setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: () => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
+  renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
+  deleteStudioDocumentAction: (id: string) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
   renamePageAction: (id: string, title: string) => Promise<void>;
@@ -201,6 +203,66 @@ export const useAppStore = create<AppState>((set) => ({
     }));
     try {
       await updateStudioDocumentViewerState(id, { ...updates, last_opened_at });
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      await useAppStore.getState().fetchStudioDocuments();
+    }
+  },
+  renameStudioDocumentAction: async (id, title) => {
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+
+    const previousDocuments = useAppStore.getState().studioDocuments;
+    const previousPages = useAppStore.getState().pages;
+    const document = previousDocuments.find((candidate) => candidate.id === id);
+    const updated_at = new Date().toISOString();
+
+    set((state) => ({
+      studioDocuments: state.studioDocuments.map((candidate) =>
+        candidate.id === id ? { ...candidate, title: nextTitle, updated_at } : candidate
+      ),
+      pages: document
+        ? state.pages.map((page) =>
+            page.id === document.note_page_id ? { ...page, title: `${nextTitle} Notes`, updated_at } : page
+          )
+        : state.pages,
+      error: null
+    }));
+
+    try {
+      await renameStudioDocument(id, nextTitle);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioDocuments: previousDocuments, pages: previousPages, error: message, notice: { kind: 'error', message } });
+    }
+  },
+  deleteStudioDocumentAction: async (id) => {
+    const document = useAppStore.getState().studioDocuments.find((candidate) => candidate.id === id);
+    if (!document) return;
+
+    try {
+      await deleteStudioDocument(id);
+      set((state) => {
+        const studioDocuments = state.studioDocuments.filter((candidate) => candidate.id !== id);
+        const currentStudioDocumentId = state.currentStudioDocumentId === id
+          ? studioDocuments[0]?.id ?? null
+          : state.currentStudioDocumentId;
+
+        if (currentStudioDocumentId) {
+          localStorage.setItem('opennotion-current-studio-document-id', currentStudioDocumentId);
+        } else {
+          localStorage.removeItem('opennotion-current-studio-document-id');
+        }
+
+        return {
+          studioDocuments,
+          currentStudioDocumentId,
+          pages: state.pages.filter((page) => page.id !== document.note_page_id),
+          error: null,
+          notice: { kind: 'success', message: 'Studio document deleted.' }
+        };
+      });
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });

@@ -1,5 +1,9 @@
-import { FileText, Loader2, Upload } from "lucide-react";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { MoreHorizontal, ExternalLink, FileText, FolderOpen, Loader2, Pencil, Trash2, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { StudioDocument } from "../lib/studio";
+import { clampContextMenuPosition } from "../lib/contextMenu";
 import { recentStudioDocuments, remainingStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
@@ -8,34 +12,170 @@ type StudioSidebarProps = {
   isLoading: boolean;
   onImport: () => void;
   onSelectDocument: (id: string) => void;
+  onRenameDocument: (id: string, title: string) => void;
+  onDeleteDocument: (id: string) => void;
 };
+
+const STUDIO_DOCUMENT_MENU_WIDTH = 220;
+const STUDIO_DOCUMENT_MENU_HEIGHT = 178;
 
 function StudioDocumentRow({
   document,
   active,
   onSelect,
+  onRename,
+  onDelete,
 }: {
   document: StudioDocument;
   active: boolean;
   onSelect: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
 }) {
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    if (!menuPosition) return;
+
+    const closeMenu = () => setMenuPosition(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("contextmenu", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("contextmenu", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuPosition]);
+
+  const openMenu = (clientX: number, clientY: number) => {
+    setMenuPosition(
+      clampContextMenuPosition(
+        clientX,
+        clientY,
+        window.innerWidth,
+        window.innerHeight,
+        STUDIO_DOCUMENT_MENU_WIDTH,
+        STUDIO_DOCUMENT_MENU_HEIGHT
+      )
+    );
+  };
+
+  const handleRename = () => {
+    setMenuPosition(null);
+    const nextTitle = window.prompt("Rename Studio document", document.title)?.trim();
+    if (nextTitle) onRename(nextTitle);
+  };
+
+  const handleDelete = () => {
+    setMenuPosition(null);
+    if (window.confirm(`Delete "${document.title}" and its linked note? This cannot be undone.`)) {
+      onDelete();
+    }
+  };
+
+  const handleReveal = () => {
+    setMenuPosition(null);
+    void revealItemInDir(document.stored_file_path);
+  };
+
+  const handleOpen = () => {
+    setMenuPosition(null);
+    void openPath(document.stored_file_path);
+  };
+
   return (
-    <button
-      type="button"
-      className={`on-shell-row on-sidebar-page-row mb-[1px] justify-between py-[3px] text-[13px] ${active ? "on-shell-row-active" : ""}`}
-      onClick={onSelect}
-      title={document.original_filename}
-    >
-      <div className="flex min-w-0 items-start gap-2">
-        <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-        <span className="min-w-0 text-left">
-          <span className="block truncate">{document.title}</span>
-          <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-            {studioDocumentMetadata(document)}
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        className={`on-shell-row on-sidebar-page-row group mb-[1px] justify-between py-[3px] text-[13px] ${active ? "on-shell-row-active" : ""}`}
+        onClick={onSelect}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelect();
+          }
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openMenu(event.clientX, event.clientY);
+        }}
+        title={document.original_filename}
+      >
+        <div className="flex min-w-0 items-start gap-2">
+          <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <span className="min-w-0 text-left">
+            <span className="block truncate">{document.title}</span>
+            <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+              {studioDocumentMetadata(document)}
+            </span>
           </span>
-        </span>
+        </div>
+        <button
+          type="button"
+          aria-label={`Actions for ${document.title}`}
+          className={`ml-2 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground ${menuPosition ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(event.clientX, event.clientY);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              openMenu(rect.right, rect.bottom);
+            }
+          }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
       </div>
-    </button>
+      {menuPosition &&
+        createPortal(
+          <div
+            className="fixed z-[220] on-popover p-1"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              width: STUDIO_DOCUMENT_MENU_WIDTH,
+              maxHeight: Math.max(120, window.innerHeight - menuPosition.top - 12),
+              overflowY: "auto",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="on-menu-item" onClick={handleRename}>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              Rename
+            </button>
+            <button type="button" className="on-menu-item" onClick={handleReveal}>
+              <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              Reveal in Finder
+            </button>
+            <button type="button" className="on-menu-item" onClick={handleOpen}>
+              <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+              Open PDF
+            </button>
+            <div className="my-1 border-t border-border/70" />
+            <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete document
+            </button>
+          </div>,
+          globalThis.document.body
+        )}
+    </>
   );
 }
 
@@ -45,6 +185,8 @@ export function StudioSidebar({
   isLoading,
   onImport,
   onSelectDocument,
+  onRenameDocument,
+  onDeleteDocument,
 }: StudioSidebarProps) {
   const recent = recentStudioDocuments(documents, 4);
   const remaining = remainingStudioDocuments(documents, recent);
@@ -79,6 +221,8 @@ export function StudioSidebar({
                 document={document}
                 active={document.id === currentDocumentId}
                 onSelect={() => onSelectDocument(document.id)}
+                onRename={(title) => onRenameDocument(document.id, title)}
+                onDelete={() => onDeleteDocument(document.id)}
               />
             ))}
           </section>
@@ -92,6 +236,8 @@ export function StudioSidebar({
                 document={document}
                 active={document.id === currentDocumentId}
                 onSelect={() => onSelectDocument(document.id)}
+                onRename={(title) => onRenameDocument(document.id, title)}
+                onDelete={() => onDeleteDocument(document.id)}
               />
             ))}
           </section>

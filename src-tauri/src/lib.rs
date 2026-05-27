@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
-use std::fs::{copy, create_dir_all, metadata, remove_file, set_permissions, File, Permissions};
+use std::fs::{copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, File, Permissions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -617,6 +617,100 @@ async fn update_studio_document_viewer_state_record(
     .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+async fn rename_studio_document_record(
+    db: &SqlitePool,
+    id: &str,
+    title: &str,
+    updated_at: &str,
+) -> Result<(), String> {
+    let current = sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut transaction = db.begin().await.map_err(|error| error.to_string())?;
+    sqlx::query("UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ?")
+        .bind(title)
+        .bind(updated_at)
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
+        .bind(format!("{} Notes", title))
+        .bind(updated_at)
+        .bind(current.note_page_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    transaction.commit().await.map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+async fn delete_studio_document_record(db: &SqlitePool, id: &str) -> Result<String, String> {
+    let current = sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    let stored_file_path = current.stored_file_path.clone();
+
+    let mut transaction = db.begin().await.map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM studio_documents WHERE id = ?")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM pages WHERE id = ?")
+        .bind(current.note_page_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    transaction.commit().await.map_err(|error| error.to_string())?;
+
+    Ok(stored_file_path)
+}
+
+fn remove_stored_studio_document_file(stored_file_path: &str) -> Result<(), String> {
+    let stored_path = Path::new(stored_file_path);
+    match remove_file(stored_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+
+    let Some(parent) = stored_path.parent() else {
+        return Ok(());
+    };
+    let is_expected_studio_copy = stored_path
+        .file_name()
+        .is_some_and(|name| name == std::ffi::OsStr::new("source.pdf"))
+        && parent
+            .parent()
+            .and_then(|ancestor| ancestor.file_name())
+            .is_some_and(|name| name == std::ffi::OsStr::new("studio-documents"));
+
+    if !is_expected_studio_copy {
+        return Ok(());
+    }
+
+    match remove_dir_all(parent) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 async fn create_page_from_template_record(
@@ -1267,6 +1361,30 @@ async fn update_studio_document_viewer_state(
 }
 
 #[tauri::command]
+async fn rename_studio_document(
+    id: String,
+    title: String,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("title cannot be empty".to_string());
+    }
+
+    rename_studio_document_record(&state.db, &id, title, &updated_at).await
+}
+
+#[tauri::command]
+async fn delete_studio_document(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let stored_file_path = delete_studio_document_record(&state.db, &id).await?;
+    remove_stored_studio_document_file(&stored_file_path)
+}
+
+#[tauri::command]
 async fn toggle_favorite(
     id: String,
     is_favorite: bool,
@@ -1398,6 +1516,8 @@ pub fn run() {
             list_studio_documents,
             import_studio_document,
             update_studio_document_viewer_state,
+            rename_studio_document,
+            delete_studio_document,
             toggle_favorite,
             toggle_template,
             create_page_from_template,
@@ -1778,6 +1898,127 @@ mod tests {
             assert_eq!(document.viewer_page, 3);
             assert_eq!(document.panel_layout, "note-left");
         });
+    }
+
+    #[test]
+    fn rename_studio_document_updates_document_and_note_title() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Old",
+                    original_filename: "old.pdf",
+                    stored_file_path: "/tmp/old.pdf",
+                    imported_at: "2026-05-27T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            rename_studio_document_record(&db, "doc-1", "New Title", "2026-05-27T00:10:00.000Z")
+                .await
+                .expect("rename document");
+
+            let document = list_studio_document_records(&db)
+                .await
+                .expect("list documents")
+                .remove(0);
+            assert_eq!(document.title, "New Title");
+
+            let note = get_page_record(&db, "note-1")
+                .await
+                .expect("load linked note")
+                .expect("note exists");
+            assert_eq!(note.title, "New Title Notes");
+        });
+    }
+
+    #[test]
+    fn delete_studio_document_removes_document_and_linked_note() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "sample.pdf",
+                    stored_file_path: "/tmp/sample.pdf",
+                    imported_at: "2026-05-27T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            let stored_path = delete_studio_document_record(&db, "doc-1")
+                .await
+                .expect("delete document");
+
+            assert_eq!(stored_path, "/tmp/sample.pdf");
+            assert!(list_studio_document_records(&db)
+                .await
+                .expect("list documents")
+                .is_empty());
+            assert!(get_page_record(&db, "note-1")
+                .await
+                .expect("load linked note")
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn remove_stored_studio_document_file_deletes_expected_copy_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "opennotion-studio-delete-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let document_dir = root.join("studio-documents").join("doc-1");
+        create_dir_all(&document_dir).expect("create studio document dir");
+        let stored_path = document_dir.join("source.pdf");
+        File::create(&stored_path).expect("create copied PDF");
+
+        remove_stored_studio_document_file(
+            stored_path
+                .to_str()
+                .expect("temp path should be valid unicode for test"),
+        )
+        .expect("remove copied PDF");
+
+        assert!(!document_dir.exists());
+        assert!(root.join("studio-documents").exists());
+        remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    fn remove_stored_studio_document_file_does_not_delete_arbitrary_parent() {
+        let root = std::env::temp_dir().join(format!(
+            "opennotion-studio-delete-guard-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        create_dir_all(&root).expect("create arbitrary dir");
+        let stored_path = root.join("sample.pdf");
+        File::create(&stored_path).expect("create arbitrary PDF");
+
+        remove_stored_studio_document_file(
+            stored_path
+                .to_str()
+                .expect("temp path should be valid unicode for test"),
+        )
+        .expect("remove arbitrary PDF");
+
+        assert!(!stored_path.exists());
+        assert!(root.exists());
+        remove_dir_all(root).expect("cleanup arbitrary dir");
     }
 
     #[test]

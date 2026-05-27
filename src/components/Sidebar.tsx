@@ -500,6 +500,8 @@ export function Sidebar() {
     fetchStudioDocuments,
     setCurrentStudioDocumentId,
     importStudioPdfAction,
+    renameStudioDocumentAction,
+    deleteStudioDocumentAction,
     sidebarWidth,
     setSidebarWidth,
   } = useAppStore();
@@ -844,6 +846,8 @@ export function Sidebar() {
           isLoading={isLoading}
           onImport={() => void importStudioPdfAction()}
           onSelectDocument={setCurrentStudioDocumentId}
+          onRenameDocument={(id, title) => void renameStudioDocumentAction(id, title)}
+          onDeleteDocument={(id) => void deleteStudioDocumentAction(id)}
         />
       ) : (
         <>

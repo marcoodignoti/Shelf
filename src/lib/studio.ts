@@ -47,6 +47,18 @@ export async function updateStudioDocumentViewerState(
   });
 }
 
+export async function renameStudioDocument(id: string, title: string): Promise<void> {
+  await invoke("rename_studio_document", {
+    id,
+    title,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteStudioDocument(id: string): Promise<void> {
+  await invoke("delete_studio_document", { id });
+}
+
 export function clampStudioZoom(zoom: number): number {
   return Math.max(25, Math.min(300, Math.round(zoom)));
 }
