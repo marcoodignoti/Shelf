@@ -157,6 +157,18 @@ describe("formulaFromBlockContent", () => {
       ])
     ).toBe("\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}");
   });
+
+  it("extracts one-line display formulas with short variable names", () => {
+    expect(
+      formulaFromBlockContent([
+        {
+          type: "text",
+          text: "$$q = \\pm Ne$$",
+          styles: {},
+        },
+      ])
+    ).toBe("q = \\pm Ne");
+  });
 });
 
 describe("normalizeMathInlineContentInEditor", () => {

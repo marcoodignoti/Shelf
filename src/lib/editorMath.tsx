@@ -455,8 +455,8 @@ function formulaFromText(text: string): string | null {
   return standaloneLatexFormula(formula);
 }
 
-function findNextFormulaToken(text: string, startIndex: number): { start: number; open: "$" | "[" | "(" | "\\[" | "\\("; close: "$" | "]" | ")" | "\\]" | "\\)" } | null {
-  let nextToken: { start: number; open: "$" | "[" | "(" | "\\[" | "\\("; close: "$" | "]" | ")" | "\\]" | "\\)" } | null = null;
+function findNextFormulaToken(text: string, startIndex: number): { start: number; open: "$$" | "$" | "[" | "(" | "\\[" | "\\("; close: "$$" | "$" | "]" | ")" | "\\]" | "\\)" } | null {
+  let nextToken: { start: number; open: "$$" | "$" | "[" | "(" | "\\[" | "\\("; close: "$$" | "$" | "]" | ")" | "\\]" | "\\)" } | null = null;
 
   for (let index = startIndex; index < text.length; index += 1) {
     if (text.startsWith("\\[", index)) {
@@ -466,6 +466,11 @@ function findNextFormulaToken(text: string, startIndex: number): { start: number
 
     if (text.startsWith("\\(", index)) {
       nextToken = { start: index, open: "\\(", close: "\\)" };
+      break;
+    }
+
+    if (text.startsWith("$$", index) && text[index - 1] !== "\\") {
+      nextToken = { start: index, open: "$$", close: "$$" };
       break;
     }
 
@@ -488,7 +493,7 @@ function findNextFormulaToken(text: string, startIndex: number): { start: number
   return nextToken;
 }
 
-function findUnescapedDelimiter(text: string, delimiter: "$" | "]" | ")" | "\\]" | "\\)", startIndex: number): number {
+function findUnescapedDelimiter(text: string, delimiter: "$$" | "$" | "]" | ")" | "\\]" | "\\)", startIndex: number): number {
   for (let index = startIndex; index < text.length; index += 1) {
     if (delimiter.length > 1 && text.startsWith(delimiter, index)) {
       return index;
@@ -506,9 +511,9 @@ function findUnescapedDelimiter(text: string, delimiter: "$" | "]" | ")" | "\\]"
   return -1;
 }
 
-function isInlineFormula(formula: string, delimiter: "$" | "[" | "(" | "\\[" | "\\("): boolean {
+function isInlineFormula(formula: string, delimiter: "$$" | "$" | "[" | "(" | "\\[" | "\\("): boolean {
   if (!formula || formula.includes("\n")) return false;
-  return delimiter === "$" || isLikelyLatexFormula(formula);
+  return delimiter === "$" || delimiter === "$$" || isLikelyLatexFormula(formula);
 }
 
 function latexPrefixBeforeProse(text: string): { start: number; end: number; formula: string } | null {
@@ -616,12 +621,13 @@ function stripClosingMathFence(text: string): string {
 }
 
 function isLikelyLatexFormulaLine(value: string): boolean {
-  return !containsProseText(value) && (
-    isLikelyLatexFormula(value) ||
-    /^\\[a-zA-Z]+\s*[()]?$/.test(value) ||
-    /^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}\\]+)+$/.test(value) ||
-    /^[=+\-*/^_{}\\\s\d.,()[\]]+$/.test(value)
-  );
+  if (!value) return false;
+  if (isLikelyLatexFormula(value)) return true;
+  if (/^\\[a-zA-Z]+\s*[()]?$/.test(value)) return true;
+  if (/^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}\\]+)+$/.test(value)) return true;
+  if (/^[=+\-*/^_{}\\\s\d.,()[\]]+$/.test(value)) return true;
+
+  return !containsProseText(value) && /[=+\-*/^_\\]/.test(value);
 }
 
 function containsProseText(value: string): boolean {
