@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
-use std::fs::{copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, File, Permissions};
+use std::fs::{
+    copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, File, Permissions,
+};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -650,7 +652,10 @@ async fn rename_studio_document_record(
         .execute(&mut *transaction)
         .await
         .map_err(|error| error.to_string())?;
-    transaction.commit().await.map_err(|error| error.to_string())?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())?;
 
     Ok(())
 }
@@ -678,7 +683,10 @@ async fn delete_studio_document_record(db: &SqlitePool, id: &str) -> Result<Stri
         .execute(&mut *transaction)
         .await
         .map_err(|error| error.to_string())?;
-    transaction.commit().await.map_err(|error| error.to_string())?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())?;
 
     Ok(stored_file_path)
 }
@@ -992,9 +1000,16 @@ fn validated_pdf_file(path: &Path) -> Result<&'static str, String> {
 }
 
 fn safe_storage_id(id: &str) -> String {
-    id.chars()
+    let safe_id: String = id
+        .chars()
         .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
-        .collect()
+        .collect();
+
+    if safe_id.is_empty() {
+        "document".to_string()
+    } else {
+        safe_id
+    }
 }
 
 fn validated_cover_extension(path: &Path, max_bytes: u64) -> Result<&'static str, String> {
@@ -1822,6 +1837,11 @@ mod tests {
         assert_eq!(error, "PDF must be 512 MB or smaller");
 
         let _ = remove_file(&large_path);
+    }
+
+    #[test]
+    fn safe_storage_id_uses_fallback_when_input_has_no_safe_characters() {
+        assert_eq!(safe_storage_id("../../"), "document");
     }
 
     #[test]
