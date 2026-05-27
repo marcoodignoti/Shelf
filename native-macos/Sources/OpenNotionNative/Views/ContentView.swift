@@ -3,20 +3,52 @@ import SwiftUI
 
 struct ContentView: View {
     let store: OpenNotionStore
+    @State private var workspaceStore = WorkspaceStore()
+    @State private var selectedSection: AppSection = .pages
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store)
+            VStack(spacing: 0) {
+                Picker("Section", selection: $selectedSection) {
+                    Label("Pages", systemImage: "doc.text").tag(AppSection.pages)
+                    Label("Research", systemImage: "globe").tag(AppSection.research)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+
+                Divider()
+
+                switch selectedSection {
+                case .pages:
+                    SidebarView(store: store)
+                case .research:
+                    WorkspaceSidebarView(store: workspaceStore)
+                }
+            }
+            .frame(minWidth: 260)
+            .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 360)
         } detail: {
             ZStack(alignment: .topLeading) {
-                DetailView(store: store)
-                SafetyBanner(status: store.safetyStatus)
-                    .padding(.top, 10)
-                    .padding(.leading, 14)
+                switch selectedSection {
+                case .pages:
+                    DetailView(store: store)
+                    SafetyBanner(status: store.safetyStatus)
+                        .padding(.top, 10)
+                        .padding(.leading, 14)
+                case .research:
+                    ResearchWorkspaceView(store: workspaceStore)
+                }
             }
         }
         .onOpenURL { url in
-            _ = store.openPageLink(url)
+            if store.openPageLink(url) {
+                selectedSection = .pages
+            }
+        }
+        .task {
+            workspaceStore.load()
         }
         .confirmationDialog("Move page to Trash?", isPresented: deleteConfirmationBinding, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {
@@ -79,6 +111,11 @@ struct ContentView: View {
             }
         )
     }
+}
+
+private enum AppSection: String, Hashable {
+    case pages
+    case research
 }
 
 private struct SafetyBanner: View {
