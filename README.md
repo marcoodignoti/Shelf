@@ -4,7 +4,7 @@ OpenNotion is a local-first workspace for notes, study, and research. It keeps y
 
 The active macOS product is the native SwiftUI app. The Tauri/React app remains in the repository as a legacy implementation and parity reference while native features continue to catch up.
 
-![OpenNotion notes workspace](docs/assets/opennotion-notes-workspace.png)
+![OpenNotion home dashboard](docs/assets/opennotion-home.png)
 
 ## Why OpenNotion
 
@@ -19,7 +19,7 @@ The active macOS product is the native SwiftUI app. The Tauri/React app remains 
 
 Studio is built for students and researchers who need to read and write in the same place. Import a local PDF, keep the PDF and its note tied together, and return later with viewer state intact.
 
-![OpenNotion Studio workspace](docs/assets/opennotion-studio-workspace.png)
+![OpenNotion Studio PDF workspace](docs/assets/opennotion-studio-pdf.png)
 
 Current Studio capabilities in the Tauri reference app:
 
@@ -50,6 +50,8 @@ This is separate from the legacy Tauri Studio implementation and lives in the na
 
 OpenNotion supports the everyday workspace loop:
 
+![OpenNotion page with subpages](docs/assets/opennotion-page-subpages.png)
+
 1. Create a page or subpage.
 2. Add an icon, title, and structured blocks.
 3. Move pages through the sidebar.
@@ -58,6 +60,18 @@ OpenNotion supports the everyday workspace loop:
 6. Move pages to Trash, restore them, or permanently delete after confirmation.
 
 The native editor stores BlockNote-compatible document content so the project can keep interoperability with the original Tauri editor while moving toward a fully native macOS experience.
+
+### Fast Editing
+
+![OpenNotion slash command menu](docs/assets/opennotion-slash-menu.png)
+
+Type `/` to open the block menu and quickly insert headings, lists, checklist items, quotes, dividers, code, and other structured content.
+
+### Search
+
+![OpenNotion command palette search](docs/assets/opennotion-search.png)
+
+Open search from the sidebar to jump through recent pages and find workspace content without leaving the keyboard.
 
 ## Architecture
 
