@@ -30,7 +30,7 @@ import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
@@ -130,6 +130,19 @@ function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
     });
     window.setTimeout(restore, 0);
   };
+}
+
+function isEmptyEditorBlock(block: Block<any, any, any>): boolean {
+  if (block.children.length > 0) return false;
+  const content = block.content as unknown;
+  if (typeof content === "string") return content.trim().length === 0;
+  if (!Array.isArray(content)) return true;
+
+  return content.every((item) => {
+    if (typeof item === "string") return item.trim().length === 0;
+    if (typeof item !== "object" || item === null || Array.isArray(item)) return true;
+    return !("text" in item) || typeof item.text !== "string" || item.text.trim().length === 0;
+  });
 }
 
 function OpenNotionDragHandleButton() {
@@ -442,6 +455,18 @@ export function Editor({
           const imageFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
             file.type.startsWith("image/")
           );
+          const pastedText = event.clipboardData?.getData("text/plain") ?? "";
+          const mathBlocks = imageFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
+
+          if (mathBlocks) {
+            const cursorBlock = editor.getTextCursorPosition().block;
+            if (isEmptyEditorBlock(cursorBlock)) {
+              editor.replaceBlocks([cursorBlock], mathBlocks as never);
+            } else {
+              editor.insertBlocks(mathBlocks as never, cursorBlock, "after");
+            }
+            return true;
+          }
 
           if (imageFiles.length === 0) {
             return defaultPasteHandler();

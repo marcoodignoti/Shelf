@@ -1,4 +1,4 @@
-import { Block, BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
+import { Block, BlockNoteEditor, BlockNoteSchema, PartialBlock, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, createReactInlineContentSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import katex from "katex";
@@ -270,6 +270,85 @@ export function formulaInputFromBlockContent(content: unknown): string {
   return formulaFromBlockContent(content) ?? textFromBlockContent(content).trim();
 }
 
+export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
+  const normalizedText = text.replace(/\r\n?/g, "\n");
+  if (!normalizedText.split("\n").some((line) => {
+    const trimmed = line.trim();
+    return isOpenMathFence(trimmed) || trimmed.startsWith("$$") || trimmed.startsWith("\\[");
+  })) {
+    return null;
+  }
+
+  const blocks: PartialBlock[] = [];
+  const paragraphLines: string[] = [];
+  let formulaLines: string[] | null = null;
+
+  const flushParagraph = () => {
+    for (const line of paragraphLines.splice(0)) {
+      if (!line.trim()) continue;
+      blocks.push({ type: "paragraph", content: line });
+    }
+  };
+
+  const flushFormula = () => {
+    if (!formulaLines) return true;
+
+    const parts = formulaLines.map((line) => stripClosingMathFence(line.trim())).filter(Boolean);
+    if (parts.length === 0 || !parts.every(isLikelyLatexFormulaLine)) {
+      return false;
+    }
+
+    blocks.push({
+      type: "formula",
+      props: { formula: parts.join(" ") },
+    } as unknown as PartialBlock);
+    formulaLines = null;
+    return true;
+  };
+
+  for (const line of normalizedText.split("\n")) {
+    const trimmed = line.trim();
+
+    if (formulaLines) {
+      if (isCloseMathFence(trimmed)) {
+        if (!flushFormula()) return null;
+        continue;
+      }
+
+      formulaLines.push(trimmed);
+      if (hasClosingMathFence(trimmed)) {
+        if (!flushFormula()) return null;
+      }
+      continue;
+    }
+
+    const inlineDisplayFormula = formulaFromText(trimmed);
+    if (inlineDisplayFormula && (trimmed.startsWith("$$") || trimmed.startsWith("\\["))) {
+      flushParagraph();
+      blocks.push({
+        type: "formula",
+        props: { formula: inlineDisplayFormula },
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    if (isOpenMathFence(trimmed)) {
+      flushParagraph();
+      formulaLines = [];
+      continue;
+    }
+
+    paragraphLines.push(line);
+  }
+
+  if (formulaLines) {
+    return null;
+  }
+
+  flushParagraph();
+  return blocks.length > 0 ? blocks : null;
+}
+
 export function normalizeMathInlineContent(content: InlineContent[]): {
   changed: boolean;
   content: InlineContent[];
@@ -357,6 +436,11 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
 function formulaFromText(text: string): string | null {
   const formula = text.trim();
   if (!formula) return null;
+
+  if (formula.startsWith("$$") && formula.endsWith("$$") && formula.length > 4) {
+    const innerFormula = formula.slice(2, -2).trim();
+    return isLikelyLatexFormula(innerFormula) ? innerFormula : null;
+  }
 
   if (formula.startsWith("\\[") && formula.endsWith("\\]")) {
     const innerFormula = formula.slice(2, -2).trim();
@@ -463,7 +547,7 @@ function stripUnclosedMathPrefix(value: string): string {
 }
 
 function isLikelyLatexFormula(value: string): boolean {
-  return /\\(?:oint|int|nabla|vec|cdot|frac|partial|Sigma|Gamma|Delta|Phi|varepsilon|mathcal|mu|rho|text)\b/.test(value) ||
+  return /\\(?:oint|int|nabla|vec|cdot|frac|partial|Sigma|Gamma|Delta|Phi|varepsilon|mathcal|mu|rho|pm|mp|times|div|sqrt|hat|left|right|text)\b/.test(value) ||
     /[_^][{\\\w]/.test(value) ||
     /\\[a-zA-Z]+\{/.test(value);
 }
@@ -513,18 +597,19 @@ function normalizeBracketedMathBlocks(editor: BlockNoteEditor<any, any, any>): b
 }
 
 function isOpenMathFence(text: string): boolean {
-  return text === "[" || text === "\\[";
+  return text === "[" || text === "\\[" || text === "$$";
 }
 
 function isCloseMathFence(text: string): boolean {
-  return text === "]" || text === "\\]";
+  return text === "]" || text === "\\]" || text === "$$";
 }
 
 function hasClosingMathFence(text: string): boolean {
-  return isCloseMathFence(text) || (text.endsWith("]") && !text.endsWith("\\]")) || text.endsWith("\\]");
+  return isCloseMathFence(text) || (text.endsWith("]") && !text.endsWith("\\]")) || text.endsWith("\\]") || text.endsWith("$$");
 }
 
 function stripClosingMathFence(text: string): string {
+  if (text.endsWith("$$")) return text.slice(0, -2).trim();
   if (text.endsWith("\\]")) return text.slice(0, -2).trim();
   if (text.endsWith("]")) return text.slice(0, -1).trim();
   return text;
@@ -533,6 +618,8 @@ function stripClosingMathFence(text: string): string {
 function isLikelyLatexFormulaLine(value: string): boolean {
   return !containsProseText(value) && (
     isLikelyLatexFormula(value) ||
+    /^\\[a-zA-Z]+\s*[()]?$/.test(value) ||
+    /^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}\\]+)+$/.test(value) ||
     /^[=+\-*/^_{}\\\s\d.,()[\]]+$/.test(value)
   );
 }

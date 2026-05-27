@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  blocksFromPastedMathText,
   formulaFromBlockContent,
   formulaSlashMenuItem,
   normalizeMathInlineContent,
@@ -80,6 +81,33 @@ describe("normalizeMathInlineContent", () => {
   it("does not treat ordinary square brackets as math", () => {
     const content = [{ type: "text", text: "Read [chapter one] first", styles: {} }];
     expect(normalizeMathInlineContent(content).content).toEqual(content);
+  });
+});
+
+describe("blocksFromPastedMathText", () => {
+  it("turns display math fences into formula blocks and keeps prose paragraphs", () => {
+    expect(
+      blocksFromPastedMathText(
+        "cioè:\n$$\n\\vec{F}\nq_2\n\\left(\n\\frac{1}{4\\pi\\varepsilon_0}\n\\frac{q_1}{r^2}\n\\hat{r}\n\\right)\n$$"
+      )
+    ).toEqual([
+      { type: "paragraph", content: "cioè:" },
+      {
+        type: "formula",
+        props: {
+          formula: "\\vec{F} q_2 \\left( \\frac{1}{4\\pi\\varepsilon_0} \\frac{q_1}{r^2} \\hat{r} \\right)",
+        },
+      },
+    ]);
+  });
+
+  it("turns one-line display math fences into a formula block", () => {
+    expect(blocksFromPastedMathText("$$q = \\pm Ne$$")).toEqual([
+      {
+        type: "formula",
+        props: { formula: "q = \\pm Ne" },
+      },
+    ]);
   });
 });
 
@@ -239,6 +267,82 @@ describe("normalizeMathInlineContentInEditor", () => {
         id: "formula-symbol",
         type: "formula",
         props: { formula: "\\mathcal{E} -\\frac{d\\Phi_B}{dt}" },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes pasted display math fences with multi-line formulas", () => {
+    const document = [
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "cioè:", styles: {} }], children: [] },
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      {
+        id: "force",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\vec{F}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "charge",
+        type: "paragraph",
+        content: [{ type: "text", text: "q_2", styles: {} }],
+        children: [],
+      },
+      {
+        id: "left",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\left(", styles: {} }],
+        children: [],
+      },
+      {
+        id: "coulomb",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\frac{1}{4\\pi\\varepsilon_0}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "source",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\frac{q_1}{r^2}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "direction",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\hat{r}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "right",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\right)", styles: {} }],
+        children: [],
+      },
+      { id: "close", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "cioè:", styles: {} }], children: [] },
+      {
+        id: "force",
+        type: "formula",
+        props: {
+          formula: "\\vec{F} q_2 \\left( \\frac{1}{4\\pi\\varepsilon_0} \\frac{q_1}{r^2} \\hat{r} \\right)",
+        },
         content: undefined,
         children: [],
       },

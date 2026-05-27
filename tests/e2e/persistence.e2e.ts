@@ -307,6 +307,52 @@ test("turns bracketed latex lines into editable formula blocks", async ({ page }
   );
 });
 
+test("turns pasted display math fences into one formula block", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Display Math Paste Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      "$$\n\\vec{F}\nq_2\n\\left(\n\\frac{1}{4\\pi\\varepsilon_0}\n\\frac{q_1}{r^2}\n\\hat{r}\n\\right)\n$$"
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  const formula = "\\vec{F} q_2 \\left( \\frac{1}{4\\pi\\varepsilon_0} \\frac{q_1}{r^2} \\hat{r} \\right)";
+  await expect(page.getByLabel(`Formula preview: ${formula}`)).toBeVisible();
+  await page.waitForFunction(
+    ({ key, formula }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const savedPage = pages.find((page) => page.title === "Display Math Paste Smoke");
+      return (savedPage?.content ?? "").includes('"type":"formula"') && (savedPage?.search_text ?? "").includes(formula);
+    },
+    { key: storageKey, formula }
+  );
+});
+
+test("turns one-line display math paste into a formula block", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("One Line Display Math Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "$$q = \\pm Ne$$");
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByLabel("Formula preview: q = \\pm Ne")).toBeVisible();
+});
+
 test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
   await page.goto("/");
 
