@@ -21,7 +21,7 @@ import {
 } from "@blocknote/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertTriangle, Check, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
@@ -44,6 +44,12 @@ type BlockDropTarget = {
   blockId: string;
   placement: BlockDropPlacement;
   element: HTMLElement;
+};
+
+type HeadingRailItem = {
+  id: string;
+  level: number;
+  title: string;
 };
 
 function moveEditorBlock(editor: BlockNoteEditor, sourceId: string, targetId: string, placement: BlockDropPlacement) {
@@ -109,6 +115,75 @@ function OpenNotionSideMenu() {
   );
 }
 
+function PageHeadingRail({
+  items,
+  activeId,
+  onSelect,
+}: {
+  items: HeadingRailItem[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const activeIndex = Math.max(0, items.findIndex((item) => item.id === activeId));
+  const previousItem = items[Math.max(0, activeIndex - 1)] ?? null;
+  const nextItem = items[Math.min(items.length - 1, activeIndex + 1)] ?? null;
+
+  if (items.length === 0) return null;
+
+  return (
+    <nav
+      aria-label="Page sections"
+      className="absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center xl:flex"
+    >
+      <div className="flex h-full max-h-[34rem] flex-col items-center justify-between gap-2 rounded-full py-1 text-muted-foreground/70 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          className="on-heading-rail-arrow"
+          aria-label="Previous section"
+          disabled={!previousItem || previousItem.id === activeId}
+          onClick={() => previousItem && onSelect(previousItem.id)}
+        >
+          <ChevronUp className="h-4 w-4" />
+        </button>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-y-auto py-1">
+          {items.map((item) => {
+            const isActive = item.id === activeId;
+            const tickWidth = item.level <= 1 ? "w-8" : item.level === 2 ? "w-6" : "w-4";
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                aria-label={`Go to ${item.title}`}
+                aria-current={isActive ? "true" : undefined}
+                title={item.title}
+                onClick={() => onSelect(item.id)}
+              >
+                <span
+                  className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
+                />
+                <span className="pointer-events-none absolute right-9 top-1/2 max-w-72 -translate-y-1/2 truncate rounded-xl border border-border bg-popover/95 px-3 py-2 text-sm font-medium text-popover-foreground opacity-0 shadow-xl backdrop-blur-xl transition-opacity group-hover/railitem:opacity-100 group-focus-visible/railitem:opacity-100">
+                  {item.title}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="on-heading-rail-arrow"
+          aria-label="Next section"
+          disabled={!nextItem || nextItem.id === activeId}
+          onClick={() => nextItem && onSelect(nextItem.id)}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function isNativeTextInput(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
@@ -143,6 +218,51 @@ function isEmptyEditorBlock(block: Block<any, any, any>): boolean {
     if (typeof item !== "object" || item === null || Array.isArray(item)) return true;
     return !("text" in item) || typeof item.text !== "string" || item.text.trim().length === 0;
   });
+}
+
+function textFromInlineContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item !== "object" || item === null || Array.isArray(item)) return "";
+      if ("text" in item && typeof item.text === "string") return item.text;
+      if ("props" in item && typeof item.props === "object" && item.props !== null) {
+        const props = item.props as Record<string, unknown>;
+        return typeof props.formula === "string" ? props.formula : "";
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function headingItemsFromBlocks(blocks: Block<any, any, any>[]): HeadingRailItem[] {
+  return blocks.flatMap((block) => {
+    const children = Array.isArray(block.children) ? headingItemsFromBlocks(block.children as Block<any, any, any>[]) : [];
+
+    if (block.type !== "heading") {
+      return children;
+    }
+
+    const props = block.props as Record<string, unknown>;
+    const level = typeof props.level === "number" ? props.level : 1;
+    const title = textFromInlineContent(block.content) || "Untitled section";
+
+    return [{ id: block.id, level, title }, ...children];
+  });
+}
+
+function blockElementSelector(blockId: string): string {
+  const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(blockId)
+    : blockId.replace(/"/g, '\\"');
+
+  return `.bn-block-outer[data-id="${escaped}"]`;
 }
 
 function OpenNotionDragHandleButton() {
@@ -400,6 +520,7 @@ export function Editor({
   const pendingUpdatesRef = useRef<Partial<Page>>({});
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const titleEnterModifierRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -499,6 +620,11 @@ export function Editor({
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
   const slashMenuItems = useMemo(() => openNotionSlashMenuItems(editor), [editor]);
+  const headingItems = useEditorState({
+    editor,
+    selector: ({ editor }) => headingItemsFromBlocks(editor.document as Block<any, any, any>[]),
+  }) ?? [];
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(headingItems[0]?.id ?? null);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -659,6 +785,63 @@ export function Editor({
   useEffect(() => {
     resizeTitleInput();
   }, [resizeTitleInput, title]);
+
+  const scrollToHeading = useCallback((headingId: string) => {
+    const scrollContainer = scrollContainerRef.current;
+    const headingElement = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(headingId));
+    if (!scrollContainer || !headingElement) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const headingRect = headingElement.getBoundingClientRect();
+    const top = scrollContainer.scrollTop + headingRect.top - containerRect.top - 96;
+
+    setActiveHeadingId(headingId);
+    scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [editor]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer || headingItems.length === 0) {
+      setActiveHeadingId(null);
+      return;
+    }
+
+    let frame = 0;
+
+    const updateActiveHeading = () => {
+      frame = 0;
+      const containerTop = scrollContainer.getBoundingClientRect().top;
+      let current = headingItems[0]?.id ?? null;
+
+      for (const item of headingItems) {
+        const element = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(item.id));
+        if (!element) continue;
+
+        if (element.getBoundingClientRect().top <= containerTop + 140) {
+          current = item.id;
+        } else {
+          break;
+        }
+      }
+
+      setActiveHeadingId((previous) => previous === current ? previous : current);
+    };
+
+    const queueUpdate = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(updateActiveHeading);
+    };
+
+    updateActiveHeading();
+    scrollContainer.addEventListener("scroll", queueUpdate, { passive: true });
+    window.addEventListener("resize", queueUpdate);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      scrollContainer.removeEventListener("scroll", queueUpdate);
+      window.removeEventListener("resize", queueUpdate);
+    };
+  }, [editor, headingItems]);
 
   const handleEditorChange = () => {
     if (!isNormalizingMathRef.current) {
@@ -825,7 +1008,14 @@ export function Editor({
 
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
-      <div className="on-scroll-fade flex-1 w-full overflow-y-auto">
+      {!isStudioVariant && (
+        <PageHeadingRail
+          items={headingItems}
+          activeId={activeHeadingId}
+          onSelect={scrollToHeading}
+        />
+      )}
+      <div ref={scrollContainerRef} className="on-scroll-fade flex-1 w-full overflow-y-auto">
         <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
         {!isStudioVariant && (
         <div className="mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">

@@ -310,6 +310,10 @@
     @apply rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground;
   }
 
+  .on-heading-rail-arrow {
+    @apply flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-30;
+  }
+
   .bn-container,
   .bn-editor {
     background: transparent !important;

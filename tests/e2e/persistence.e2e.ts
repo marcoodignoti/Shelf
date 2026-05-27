@@ -202,6 +202,40 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
   );
 });
 
+test("shows a hover heading rail and navigates between page sections", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 820 });
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("Heading Rail Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("# First section");
+  await page.keyboard.press("Enter");
+
+  for (let index = 0; index < 20; index += 1) {
+    await page.keyboard.type(`Filler paragraph ${index}`);
+    await page.keyboard.press("Enter");
+  }
+
+  await page.keyboard.type("## Second section");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Second section body");
+
+  const rail = page.getByRole("navigation", { name: "Page sections" });
+  await expect(rail).toBeVisible();
+
+  const secondSectionButton = page.getByRole("button", { name: "Go to Second section" });
+  await expect(secondSectionButton).toBeVisible();
+  await secondSectionButton.click();
+
+  await expect(secondSectionButton).toHaveAttribute("aria-current", "true");
+  await expect.poll(async () =>
+    page.locator(".on-scroll-fade.w-full").first().evaluate((element) => element.scrollTop)
+  ).toBeGreaterThan(0);
+});
+
 test("supports multiline page titles with alt enter and enter moves to body", async ({ page }) => {
   await page.goto("/");
 
