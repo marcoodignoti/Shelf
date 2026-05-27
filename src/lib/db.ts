@@ -146,6 +146,15 @@ export async function importCoverImage(sourcePath: string, pageId: string): Prom
   return await invoke<string>('import_cover_image', { sourcePath, pageId });
 }
 
+export async function importEditorImage(file: File, pageId: string): Promise<string> {
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  return await invoke<string>('import_editor_image', {
+    pageId,
+    fileName: file.name || 'image',
+    bytes,
+  });
+}
+
 export function coverImageSrc(coverUrl: string): string {
   if (/^(https?:|data:|blob:|asset:)/i.test(coverUrl)) {
     return coverUrl;

@@ -12,7 +12,7 @@ import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableVi
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
-import { coverImageSrc, importCoverImage, updatePage, Page } from "../lib/db";
+import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
@@ -280,6 +280,38 @@ export function Editor({
     () =>
       BlockNoteEditor.create({
         initialContent,
+        uploadFile: async (file) => {
+          const importedPath = await importEditorImage(file, page.id);
+          return coverImageSrc(importedPath);
+        },
+        pasteHandler: ({ event, editor, defaultPasteHandler }) => {
+          const imageFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+            file.type.startsWith("image/")
+          );
+
+          if (imageFiles.length === 0) {
+            return defaultPasteHandler();
+          }
+
+          void Promise.all(
+            imageFiles.map(async (file) => {
+              const importedPath = await importEditorImage(file, page.id);
+              return { name: file.name || "Pasted image", url: coverImageSrc(importedPath) };
+            })
+          ).then((images) => {
+            const cursorBlock = editor.getTextCursorPosition().block;
+            editor.insertBlocks(
+              images.map((image) => ({
+                type: "image",
+                props: image,
+              })),
+              cursorBlock,
+              "after"
+            );
+          });
+
+          return true;
+        },
       }),
     [page.id]
   );

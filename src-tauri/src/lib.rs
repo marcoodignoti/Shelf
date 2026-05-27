@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
 use std::fs::{
-    copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, File, Permissions,
+    copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, write, File,
+    Permissions,
 };
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,13 @@ const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
 const STUDIO_PDF_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const APP_SCHEMA_VERSION: &str = "1";
+const IMAGE_MAGIC_HEADERS: &[(&str, &[u8])] = &[
+    ("png", &[137, 80, 78, 71, 13, 10, 26, 10]),
+    ("jpg", &[255, 216, 255]),
+    ("gif", b"GIF87a"),
+    ("gif", b"GIF89a"),
+    ("webp", b"RIFF"),
+];
 
 #[derive(Clone)]
 struct AppState {
@@ -957,20 +965,14 @@ fn allowed_cover_extension(path: &Path) -> Option<&'static str> {
 }
 
 fn cover_extension_from_magic(header: &[u8]) -> Option<&'static str> {
-    if header.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        return Some("jpg");
-    }
-
-    if header.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]) {
-        return Some("png");
-    }
-
-    if header.starts_with(b"GIF87a") || header.starts_with(b"GIF89a") {
-        return Some("gif");
-    }
-
     if header.len() >= 12 && &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP" {
         return Some("webp");
+    }
+
+    for (extension, magic) in IMAGE_MAGIC_HEADERS {
+        if header.starts_with(magic) {
+            return Some(extension);
+        }
     }
 
     None
@@ -1054,6 +1056,69 @@ fn cover_destination(
     Ok(covers_dir.join(file_name))
 }
 
+fn safe_file_stem(file_name: &str) -> String {
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    let safe_name: String = stem
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || *character == '-' || *character == '_'
+        })
+        .collect();
+
+    if safe_name.is_empty() {
+        "image".to_string()
+    } else {
+        safe_name
+    }
+}
+
+fn validated_editor_image_extension(file_name: &str, bytes: &[u8]) -> Result<&'static str, String> {
+    if bytes.len() as u64 > COVER_IMAGE_MAX_BYTES {
+        return Err("image must be 10 MB or smaller".to_string());
+    }
+
+    let extension = Path::new(file_name)
+        .extension()
+        .map(|value| value.to_string_lossy().to_lowercase())
+        .and_then(|value| match value.as_str() {
+            "png" => Some("png"),
+            "jpg" | "jpeg" => Some("jpg"),
+            "webp" => Some("webp"),
+            "gif" => Some("gif"),
+            _ => None,
+        })
+        .ok_or_else(|| "image must be PNG, JPG, WebP, or GIF".to_string())?;
+    let detected_extension = cover_extension_from_magic(bytes)
+        .ok_or_else(|| "image content is not a supported image".to_string())?;
+
+    if detected_extension != extension {
+        return Err("image content does not match its extension".to_string());
+    }
+
+    Ok(extension)
+}
+
+fn editor_image_destination(
+    images_dir: &Path,
+    page_id: &str,
+    file_name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
+    let extension = validated_editor_image_extension(file_name, bytes)?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let safe_page_id = safe_storage_id(page_id);
+    let safe_name = safe_file_stem(file_name);
+    let image_dir = images_dir.join(safe_page_id);
+    ensure_private_directory(&image_dir).map_err(|error| error.to_string())?;
+
+    Ok(image_dir.join(format!("{}-{}.{}", timestamp, safe_name, extension)))
+}
+
 fn ensure_private_directory(path: &Path) -> std::io::Result<()> {
     create_dir_all(path)?;
 
@@ -1081,6 +1146,23 @@ fn copy_cover_image<R: Runtime>(
     validated_cover_extension(source_path, COVER_IMAGE_MAX_BYTES)?;
     let destination = cover_destination(&covers_dir, page_id, source_path)?;
     copy(source_path, &destination).map_err(|error| error.to_string())?;
+
+    Ok(destination.to_string_lossy().to_string())
+}
+
+fn copy_editor_image<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    page_id: &str,
+    file_name: &str,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let images_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("editor-images");
+    let destination = editor_image_destination(&images_dir, page_id, file_name, &bytes)?;
+    write(&destination, bytes).map_err(|error| error.to_string())?;
 
     Ok(destination.to_string_lossy().to_string())
 }
@@ -1471,6 +1553,16 @@ async fn import_cover_image<R: Runtime>(
     copy_cover_image(&app, Path::new(&source_path), &page_id)
 }
 
+#[tauri::command]
+async fn import_editor_image<R: Runtime>(
+    page_id: String,
+    file_name: String,
+    bytes: Vec<u8>,
+    app: tauri::AppHandle<R>,
+) -> Result<String, String> {
+    copy_editor_image(&app, &page_id, &file_name, bytes)
+}
+
 #[cfg(target_os = "macos")]
 #[tauri::command]
 fn show_character_palette<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
@@ -1538,6 +1630,7 @@ pub fn run() {
             create_page_from_template,
             duplicate_page,
             import_cover_image,
+            import_editor_image,
             show_character_palette
         ])
         .run(tauri::generate_context!())
@@ -1806,6 +1899,28 @@ mod tests {
         assert_eq!(error, "cover image must be 10 MB or smaller");
 
         let _ = remove_file(&large_path);
+    }
+
+    #[test]
+    fn editor_image_destination_sanitizes_page_id_and_file_name() {
+        let root = temp_path("editor-images");
+        let destination = editor_image_destination(
+            &root,
+            "../page",
+            "bad/name.png",
+            &[137, 80, 78, 71, 13, 10, 26, 10],
+        )
+        .expect("build editor image destination");
+        let path_text = destination.to_string_lossy();
+
+        assert!(path_text.contains("page"));
+        assert!(destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("file name")
+            .ends_with("-badname.png"));
+
+        let _ = remove_dir_all(root);
     }
 
     #[test]
