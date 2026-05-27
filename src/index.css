@@ -149,22 +149,23 @@
     min-height: 0;
   }
 
-  .on-studio-split {
-    display: grid;
+  .on-studio-split-frame {
+    container-type: inline-size;
   }
 
-  .on-studio-split-stacked {
-    overflow-y: auto;
+  .on-studio-split {
+    display: grid;
   }
 
   .on-studio-splitter {
     @apply min-h-0 cursor-col-resize bg-border/70 transition-colors hover:bg-primary/35;
   }
 
-  @media (max-width: 900px) {
+  @container (max-width: 700px) {
     .on-studio-split {
       grid-template-columns: 1fr !important;
       grid-template-rows: minmax(280px, 45vh) minmax(0, 1fr);
+      overflow-y: auto;
     }
 
     .on-studio-splitter {
