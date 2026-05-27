@@ -113,6 +113,10 @@ test.beforeEach(async ({ page }) => {
             }));
         }
 
+        if (cmd === "show_character_palette") {
+          return null;
+        }
+
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
     };
@@ -149,6 +153,82 @@ test("create, edit, reload, and search preserves page content", async ({ page })
   await expect(commandPalette.getByText(bodyText, { exact: true })).toBeVisible();
 });
 
+test("keeps custom icon input focused when opening the native picker", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add icon" }).click();
+  const iconInput = page.getByLabel("Custom page icon");
+  await expect(iconInput).toBeFocused();
+
+  await page.getByRole("button", { name: "Open native picker" }).click();
+  await expect(iconInput).toBeFocused();
+
+  await iconInput.fill("🧪");
+  await expect(page.getByRole("button", { name: "Change page icon" })).toHaveText("🧪");
+});
+
+test("supports markdown shortcuts in the page editor", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Markdown Smoke");
+  await page.getByRole("textbox").last().click();
+
+  await page.keyboard.type("# Markdown heading");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("- Bullet item");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("1. Numbered item");
+
+  await expect(page.getByRole("heading", { name: "Markdown heading" })).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "Markdown Smoke")?.content ?? "";
+
+      return (
+        content.includes('"type":"heading"') &&
+        content.includes('"type":"bulletListItem"') &&
+        content.includes('"type":"numberedListItem"')
+      );
+    },
+    { key: storageKey }
+  );
+});
+
+test("selects all editor blocks with command a", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Select All Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("First block");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Second block");
+
+  await page.keyboard.press("Meta+A");
+  await page.getByRole("button", { name: "Align text center" }).click();
+
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "Select All Smoke")?.content ?? "";
+      const centeredBlocks = content.match(/"textAlignment":"center"/g) ?? [];
+
+      return centeredBlocks.length >= 2;
+    },
+    { key: storageKey }
+  );
+});
+
 test("renders inline math typed with dollar delimiters", async ({ page }) => {
   await page.goto("/");
 
@@ -159,11 +239,17 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
 
+  await expect(page.getByLabel("Inline formula input")).toBeHidden();
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
+  await page.getByLabel("Formula: \\nabla \\cdot \\vec{E}").click();
+  await expect(page.getByLabel("Inline formula input")).toHaveValue("\\nabla \\cdot \\vec{E}");
+  await page.getByLabel("Inline formula input").fill("\\nabla \\cdot \\vec{B}");
+  await page.getByLabel("Inline formula input").press("Escape");
+  await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{B}")).toBeVisible();
   await page.waitForFunction(
     ({ key }) => {
       const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
-      return pages.some((page) => (page.content ?? "").includes('"type":"math"') && (page.search_text ?? "").includes("\\nabla"));
+      return pages.some((page) => (page.content ?? "").includes('"type":"math"') && (page.search_text ?? "").includes("\\vec{B}"));
     },
     { key: storageKey }
   );
@@ -171,5 +257,129 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
   await page.reload();
 
   await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("Math Smoke");
+  await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{B}")).toBeVisible();
+});
+
+test("centers a block that contains inline math from the formatting toolbar", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Inline Math Alignment");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
+
+  await page.keyboard.press("Meta+A");
+  await page.getByRole("button", { name: "Align text center" }).click();
+
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => (page.content ?? "").includes('"textAlignment":"center"'));
+    },
+    { key: storageKey }
+  );
+});
+
+test("turns bracketed latex lines into editable formula blocks", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Formula Block Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("[\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}]");
+
+  await expect(page.getByLabel("Formula input")).toBeHidden();
+  await page.getByLabel("Formula preview: \\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}").click();
+  await expect(page.getByLabel("Formula input")).toHaveValue(
+    "\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}"
+  );
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => (page.content ?? "").includes('"type":"formula"') && (page.search_text ?? "").includes("\\oint"));
+    },
+    { key: storageKey }
+  );
+});
+
+test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Formula Menu Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("E = mc^2");
+  await page.keyboard.press("Meta+A");
+
+  await page.getByRole("button", { name: "Paragraph" }).click();
+  await page.getByText("Formula", { exact: true }).click();
+
+  await expect(page.getByLabel("Formula input")).toBeHidden();
+  await page.getByLabel("Formula preview: E = mc^2").click();
+  await expect(page.getByLabel("Formula input")).toHaveValue("E = mc^2");
+});
+
+test("keeps scroll position when converting a block into a formula", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Formula Scroll Smoke");
+  await page.getByRole("textbox").last().click();
+  for (let index = 0; index < 24; index += 1) {
+    await page.keyboard.type(`Filler ${index}`);
+    await page.keyboard.press("Enter");
+  }
+  await page.keyboard.type("E = mc^2");
+
+  const scrollArea = page.locator(".on-scroll-fade").first();
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const beforeScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+
+  await page.keyboard.press("Meta+A");
+  await page.getByRole("button", { name: "Paragraph" }).click();
+  await page.getByText("Formula", { exact: true }).click();
+
+  await expect(page.getByLabel("Formula preview: E = mc^2")).toBeVisible();
+  const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(8);
+});
+
+test("keeps scroll position when converting a block into another text block type", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("input[placeholder='Untitled']").fill("Block Type Scroll Smoke");
+  await page.getByRole("textbox").last().click();
+  for (let index = 0; index < 24; index += 1) {
+    await page.keyboard.type(`Filler ${index}`);
+    await page.keyboard.press("Enter");
+  }
+  await page.keyboard.type("Transform me");
+
+  const scrollArea = page.locator(".on-scroll-fade").first();
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const beforeScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+
+  await page.keyboard.press("Meta+A");
+  await page.getByRole("button", { name: "Paragraph" }).click();
+  await page.getByText("Heading 2", { exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "Transform me" })).toBeVisible();
+  const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(8);
 });

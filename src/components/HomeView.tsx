@@ -44,8 +44,8 @@ export function HomeView({
   const favorites = favoritePages(pages);
 
   return (
-    <div className="h-full overflow-y-auto px-10 py-24">
-      <div className="mx-auto max-w-3xl">
+    <div className="on-scroll-fade h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-10 py-24">
         <div className="mb-10 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-4xl font-bold tracking-normal text-foreground">Home</h1>

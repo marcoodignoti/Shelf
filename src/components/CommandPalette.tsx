@@ -147,7 +147,7 @@ export function CommandPalette() {
           <div className="on-kbd">ESC</div>
         </div>
         
-        <div className="max-h-[380px] overflow-y-auto p-2">
+        <div className="on-scroll-fade on-scroll-fade-popover max-h-[380px] overflow-y-auto p-2">
           {isSearching ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               Searching...

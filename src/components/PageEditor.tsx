@@ -1,13 +1,28 @@
-import { Block, BlockNoteEditor } from "@blocknote/core";
+import { Block, BlockNoteEditor, editorHasBlockWithType } from "@blocknote/core";
 import "@blocknote/core/fonts/inter.css";
-import { SideMenuExtension } from "@blocknote/core/extensions";
+import { filterSuggestionItems, SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import "katex/dist/katex.min.css";
-import { AddBlockButton, SideMenu, SideMenuController, useBlockNoteEditor, useExtensionState } from "@blocknote/react";
+import {
+  AddBlockButton,
+  blockTypeSelectItems,
+  FormattingToolbar,
+  FormattingToolbarController,
+  getFormattingToolbarItems,
+  getDefaultReactSlashMenuItems,
+  SideMenu,
+  SideMenuController,
+  SuggestionMenuController,
+  useComponentsContext,
+  useBlockNoteEditor,
+  useEditorState,
+  useExtensionState,
+} from "@blocknote/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertTriangle, Check, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
@@ -15,7 +30,7 @@ import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
@@ -94,6 +109,29 @@ function OpenNotionSideMenu() {
   );
 }
 
+function isNativeTextInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+}
+
+function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
+  const scrollContainer = editor.domElement?.closest(".on-scroll-fade");
+  if (!(scrollContainer instanceof HTMLElement)) return () => {};
+
+  const scrollTop = scrollContainer.scrollTop;
+  const restore = () => {
+    scrollContainer.scrollTop = scrollTop;
+  };
+
+  return () => {
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+    });
+    window.setTimeout(restore, 0);
+  };
+}
+
 function OpenNotionDragHandleButton() {
   const editor = useBlockNoteEditor<any, any, any>();
   const block = useExtensionState(SideMenuExtension, {
@@ -169,6 +207,117 @@ function OpenNotionDragHandleButton() {
   );
 }
 
+function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
+  return async (query: string) =>
+    filterSuggestionItems(
+      [
+        ...getDefaultReactSlashMenuItems(editor),
+        {
+          ...formulaSlashMenuItem(editor),
+          icon: <Sigma size={18} />,
+        },
+      ],
+      query
+    );
+}
+
+function OpenNotionBlockTypeSelect() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const selectedBlocks = useEditorState({
+    editor,
+    selector: ({ editor }) => editor.getSelection()?.blocks || [editor.getTextCursorPosition().block],
+  });
+  const firstSelectedBlock = selectedBlocks[0];
+
+  const items = useMemo(
+    () => [
+      ...blockTypeSelectItems(editor.dictionary),
+      {
+        name: "Formula",
+        type: "formula",
+        icon: RiFormula,
+      },
+    ],
+    [editor]
+  );
+
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) =>
+        editorHasBlockWithType(
+          editor,
+          item.type,
+          Object.fromEntries(
+            Object.entries(item.props || {}).map(([propName, propValue]) => [
+              propName,
+              typeof propValue,
+            ])
+          ) as Record<string, "string" | "number" | "boolean">
+        )
+      ),
+    [editor, items]
+  );
+
+  const selectItems = useMemo(
+    () =>
+      filteredItems.map((item) => {
+        const Icon = item.icon;
+        const typesMatch = item.type === firstSelectedBlock.type;
+        const propsMatch =
+          Object.entries(item.props || {}).filter(
+            ([propName, propValue]) => propValue !== firstSelectedBlock.props[propName]
+          ).length === 0;
+
+        return {
+          text: item.name,
+          icon: <Icon size={16} />,
+          isSelected: typesMatch && propsMatch,
+          onClick: () => {
+            const restoreScroll = preserveEditorScroll(editor);
+            editor.transact(() => {
+              for (const block of selectedBlocks) {
+                if (item.type === "formula") {
+                  editor.updateBlock(block, {
+                    type: "formula",
+                    props: {
+                      formula: formulaInputFromBlockContent(block.content) || block.props.formula || "\\nabla \\cdot \\vec{E}",
+                    },
+                    content: undefined,
+                  } as never);
+                } else {
+                  editor.updateBlock(block, {
+                    type: item.type as never,
+                    props: item.props as never,
+                  });
+                }
+              }
+            });
+            restoreScroll();
+          },
+        };
+      }),
+    [editor, filteredItems, firstSelectedBlock.props, firstSelectedBlock.type, selectedBlocks]
+  );
+
+  const shouldShow = selectItems.some((item) => item.isSelected);
+
+  if (!shouldShow || !editor.isEditable) {
+    return null;
+  }
+
+  return <Components.FormattingToolbar.Select className="bn-select" items={selectItems} />;
+}
+
+function OpenNotionFormattingToolbar() {
+  return (
+    <FormattingToolbar>
+      <OpenNotionBlockTypeSelect />
+      {getFormattingToolbarItems([]).slice(1)}
+    </FormattingToolbar>
+  );
+}
+
 function SubpageCreateMenu({
   anchorElement,
   open,
@@ -239,6 +388,7 @@ export function Editor({
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const subpageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [title, setTitle] = useState(page.title || "");
@@ -321,6 +471,7 @@ export function Editor({
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
+  const slashMenuItems = useMemo(() => openNotionSlashMenuItems(editor), [editor]);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -353,6 +504,14 @@ export function Editor({
       }
     };
   }, [page.id]);
+
+  useEffect(() => {
+    if (!isIconMenuOpen) return;
+
+    requestAnimationFrame(() => {
+      iconInputRef.current?.focus();
+    });
+  }, [isIconMenuOpen]);
 
   const saveNow = useCallback(async () => {
     if (isSavingRef.current) return;
@@ -474,6 +633,7 @@ export function Editor({
   };
 
   const handleOpenNativeIconPicker = () => {
+    iconInputRef.current?.focus();
     void invoke("show_character_palette").catch((error: unknown) => {
       console.error("Failed to open character palette:", error);
     });
@@ -544,6 +704,22 @@ export function Editor({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "a") {
+      if (isNativeTextInput(event.target)) return;
+
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || !editor.domElement?.contains(target)) return;
+
+      const firstBlock = editor.document[0];
+      const lastBlock = editor.document[editor.document.length - 1];
+      if (!firstBlock || !lastBlock) return;
+      if (firstBlock.id === lastBlock.id) return;
+
+      event.preventDefault();
+      editor.setSelection(firstBlock, lastBlock);
+      return;
+    }
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
       if (saveTimeoutRef.current) {
@@ -555,7 +731,8 @@ export function Editor({
 
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
-      <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex flex-col flex-1 w-full pb-16 overflow-y-auto`}>
+      <div className="on-scroll-fade flex-1 w-full overflow-y-auto">
+        <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
         {!isStudioVariant && (
         <div className="mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
           {breadcrumbs.map((breadcrumb, index) => {
@@ -827,6 +1004,7 @@ export function Editor({
               <button
                 type="button"
                 className="mb-2 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={handleOpenNativeIconPicker}
               >
                 <Smile className="h-3.5 w-3.5 text-muted-foreground" />
@@ -850,6 +1028,7 @@ export function Editor({
               <div className="mt-2 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5">
                 <Smile className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <input
+                  ref={iconInputRef}
                   className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                   value={icon}
                   placeholder="Custom icon"
@@ -872,12 +1051,36 @@ export function Editor({
           )}
         </div>
         )}
-        <input
-          className={`${isStudioVariant ? "text-2xl" : "text-4xl"} font-bold mb-6 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground`}
-          value={title}
-          placeholder="Untitled"
-          onChange={(event) => handleTitleChange(event.target.value)}
-        />
+        <div className={`${isStudioVariant ? "mb-6" : "mb-4"} flex items-start gap-4`}>
+          <input
+            className={`${isStudioVariant ? "text-2xl" : "text-4xl"} min-w-0 flex-1 bg-transparent font-bold text-foreground outline-none placeholder:text-muted-foreground`}
+            value={title}
+            placeholder="Untitled"
+            onChange={(event) => handleTitleChange(event.target.value)}
+          />
+          {!isStudioVariant && subpageMode !== "list" && (
+            <div className="relative mt-2 shrink-0">
+              <button
+                ref={subpageMenuButtonRef}
+                type="button"
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setSubpageMenuOpen((open) => !open)}
+              >
+                <PlusCircle className="h-4 w-4" />
+                <span>Add subpage</span>
+              </button>
+              <SubpageCreateMenu
+                anchorElement={subpageMenuButtonRef.current}
+                open={subpageMenuOpen}
+                align="end"
+                templatePages={templatePages}
+                onOpenChange={setSubpageMenuOpen}
+                onCreateBlank={() => void handleCreateSubpage()}
+                onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
+              />
+            </div>
+          )}
+        </div>
         {!isStudioVariant && page.is_template === 1 && (
           <div className="mb-6 inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
             <Copy className="h-3.5 w-3.5" />
@@ -929,39 +1132,23 @@ export function Editor({
               </button>
             ))}
           </div>
-        ) : !isStudioVariant ? (
-          <div className="group/subpage relative mb-8 min-h-8">
-            <button
-              ref={subpageMenuButtonRef}
-              type="button"
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/subpage:opacity-100 focus:opacity-100"
-              onClick={() => setSubpageMenuOpen((open) => !open)}
-            >
-              <PlusCircle className="h-4 w-4" />
-              <span>Add subpage</span>
-            </button>
-            <SubpageCreateMenu
-              anchorElement={subpageMenuButtonRef.current}
-              open={subpageMenuOpen}
-              align="start"
-              templatePages={templatePages}
-              onOpenChange={setSubpageMenuOpen}
-              onCreateBlank={() => void handleCreateSubpage()}
-              onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
-            />
-          </div>
         ) : null}
-        <div className="relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
+        <div className="on-page-editor-blocks relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
           <BlockNoteView
             editor={editor}
             theme={blockNoteTheme}
+            formattingToolbar={false}
+            slashMenu={false}
             sideMenu={false}
             portalElements={{ default: null }}
             onChange={handleEditorChange}
           >
+            <FormattingToolbarController formattingToolbar={OpenNotionFormattingToolbar} />
+            <SuggestionMenuController triggerCharacter="/" getItems={slashMenuItems} />
             <SideMenuController sideMenu={OpenNotionSideMenu} />
           </BlockNoteView>
         </div>
+      </div>
       </div>
       {isDeleteConfirmOpen && (
         <div className="on-modal-overlay z-[150] items-center justify-center">

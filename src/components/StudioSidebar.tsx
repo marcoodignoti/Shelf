@@ -199,7 +199,7 @@ export function StudioSidebar({
           <span>Import PDF</span>
         </button>
       </div>
-      <div className="mt-4 flex-1 overflow-y-auto px-2 pb-20">
+      <div className="on-scroll-fade on-scroll-fade-sidebar mt-4 flex-1 overflow-y-auto px-2 pb-20">
         {isLoading && (
           <div className="mx-1 flex items-center gap-2 rounded-xl border border-border/60 bg-background/35 p-3 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

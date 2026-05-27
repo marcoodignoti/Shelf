@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMathInlineContent, normalizeMathInlineContentInEditor } from "./editorMath";
+import {
+  formulaFromBlockContent,
+  formulaSlashMenuItem,
+  normalizeMathInlineContent,
+  normalizeMathInlineContentInEditor,
+  openNotionEditorSchema,
+} from "./editorMath";
 
 describe("normalizeMathInlineContent", () => {
   it("converts dollar-delimited formulas into inline math content", () => {
@@ -39,6 +45,28 @@ describe("normalizeMathInlineContent", () => {
     ]);
   });
 
+  it("converts parenthesized latex terms inside explanatory text", () => {
+    expect(
+      normalizeMathInlineContent([
+        { type: "text", text: "(\\vec{E}) è il campo elettrico", styles: {} },
+      ]).content
+    ).toEqual([
+      { type: "math", props: { formula: "\\vec{E}" } },
+      { type: "text", text: " è il campo elettrico", styles: {} },
+    ]);
+  });
+
+  it("does not convert latex-prefixed prose into one math formula", () => {
+    expect(
+      normalizeMathInlineContent([
+        { type: "text", text: "\\varepsilon_0 è la costante dielettrica del vuoto.", styles: {} },
+      ]).content
+    ).toEqual([
+      { type: "math", props: { formula: "\\varepsilon_0" } },
+      { type: "text", text: " è la costante dielettrica del vuoto.", styles: {} },
+    ]);
+  });
+
   it("converts a standalone latex command line", () => {
     expect(
       normalizeMathInlineContent([
@@ -55,8 +83,91 @@ describe("normalizeMathInlineContent", () => {
   });
 });
 
+describe("openNotionEditorSchema", () => {
+  it("registers a dedicated formula block", () => {
+    expect(openNotionEditorSchema.blockSchema.formula).toMatchObject({
+      type: "formula",
+      content: "none",
+    });
+  });
+});
+
+describe("formulaSlashMenuItem", () => {
+  it("inserts a formula block from the slash menu", () => {
+    const currentBlock = { id: "current", type: "paragraph", content: [], children: [] };
+    const calls: unknown[] = [];
+    const editor = {
+      schema: { blockSchema: { paragraph: { content: "inline" }, formula: { content: "none" } } },
+      getTextCursorPosition: () => ({ block: currentBlock }),
+      updateBlock: (_block: unknown, update: unknown) => {
+        calls.push(update);
+        return { ...currentBlock, ...(update as object) };
+      },
+      setTextCursorPosition: () => {},
+    };
+
+    const item = formulaSlashMenuItem(editor as never);
+
+    expect(item.title).toBe("Formula");
+    expect(item.aliases).toContain("formula");
+
+    item.onItemClick();
+
+    expect(calls).toEqual([{ type: "formula", props: { formula: "\\nabla \\cdot \\vec{E}" } }]);
+  });
+});
+
+describe("formulaFromBlockContent", () => {
+  it("extracts bracketed formulas from paragraph content", () => {
+    expect(
+      formulaFromBlockContent([
+        {
+          type: "text",
+          text: "[\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}]",
+          styles: {},
+        },
+      ])
+    ).toBe("\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}");
+  });
+});
+
 describe("normalizeMathInlineContentInEditor", () => {
-  it("normalizes existing bracket blocks on page load", () => {
+  it("normalizes single-block bracket formulas into formula blocks", () => {
+    const document = [
+      {
+        id: "formula",
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "[\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}]",
+            styles: {},
+          },
+        ],
+        children: [],
+      },
+    ];
+    const editor = {
+      document,
+      removeBlocks() {},
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document[0]).toEqual({
+      id: "formula",
+      type: "formula",
+      props: { formula: "\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}" },
+      content: undefined,
+      children: [],
+    });
+  });
+});
+
+describe("normalizeMathInlineContentInEditor", () => {
+  it("normalizes existing bracket blocks into formula blocks on page load", () => {
     const document = [
       { id: "open", type: "paragraph", content: [{ type: "text", text: "[", styles: {} }], children: [] },
       {
@@ -84,14 +195,218 @@ describe("normalizeMathInlineContentInEditor", () => {
     expect(document).toEqual([
       {
         id: "formula",
-        type: "paragraph",
-        content: [{ type: "math", props: { formula: "\\nabla \\cdot \\vec{B}=0" } }],
+        type: "formula",
+        props: { formula: "\\nabla \\cdot \\vec{B}=0" },
+        content: undefined,
         children: [],
       },
     ]);
   });
 
-  it("downgrades pasted standalone math headings to paragraphs", () => {
+  it("normalizes multi-line bracket formulas with split derivative terms", () => {
+    const document = [
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "[", styles: {} }], children: [] },
+      {
+        id: "formula-symbol",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\mathcal{E}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "formula-derivative",
+        type: "paragraph",
+        content: [{ type: "text", text: "-\\frac{d\\Phi_B}{dt}", styles: {} }],
+        children: [],
+      },
+      { id: "close", type: "paragraph", content: [{ type: "text", text: "]", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      {
+        id: "formula-symbol",
+        type: "formula",
+        props: { formula: "\\mathcal{E} -\\frac{d\\Phi_B}{dt}" },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes bracket formulas when the first line was already inline math", () => {
+    const document = [
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "[", styles: {} }], children: [] },
+      {
+        id: "formula-start",
+        type: "paragraph",
+        content: [{ type: "math", props: { formula: "\\oint_{\\Gamma} \\vec{E}\\cdot d\\vec{l}" } }],
+        children: [],
+      },
+      {
+        id: "formula-operator",
+        type: "paragraph",
+        content: [{ type: "text", text: "-\\frac{d}{dt}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "formula-integral",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\int_{\\Sigma}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "formula-end",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\vec{B}\\cdot d\\vec{S}", styles: {} }],
+        children: [],
+      },
+      { id: "close", type: "paragraph", content: [{ type: "text", text: "]", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      {
+        id: "formula-start",
+        type: "formula",
+        props: {
+          formula: "\\oint_{\\Gamma} \\vec{E}\\cdot d\\vec{l} -\\frac{d}{dt} \\int_{\\Sigma} \\vec{B}\\cdot d\\vec{S}",
+        },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes bracket formulas when the closing fence is attached to the final formula line", () => {
+    const document = [
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "[", styles: {} }], children: [] },
+      {
+        id: "formula-left",
+        type: "paragraph",
+        content: [{ type: "math", props: { formula: "\\oint_{\\Sigma} \\vec{E}\\cdot d\\vec{S}" } }],
+        children: [],
+      },
+      {
+        id: "formula-right",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\frac{Q\\text{int}}{\\varepsilon_0}]", styles: {} }],
+        children: [],
+      },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      {
+        id: "formula-left",
+        type: "formula",
+        props: { formula: "\\oint_{\\Sigma} \\vec{E}\\cdot d\\vec{S} \\frac{Q\\text{int}}{\\varepsilon_0}" },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes latex text nested in table-like content", () => {
+    const document = [
+      {
+        id: "table",
+        type: "table",
+        content: {
+          rows: [
+            {
+              cells: [
+                [{ type: "text", text: "Gauss per (\\vec{E})", styles: {} }],
+                [{ type: "text", text: "(\\oint \\vec{E}\\cdot d\\vec{S} = \\frac{Q}{\\varepsilon_0})", styles: {} }],
+              ],
+            },
+          ],
+        },
+        children: [],
+      },
+    ];
+    const editor = {
+      document,
+      removeBlocks() {},
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document[0].content).toEqual({
+      rows: [
+        {
+          cells: [
+            [
+              { type: "text", text: "Gauss per ", styles: {} },
+              { type: "math", props: { formula: "\\vec{E}" } },
+            ],
+            [
+              {
+                type: "math",
+                props: { formula: "\\oint \\vec{E}\\cdot d\\vec{S} = \\frac{Q}{\\varepsilon_0}" },
+              },
+            ],
+          ],
+        },
+      ],
+    });
+  });
+
+  it("normalizes table formulas with a missing closing parenthesis", () => {
+    expect(
+      normalizeMathInlineContent([
+        {
+          type: "text",
+          text: "(\\oint \\vec{E}\\cdot d\\vec{S} = \\frac{Q{\\text{int}}}{\\varepsilon0}",
+          styles: {},
+        },
+      ]).content
+    ).toEqual([
+      {
+        type: "math",
+        props: { formula: "\\oint \\vec{E}\\cdot d\\vec{S} = \\frac{Q{\\text{int}}}{\\varepsilon0}" },
+      },
+    ]);
+  });
+
+  it("normalizes pasted standalone math headings into formula blocks", () => {
     const document = [
       {
         id: "formula",
@@ -111,8 +426,9 @@ describe("normalizeMathInlineContentInEditor", () => {
     expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
     expect(document[0]).toEqual({
       id: "formula",
-      type: "paragraph",
-      content: [{ type: "math", props: { formula: "\\oint_{\\Gamma} \\vec{E}\\cdot d\\vec{l}" } }],
+      type: "formula",
+      props: { formula: "\\oint_{\\Gamma} \\vec{E}\\cdot d\\vec{l}" },
+      content: undefined,
       children: [],
     });
   });

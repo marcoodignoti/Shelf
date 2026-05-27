@@ -13,6 +13,7 @@ const SUPPORTED_BLOCK_TYPES = new Set([
   "audio",
   "file",
   "codeBlock",
+  "formula",
 ]);
 
 function plainTextToBlocks(text: string): PartialBlock[] {
@@ -45,18 +46,6 @@ function sanitizePageBlock(block: unknown): PartialBlock | null {
   const record = block as Record<string, unknown>;
   const id = typeof record.id === "string" ? record.id : undefined;
   const children = Array.isArray(record.children) ? sanitizePageChildren(record.children) : undefined;
-
-  if (record.type === "formula") {
-    const props = typeof record.props === "object" && record.props !== null ? record.props : {};
-    const formula = "formula" in props && typeof props.formula === "string" ? props.formula : "";
-
-    return {
-      ...(id ? { id } : {}),
-      type: "paragraph",
-      content: formula ? [{ type: "math", props: { formula } }] : undefined,
-      ...(children ? { children } : {}),
-    } as PartialBlock;
-  }
 
   if (record.type === "divider") {
     return {
@@ -139,7 +128,12 @@ function textFromBlock(block: unknown): string[] {
   if (typeof block !== "object" || block === null || Array.isArray(block)) return [];
 
   const record = block as Record<string, unknown>;
+  const props = typeof record.props === "object" && record.props !== null ? record.props : {};
+  const formula = record.type === "formula" && "formula" in props && typeof props.formula === "string" ? props.formula : "";
   const parts = [textFromInlineContent(record.content), ...textFromTableContent(record.content)];
+  if (formula) {
+    parts.push(formula);
+  }
 
   if (Array.isArray(record.children)) {
     parts.push(...record.children.flatMap(textFromBlock));

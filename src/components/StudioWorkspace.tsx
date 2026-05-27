@@ -293,6 +293,9 @@ function StudioPdfCanvas({
 
   useEffect(() => {
     let isCancelled = false;
+    let loadingTask: pdfjsLib.PDFDocumentLoadingTask | null = null;
+    let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
+    let activeRenderTask: pdfjsLib.RenderTask | null = null;
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) {
@@ -303,17 +306,20 @@ function StudioPdfCanvas({
     setIsLoading(true);
 
     const renderTask = (async () => {
-      const loadingTask = pdfjsLib.getDocument(src);
+      loadingTask = pdfjsLib.getDocument(src);
       const pdf = await loadingTask.promise;
+      pdfDocument = pdf;
       if (isCancelled) {
-        await pdf.destroy();
+        await pdfDocument.destroy();
+        pdfDocument = null;
         return;
       }
 
       const pageNumber = Math.min(clampStudioPage(page), pdf.numPages);
       const pdfPage = await pdf.getPage(pageNumber);
       if (isCancelled) {
-        await pdf.destroy();
+        await pdfDocument.destroy();
+        pdfDocument = null;
         return;
       }
 
@@ -327,8 +333,11 @@ function StudioPdfCanvas({
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       context.clearRect(0, 0, viewport.width, viewport.height);
 
-      await pdfPage.render({ canvas, canvasContext: context, viewport }).promise;
-      await pdf.destroy();
+      activeRenderTask = pdfPage.render({ canvas, canvasContext: context, viewport });
+      await activeRenderTask.promise;
+      activeRenderTask = null;
+      await pdfDocument.destroy();
+      pdfDocument = null;
 
       if (!isCancelled) {
         onLoad(pdf.numPages);
@@ -345,11 +354,19 @@ function StudioPdfCanvas({
 
     return () => {
       isCancelled = true;
+      activeRenderTask?.cancel();
+      activeRenderTask = null;
+      if (pdfDocument) {
+        void pdfDocument.destroy();
+        pdfDocument = null;
+      } else {
+        void loadingTask?.destroy();
+      }
     };
   }, [onError, onLoad, page, src, zoom]);
 
   return (
-    <div className="relative h-full w-full overflow-auto bg-zinc-100">
+    <div className="on-scroll-fade on-scroll-fade-pdf relative h-full w-full overflow-auto bg-zinc-100">
       {isLoading ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
           Loading PDF...

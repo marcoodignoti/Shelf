@@ -816,6 +816,36 @@ export function Sidebar() {
   const deleteMessage = pendingDelete?.hasChildren
     ? `Delete "${deleteTitle}" and its subpages permanently? This cannot be undone.`
     : `Delete "${deleteTitle}" permanently? This cannot be undone.`;
+  const deleteDialog = pendingDelete ? createPortal(
+    <div className="on-modal-overlay z-[180] items-center justify-center p-4">
+      <div className="on-modal-panel w-[420px] max-w-[calc(100vw-2rem)]">
+        <div className="flex items-start gap-3 border-b border-border p-4">
+          <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Delete permanently?</div>
+            <div className="mt-1 text-sm text-muted-foreground">{deleteMessage}</div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 p-3">
+          <button
+            className="on-button-secondary"
+            onClick={() => setPendingDelete(null)}
+          >
+            Cancel
+          </button>
+          <button
+            className="on-button-danger"
+            onClick={handleConfirmDelete}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
 
   return (
     <div
@@ -910,7 +940,7 @@ export function Sidebar() {
           <span>Search</span>
         </button>
       </div>
-      <div ref={scrollAreaRef} className="flex-1 overflow-y-auto mt-4">
+      <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto mt-4">
         {isLoading && (
           <div className="px-5 py-4 text-xs text-muted-foreground">Loading pages...</div>
         )}
@@ -999,35 +1029,7 @@ export function Sidebar() {
       </div>
         </>
       )}
-      {pendingDelete && (
-        <div className="on-modal-overlay z-50 items-center justify-center">
-          <div className="on-modal-panel w-[420px]">
-            <div className="flex items-start gap-3 p-4 border-b border-border">
-              <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
-                <AlertTriangle className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Delete permanently?</div>
-                <div className="text-sm text-muted-foreground mt-1">{deleteMessage}</div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-3">
-              <button
-                className="on-button-secondary"
-                onClick={() => setPendingDelete(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="on-button-danger"
-                onClick={handleConfirmDelete}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {deleteDialog}
       <div className="flex-shrink-0 border-t border-border/60 px-1 py-2">
         <button
           className="on-shell-row"
