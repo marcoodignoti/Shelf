@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
 import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy } from 'lucide-react';
 import { Page } from '../lib/db';
@@ -331,7 +332,7 @@ function PageItem({
         </div>
       </div>
 
-      {isMoveOpen && moveMenuPosition && (
+      {isMoveOpen && moveMenuPosition && createPortal(
         <div
           className="fixed z-[130] w-56 on-popover"
           style={{
@@ -373,12 +374,13 @@ function PageItem({
               <div className="px-2 py-2 text-xs text-muted-foreground">No pages found.</div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {contextMenuPosition && (
+      {contextMenuPosition && createPortal(
         <div
-          className="fixed z-[140] w-44 on-popover"
+          className="fixed z-[180] w-44 on-popover"
           style={{
             left: contextMenuPosition.left,
             top: contextMenuPosition.top,
@@ -449,7 +451,8 @@ function PageItem({
             <Trash2 className="h-3.5 w-3.5" />
             Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {isExpanded && hasChildren && (
@@ -827,9 +830,9 @@ export function Sidebar() {
           <PlusCircle className="w-4 h-4 mr-2.5 opacity-60" />
           <span>New page</span>
         </button>
-        {newPageMenuPosition && (
+        {newPageMenuPosition && createPortal(
           <div
-            className="fixed z-[140] w-56 on-popover"
+            className="fixed z-[180] w-56 on-popover"
             style={{
               left: newPageMenuPosition.left,
               top: newPageMenuPosition.top,
@@ -859,7 +862,8 @@ export function Sidebar() {
                 <span className="truncate">{template.title || 'Untitled'}</span>
               </button>
             ))}
-          </div>
+          </div>,
+          document.body
         )}
         <button
           className="on-shell-row"

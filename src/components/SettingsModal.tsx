@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { useAppStore } from '../store/useAppStore';
@@ -55,7 +56,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
     }
   };
 
-  return (
+  return createPortal(
     <div className="on-modal-overlay items-center justify-center p-4">
       <div className="on-modal-panel flex w-full max-w-lg flex-col">
         <div className="on-modal-header">
@@ -129,6 +130,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
 
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
