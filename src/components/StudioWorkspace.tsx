@@ -1,7 +1,7 @@
-import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Columns2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Page } from "../lib/db";
-import { StudioDocument, studioPdfSrc } from "../lib/studio";
+import { clampStudioPage, clampStudioZoom, StudioDocument, studioPdfSrc } from "../lib/studio";
 import { Editor } from "./PageEditor";
 
 type StudioWorkspaceProps = {
@@ -23,8 +23,31 @@ export function StudioWorkspace({
   onUpdateViewer,
 }: StudioWorkspaceProps) {
   const pdfSrc = useMemo(() => studioPdfSrc(document), [document]);
+  const currentPage = clampStudioPage(document.viewer_page);
+  const currentZoom = clampStudioZoom(document.viewer_zoom);
+  const [pageDraft, setPageDraft] = useState(String(currentPage));
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
+
+  useEffect(() => {
+    setPageDraft(String(currentPage));
+    setPdfLoadFailed(false);
+  }, [currentPage, pdfSrc]);
+
+  const updatePage = (page: number) => {
+    const viewerPage = clampStudioPage(page);
+    setPageDraft(String(viewerPage));
+    onUpdateViewer(document.id, { viewer_page: viewerPage });
+  };
+
+  const commitPageDraft = () => {
+    updatePage(Number(pageDraft));
+  };
+
+  const updateZoom = (zoom: number) => {
+    onUpdateViewer(document.id, { viewer_zoom: clampStudioZoom(zoom) });
+  };
+
   const pdfPanel = (
     <section className="on-studio-panel min-w-0 bg-muted/20">
       {pdfLoadFailed ? (
@@ -68,16 +91,53 @@ export function StudioWorkspace({
         <div className="flex items-center gap-1.5">
           <button
             className="on-icon-button"
+            title="Previous page"
+            onClick={() => updatePage(currentPage - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <input
+            className="h-8 w-14 rounded-md border border-border bg-background px-2 text-center text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Current PDF page"
+            inputMode="numeric"
+            value={pageDraft}
+            onChange={(event) => setPageDraft(event.target.value)}
+            onBlur={commitPageDraft}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitPageDraft();
+              }
+              if (event.key === "Escape") {
+                setPageDraft(String(currentPage));
+              }
+            }}
+          />
+          <button
+            className="on-icon-button"
+            title="Next page"
+            onClick={() => updatePage(currentPage + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            className="on-icon-button"
             title="Zoom out"
-            onClick={() => onUpdateViewer(document.id, { viewer_zoom: Math.max(25, document.viewer_zoom - 25) })}
+            onClick={() => updateZoom(currentZoom - 25)}
           >
             <ZoomOut className="h-4 w-4" />
           </button>
-          <div className="w-12 text-center text-xs text-muted-foreground">{document.viewer_zoom}%</div>
+          <button
+            className="h-8 min-w-14 rounded-md px-2 text-center text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Reset zoom"
+            onClick={() => updateZoom(100)}
+          >
+            {currentZoom}%
+          </button>
           <button
             className="on-icon-button"
             title="Zoom in"
-            onClick={() => onUpdateViewer(document.id, { viewer_zoom: Math.min(300, document.viewer_zoom + 25) })}
+            onClick={() => updateZoom(currentZoom + 25)}
           >
             <ZoomIn className="h-4 w-4" />
           </button>
@@ -86,8 +146,17 @@ export function StudioWorkspace({
             title="Swap panels"
             onClick={() => onUpdateViewer(document.id, { panel_layout: nextLayout })}
           >
-            <RotateCcw className="h-4 w-4" />
+            <Columns2 className="h-4 w-4" />
           </button>
+          {pdfLoadFailed && (
+            <button
+              className="on-icon-button"
+              title="Retry PDF preview"
+              onClick={() => setPdfLoadFailed(false)}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-px bg-border/70">

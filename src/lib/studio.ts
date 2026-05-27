@@ -47,8 +47,22 @@ export async function updateStudioDocumentViewerState(
   });
 }
 
+export function clampStudioZoom(zoom: number): number {
+  return Math.max(25, Math.min(300, Math.round(zoom)));
+}
+
+export function clampStudioPage(page: number): number {
+  if (!Number.isFinite(page)) return 1;
+  return Math.max(1, Math.round(page));
+}
+
+export function buildStudioPdfHash({ page, zoom }: { page: number; zoom: number }): string {
+  return `#page=${clampStudioPage(page)}&zoom=${clampStudioZoom(zoom)}`;
+}
+
 export function studioPdfSrc(document: StudioDocument): string {
-  const page = Math.max(1, document.viewer_page);
-  const zoom = Math.max(25, Math.min(300, document.viewer_zoom));
-  return `${convertFileSrc(document.stored_file_path)}#page=${page}&zoom=${zoom}`;
+  return `${convertFileSrc(document.stored_file_path)}${buildStudioPdfHash({
+    page: document.viewer_page,
+    zoom: document.viewer_zoom,
+  })}`;
 }
