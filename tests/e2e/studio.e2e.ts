@@ -1,6 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+const tinyPdfFixture = Buffer.from(
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
+  "base64"
+);
+
 test.beforeEach(async ({ page }) => {
+  await page.route("**/civil-law.pdf", async (route) => {
+    await route.fulfill({
+      body: tinyPdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
   await page.addInitScript(() => {
     const documentsKey = "opennotion-e2e-studio-documents";
     const pagesKey = "opennotion-e2e-pages";
@@ -85,7 +97,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
-  await expect(page.locator("iframe[title='civil-law']")).toBeVisible();
+  await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
   await page.getByTitle("Swap panels").click();
@@ -113,7 +125,7 @@ test("stacks Studio panels when resized below usable split width", async ({ page
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("iframe[title='civil-law']").boundingBox();
+  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
   const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
 
   expect(pdfBox).not.toBeNull();
@@ -127,7 +139,7 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("iframe[title='civil-law']").boundingBox();
+  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
   const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
 
   expect(pdfBox).not.toBeNull();

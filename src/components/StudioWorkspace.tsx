@@ -1,5 +1,7 @@
 import { ChevronLeft, ChevronRight, Columns2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Page } from "../lib/db";
 import { useAppStore } from "../store/useAppStore";
 import {
@@ -12,6 +14,8 @@ import {
   studioPdfSrc,
 } from "../lib/studio";
 import { Editor } from "./PageEditor";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type StudioWorkspaceProps = {
   document: StudioDocument;
@@ -39,6 +43,7 @@ export function StudioWorkspace({
   const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+  const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
   const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
@@ -52,11 +57,23 @@ export function StudioWorkspace({
     setPdfPanelRatio(getStoredPanelRatio(document.id));
   }, [document.id]);
 
-  const updatePage = (page: number) => {
+  const updatePage = useCallback((page: number) => {
     const viewerPage = clampStudioPage(page);
     setPageDraft(String(viewerPage));
     onUpdateViewer(document.id, { viewer_page: viewerPage });
-  };
+  }, [document.id, onUpdateViewer]);
+
+  const handlePdfLoad = useCallback((pageCount: number) => {
+    setPdfLoadFailed(false);
+    setPdfPageCount(pageCount);
+    if (currentPage > pageCount) {
+      updatePage(pageCount);
+    }
+  }, [currentPage, updatePage]);
+
+  const handlePdfError = useCallback(() => {
+    setPdfLoadFailed(true);
+  }, []);
 
   const commitPageDraft = () => {
     updatePage(Number(pageDraft));
@@ -115,13 +132,13 @@ export function StudioWorkspace({
           </div>
         </div>
       ) : (
-        <iframe
-          key={pdfSrc}
-          title={document.title}
+        <StudioPdfCanvas
           src={pdfSrc}
-          className="h-full w-full bg-background"
-          onLoad={() => setPdfLoadFailed(false)}
-          onError={() => setPdfLoadFailed(true)}
+          title={document.title}
+          page={currentPage}
+          zoom={currentZoom}
+          onLoad={handlePdfLoad}
+          onError={handlePdfError}
         />
       )}
     </section>
@@ -153,7 +170,7 @@ export function StudioWorkspace({
           </button>
           <input
             className="h-8 w-14 rounded-md border border-border bg-background px-2 text-center text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Current PDF page"
+            aria-label={pdfPageCount ? `Current PDF page of ${pdfPageCount}` : "Current PDF page"}
             inputMode="numeric"
             value={pageDraft}
             onChange={(event) => setPageDraft(event.target.value)}
@@ -168,6 +185,9 @@ export function StudioWorkspace({
               }
             }}
           />
+          {pdfPageCount ? (
+            <span className="min-w-8 text-center text-xs text-muted-foreground">/ {pdfPageCount}</span>
+          ) : null}
           <button
             className="on-icon-button"
             title="Next page"
@@ -249,6 +269,99 @@ export function StudioWorkspace({
           onPointerCancel={() => setIsResizingPanels(false)}
         />
       )}
+    </div>
+  );
+}
+
+function StudioPdfCanvas({
+  src,
+  title,
+  page,
+  zoom,
+  onLoad,
+  onError,
+}: {
+  src: string;
+  title: string;
+  page: number;
+  zoom: number;
+  onLoad: (pageCount: number) => void;
+  onError: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) {
+      onError();
+      return;
+    }
+
+    setIsLoading(true);
+
+    const renderTask = (async () => {
+      const loadingTask = pdfjsLib.getDocument(src);
+      const pdf = await loadingTask.promise;
+      if (isCancelled) {
+        await pdf.destroy();
+        return;
+      }
+
+      const pageNumber = Math.min(clampStudioPage(page), pdf.numPages);
+      const pdfPage = await pdf.getPage(pageNumber);
+      if (isCancelled) {
+        await pdf.destroy();
+        return;
+      }
+
+      const viewport = pdfPage.getViewport({ scale: clampStudioZoom(zoom) / 100 });
+      const pixelRatio = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(viewport.width * pixelRatio);
+      canvas.height = Math.floor(viewport.height * pixelRatio);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, viewport.width, viewport.height);
+
+      await pdfPage.render({ canvas, canvasContext: context, viewport }).promise;
+      await pdf.destroy();
+
+      if (!isCancelled) {
+        onLoad(pdf.numPages);
+        setIsLoading(false);
+      }
+    })();
+
+    renderTask.catch(() => {
+      if (!isCancelled) {
+        setIsLoading(false);
+        onError();
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [onError, onLoad, page, src, zoom]);
+
+  return (
+    <div className="relative h-full w-full overflow-auto bg-zinc-100">
+      {isLoading ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
+          Loading PDF...
+        </div>
+      ) : null}
+      <div className="flex min-h-full justify-center p-6">
+        <canvas
+          ref={canvasRef}
+          aria-label={title}
+          className="h-auto max-w-none bg-white shadow-sm ring-1 ring-black/10"
+        />
+      </div>
     </div>
   );
 }
