@@ -1,11 +1,11 @@
 # Unsigned Beta Release
 
-Unsigned beta releases are for public testing through GitHub Releases before paid signing credentials exist.
+Unsigned beta releases are for public testing before paid signing credentials exist.
 
 ## What This Supports
 
-- macOS DMG artifact from GitHub Actions
-- Windows installer artifact from GitHub Actions
+- macOS DMG artifact from Tauri
+- Windows installer artifact from Tauri
 - GitHub prerelease with explicit warning text
 
 ## What This Does Not Solve
@@ -26,13 +26,15 @@ git tag v0.1.0-beta.1
 git push origin v0.1.0-beta.1
 ```
 
-Or run the workflow manually:
+Build the unsigned desktop artifacts on the target platform:
 
 ```sh
-gh workflow run "Unsigned Beta Release" --ref main -f tag=v0.1.0-beta.1
+npm ci
+npm run check:tauri
+npm run tauri build
 ```
 
-The workflow creates a GitHub prerelease and uploads unsigned macOS and Windows artifacts.
+Upload the generated Tauri artifacts from `src-tauri/target/release/bundle/` to a GitHub prerelease.
 
 ## User Warning
 

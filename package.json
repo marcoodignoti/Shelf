@@ -9,13 +9,13 @@
     "test": "vitest run",
     "e2e:install": "playwright install chromium",
     "e2e": "playwright test",
-    "check": "npm run check:native && npm run check:tauri",
-    "check:native": "swift test --package-path native-macos && swift build --package-path native-macos",
+    "check": "npm run check:tauri",
     "check:tauri": "npm run build && npm run test && npm run e2e && npm audit --audit-level=moderate && cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release:package:macos": "scripts/package-native-macos.sh",
-    "release:verify:macos": "scripts/verify-native-macos-release.sh"
+    "release:package:desktop": "npm run tauri build",
+    "release:package:macos": "npm run tauri build",
+    "release:package:windows": "npm run tauri build"
   },
   "dependencies": {
     "@blocknote/core": "^0.51.0",

@@ -16,7 +16,6 @@ playwright-report/
 test-results/
 src-tauri/target
 src-tauri/gen/schemas
-native-macos/.build
 *.db
 *.sqlite
 *.sqlite3
