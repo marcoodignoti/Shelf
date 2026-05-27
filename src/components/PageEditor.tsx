@@ -420,6 +420,17 @@ export function Editor({
     queueSave({ content, search_text: pageContentToSearchText(content) });
   };
 
+  useEffect(() => {
+    isNormalizingMathRef.current = true;
+    const normalized = normalizeMathInlineContentInEditor(editor);
+    isNormalizingMathRef.current = false;
+
+    if (!normalized) return;
+
+    const content = JSON.stringify(editor.document as Block[]);
+    queueSave({ content, search_text: pageContentToSearchText(content) });
+  }, [editor, page.id, queueSave]);
+
   const handleIconChange = (value: string) => {
     const nextIcon = normalizePageIcon(value) || "";
     setIcon(nextIcon);

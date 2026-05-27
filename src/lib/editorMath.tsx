@@ -77,7 +77,7 @@ export const openNotionEditorSchema = BlockNoteSchema.create({
 });
 
 export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, any, any>): boolean {
-  let changed = false;
+  let changed = normalizeBracketedMathBlocks(editor);
 
   const visit = (block: Block<any, any, any>) => {
     if (Array.isArray(block.content)) {
@@ -85,7 +85,12 @@ export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, 
 
       if (nextContent.changed) {
         changed = true;
-        editor.updateBlock(block, { content: nextContent.content } as never);
+        editor.updateBlock(block, {
+          content: nextContent.content,
+          ...(isStandaloneMathContent(nextContent.content) && block.type !== "paragraph"
+            ? { type: "paragraph" }
+            : {}),
+        } as never);
       }
     }
 
@@ -219,6 +224,61 @@ function isLikelyLatexFormula(value: string): boolean {
     /\\[a-zA-Z]+\{/.test(value);
 }
 
+function normalizeBracketedMathBlocks(editor: BlockNoteEditor<any, any, any>): boolean {
+  let changed = false;
+
+  const visitSiblings = (blocks: Block<any, any, any>[]) => {
+    for (let index = 0; index < blocks.length - 2; index += 1) {
+      const openBlock = blocks[index];
+      const middleBlock = blocks[index + 1];
+      const closeBlock = blocks[index + 2];
+      const middleText = textFromBlockContent(middleBlock.content).trim();
+
+      if (
+        textFromBlockContent(openBlock.content).trim() === "[" &&
+        textFromBlockContent(closeBlock.content).trim() === "]" &&
+        standaloneLatexFormula(middleText)
+      ) {
+        editor.removeBlocks([openBlock, closeBlock]);
+        changed = true;
+        index += 1;
+      }
+    }
+
+    blocks.forEach((block) => {
+      if (block.children.length > 0) {
+        visitSiblings(block.children);
+      }
+    });
+  };
+
+  visitSiblings(editor.document);
+  return changed;
+}
+
+function textFromBlockContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (isTextInlineContent(item)) return item.text;
+      return "";
+    })
+    .join("");
+}
+
+function isStandaloneMathContent(content: InlineContent[]): boolean {
+  const meaningfulContent = content.filter((item) => {
+    if (typeof item === "string") return item.trim().length > 0;
+    if (isTextInlineContent(item)) return item.text.trim().length > 0;
+    return true;
+  });
+
+  return meaningfulContent.length === 1 && isMathInlineContent(meaningfulContent[0]);
+}
+
 function pushText(items: InlineContent[], text: string, styles: Record<string, unknown>) {
   if (!text) return;
   items.push({ type: "text", text, styles });
@@ -226,6 +286,10 @@ function pushText(items: InlineContent[], text: string, styles: Record<string, u
 
 function isTextInlineContent(item: InlineContent): item is InlineText {
   return typeof item === "object" && item !== null && !Array.isArray(item) && item.type === "text" && typeof item.text === "string";
+}
+
+function isMathInlineContent(item: InlineContent): item is InlineMath {
+  return typeof item === "object" && item !== null && !Array.isArray(item) && item.type === "math";
 }
 
 function renderFormulaHtml(formula: string): string {
