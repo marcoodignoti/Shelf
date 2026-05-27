@@ -161,6 +161,32 @@ final class OpenNotionStore {
     }
 
     @discardableResult
+    func updatePageMetadata(pageID: String, icon: String?, coverURL: String?) -> Bool {
+        updatePage(
+            pageID: pageID,
+            updates: PageUpdates(
+                icon: icon,
+                coverURL: coverURL,
+                clearIcon: icon == nil,
+                clearCoverURL: coverURL == nil
+            )
+        )
+    }
+
+    func importCoverImage(pageID: String, sourceURL: URL, icon: String?) -> String? {
+        do {
+            let coverURL = try CoverImageImporter.importCoverImage(sourceURL: sourceURL, pageID: pageID)
+            guard updatePageMetadata(pageID: pageID, icon: icon, coverURL: coverURL) else {
+                return nil
+            }
+            return coverURL
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    @discardableResult
     func movePage(pageID: String, parentID: String?) -> Bool {
         let selectedPageIDBeforeMove = selectedPageID
         do {

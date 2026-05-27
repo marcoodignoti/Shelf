@@ -15,6 +15,7 @@ function page(id: string, updatedAt: string, isFavorite = 0): Page {
     is_favorite: isFavorite,
     is_template: 0,
     sort_order: 0,
+    page_kind: "note",
     created_at: updatedAt,
     updated_at: updatedAt,
   };

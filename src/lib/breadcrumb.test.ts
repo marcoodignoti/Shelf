@@ -15,6 +15,7 @@ function page(id: string, title: string, parentId: string | null = null): Page {
     is_favorite: 0,
     is_template: 0,
     sort_order: 0,
+    page_kind: "note",
     created_at: "2026-05-18T08:00:00.000Z",
     updated_at: "2026-05-18T08:00:00.000Z",
   };

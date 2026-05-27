@@ -68,6 +68,32 @@ final class SQLitePageRepositoryTests: XCTestCase {
         XCTAssertEqual(detail.content, "[{\"type\":\"paragraph\",\"content\":\"Body\"}]")
     }
 
+    func testUpdatePageCanClearIconAndCoverURL() throws {
+        let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
+        try repository.bootstrap()
+        _ = try repository.createPage(
+            id: "page-1",
+            title: "Page",
+            parentID: nil,
+            createdAt: "2026-05-21T10:00:00.000Z"
+        )
+        try repository.updatePage(
+            id: "page-1",
+            updates: PageUpdates(icon: "📌", coverURL: "file:///tmp/cover.png"),
+            updatedAt: "2026-05-21T10:01:00.000Z"
+        )
+
+        try repository.updatePage(
+            id: "page-1",
+            updates: PageUpdates(clearIcon: true, clearCoverURL: true),
+            updatedAt: "2026-05-21T10:02:00.000Z"
+        )
+
+        let page = try XCTUnwrap(repository.page(id: "page-1"))
+        XCTAssertNil(page.icon)
+        XCTAssertNil(page.coverURL)
+    }
+
     func testDuplicatePageCopiesContentMetadataAndParentOnly() throws {
         let repository = try SQLitePageRepository(databasePath: temporaryDatabasePath())
         try repository.bootstrap()

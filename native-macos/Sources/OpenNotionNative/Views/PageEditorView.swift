@@ -1,20 +1,29 @@
 import AppKit
 import OpenNotionCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PageEditorView: View {
     let page: Page
     let onSave: (String, BlockDocument) -> Bool
+    let onSaveMetadata: (String?, String?) -> Bool
+    let onImportCoverImage: (URL, String?) -> String?
     let onToggleFavorite: () -> Bool
     let onDuplicate: () -> Bool
     let onCreateSubpage: () -> Void
     let onDelete: () -> Void
 
     @State private var draft: PageEditorDraft
+    @State private var draftIcon: String
+    @State private var draftCoverURL: String
     @State private var focusedBlockID: String?
     @State private var autosaveTask: Task<Void, Never>?
     @State private var saveState = PageEditorSaveState.saved
     @State private var didCopyLink = false
+    @State private var isIconPickerPresented = false
+    @State private var isCoverURLFieldPresented = false
+    @State private var isHeaderHovering = false
+    @State private var isIconHovering = false
     @FocusState private var isTitleFocused: Bool
 
     private let startsAsUntitledEmptyPage: Bool
@@ -26,6 +35,8 @@ struct PageEditorView: View {
     init(
         page: Page,
         onSave: @escaping (String, BlockDocument) -> Bool,
+        onSaveMetadata: @escaping (String?, String?) -> Bool,
+        onImportCoverImage: @escaping (URL, String?) -> String?,
         onToggleFavorite: @escaping () -> Bool,
         onDuplicate: @escaping () -> Bool,
         onCreateSubpage: @escaping () -> Void,
@@ -37,6 +48,8 @@ struct PageEditorView: View {
         let initialTitle = isUntitledEmptyPage ? "" : page.title
         self.page = page
         self.onSave = onSave
+        self.onSaveMetadata = onSaveMetadata
+        self.onImportCoverImage = onImportCoverImage
         self.onToggleFavorite = onToggleFavorite
         self.onDuplicate = onDuplicate
         self.onCreateSubpage = onCreateSubpage
@@ -48,12 +61,56 @@ struct PageEditorView: View {
             savedTitle: page.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : page.title,
             savedDocument: decodedDocument
         ))
+        _draftIcon = State(initialValue: page.icon ?? "")
+        _draftCoverURL = State(initialValue: page.coverURL ?? "")
         _focusedBlockID = State(initialValue: isUntitledEmptyPage ? nil : decodedDocument.blocks.first?.id)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let coverURL = normalizedCoverURL(draftCoverURL) {
+                PageCoverHeader(
+                    coverURL: coverURL,
+                    onChangeCover: chooseCoverImage,
+                    onRemoveCover: removeCover
+                )
+                .frame(maxWidth: 760)
+                .padding(.horizontal, 48)
+                .padding(.top, 72)
+                .padding(.bottom, 26)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
             VStack(alignment: .leading, spacing: 14) {
+                pageMetadataControls
+
+                if let icon = normalizedPageIcon(draftIcon) {
+                    Button {
+                        isIconPickerPresented.toggle()
+                    } label: {
+                        Text(icon)
+                            .font(.system(size: 48))
+                            .frame(width: 58, height: 58)
+                            .contentShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .background(isIconHovering ? Color.secondary.opacity(0.10) : Color.primary.opacity(0.001))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            isIconHovering = hovering
+                        }
+                    }
+                    .popover(isPresented: $isIconPickerPresented) {
+                        IconPicker(
+                            icon: $draftIcon,
+                            onSelect: selectIcon,
+                            onChange: updateIcon,
+                            onRemove: removeIcon
+                        )
+                    }
+                }
+
                 ZStack(alignment: .leading) {
                     if draft.title.isEmpty {
                         Text(startsAsUntitledEmptyPage ? "New page" : "Untitled")
@@ -88,9 +145,14 @@ struct PageEditorView: View {
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(.horizontal, 48)
-            .padding(.top, 128)
+            .padding(.top, normalizedCoverURL(draftCoverURL) == nil ? 128 : 0)
             .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .center)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isHeaderHovering = hovering
+                }
+            }
 
             BlockEditorView(document: $draft.document, focusedBlockID: $focusedBlockID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -197,6 +259,148 @@ struct PageEditorView: View {
         }
     }
 
+    private var pageMetadataControls: some View {
+        let opacity = pageMetadataControlsOpacity(
+            isHovering: isHeaderHovering,
+            isIconPickerPresented: isIconPickerPresented,
+            isCoverURLFieldPresented: isCoverURLFieldPresented
+        )
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if normalizedPageIcon(draftIcon) == nil {
+                    Button {
+                        isIconPickerPresented.toggle()
+                    } label: {
+                        Label("Add icon", systemImage: "face.smiling")
+                    }
+                    .popover(isPresented: $isIconPickerPresented) {
+                        IconPicker(
+                            icon: $draftIcon,
+                            onSelect: selectIcon,
+                            onChange: updateIcon,
+                            onRemove: removeIcon
+                        )
+                    }
+                }
+
+                Button {
+                    chooseCoverImage()
+                } label: {
+                    Label(normalizedCoverURL(draftCoverURL) == nil ? "Add cover" : "Change cover", systemImage: "photo")
+                }
+
+                Button {
+                    isCoverURLFieldPresented.toggle()
+                } label: {
+                    Label("Cover URL", systemImage: "link")
+                }
+
+                if normalizedCoverURL(draftCoverURL) != nil {
+                    Button(role: .destructive) {
+                        removeCover()
+                    } label: {
+                        Label("Remove cover", systemImage: "xmark")
+                    }
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if isCoverURLFieldPresented {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                    TextField("Paste cover image URL", text: $draftCoverURL)
+                        .textFieldStyle(.plain)
+                        .onChange(of: draftCoverURL) { _, value in
+                            updateCoverURL(value)
+                        }
+                    if normalizedCoverURL(draftCoverURL) != nil {
+                        Button {
+                            removeCover()
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Remove cover")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.18))
+                )
+            }
+        }
+        .opacity(opacity)
+        .allowsHitTesting(opacity > 0)
+        .animation(.easeInOut(duration: 0.12), value: opacity)
+    }
+
+    private func updateIcon(_ value: String) {
+        let nextIcon = normalizedPageIcon(value) ?? ""
+        if draftIcon != nextIcon {
+            draftIcon = nextIcon
+        }
+        saveMetadata(icon: normalizedPageIcon(nextIcon), coverURL: normalizedCoverURL(draftCoverURL))
+    }
+
+    private func selectIcon(_ value: String) {
+        updateIcon(value)
+        isIconPickerPresented = false
+    }
+
+    private func removeIcon() {
+        draftIcon = ""
+        isIconPickerPresented = false
+        saveMetadata(icon: nil, coverURL: normalizedCoverURL(draftCoverURL))
+    }
+
+    private func updateCoverURL(_ value: String) {
+        saveMetadata(icon: normalizedPageIcon(draftIcon), coverURL: normalizedCoverURL(value))
+    }
+
+    private func removeCover() {
+        draftCoverURL = ""
+        isCoverURLFieldPresented = false
+        saveMetadata(icon: normalizedPageIcon(draftIcon), coverURL: nil)
+    }
+
+    private func chooseCoverImage() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = ["png", "jpg", "jpeg", "webp", "gif"].compactMap { UTType(filenameExtension: $0) }
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                return
+            }
+            Task { @MainActor in
+                if let importedCoverURL = onImportCoverImage(url, normalizedPageIcon(draftIcon)) {
+                    draftCoverURL = importedCoverURL
+                    isCoverURLFieldPresented = false
+                    saveState = .saved
+                } else {
+                    saveState = .failed
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func saveMetadata(icon: String?, coverURL: String?) -> Bool {
+        let didSave = onSaveMetadata(icon, coverURL)
+        saveState = didSave ? .saved : .failed
+        return didSave
+    }
+
     private func copyPageLink() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("opennotion://page/\(page.id)", forType: .string)
@@ -210,6 +414,173 @@ struct PageEditorView: View {
     private func focusFirstBodyBlock() {
         isTitleFocused = false
         focusedBlockID = PageEditorFocus.firstEditableBlockID(in: draft.document)
+    }
+}
+
+private let pageIconOptions = ["📄", "✅", "💡", "📌", "🚀", "🧠", "🛠️", "📚", "🎯", "✨", "🔥", "📝"]
+
+private func normalizedPageIcon(_ value: String) -> String? {
+    let icon = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8))
+    return icon.isEmpty ? nil : icon
+}
+
+private func normalizedCoverURL(_ value: String) -> String? {
+    let coverURL = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return coverURL.isEmpty ? nil : coverURL
+}
+
+func pageMetadataControlsOpacity(
+    isHovering: Bool,
+    isIconPickerPresented: Bool,
+    isCoverURLFieldPresented: Bool
+) -> Double {
+    if isHovering || isIconPickerPresented || isCoverURLFieldPresented {
+        return 1
+    }
+    return 0
+}
+
+func coverActionsOpacity(isHovering: Bool) -> Double {
+    isHovering ? 1 : 0
+}
+
+private struct IconPicker: View {
+    @Binding var icon: String
+    let onSelect: (String) -> Void
+    let onChange: (String) -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(34), spacing: 6), count: 6), spacing: 6) {
+                ForEach(pageIconOptions, id: \.self) { option in
+                    Button {
+                        onSelect(option)
+                    } label: {
+                        Text(option)
+                            .font(.title3)
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "face.smiling")
+                    .foregroundStyle(.secondary)
+                TextField("Custom icon", text: $icon)
+                    .textFieldStyle(.plain)
+                    .onChange(of: icon) { _, value in
+                        onChange(value)
+                    }
+                if normalizedPageIcon(icon) != nil {
+                    Button {
+                        onRemove()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Remove icon")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.background)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.18))
+            )
+        }
+        .padding(10)
+        .frame(width: 270)
+    }
+}
+
+private struct PageCoverHeader: View {
+    let coverURL: String
+    let onChangeCover: () -> Void
+    let onRemoveCover: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            CoverImageView(coverURL: coverURL)
+                .frame(height: 180)
+                .frame(maxWidth: .infinity)
+                .background(Color.secondary.opacity(0.12))
+
+            HStack(spacing: 6) {
+                Button("Change cover") {
+                    onChangeCover()
+                }
+                Button {
+                    onRemoveCover()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .help("Remove cover")
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .padding(8)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(10)
+            .opacity(coverActionsOpacity(isHovering: isHovering))
+            .allowsHitTesting(isHovering)
+            .animation(.easeInOut(duration: 0.12), value: isHovering)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+private struct CoverImageView: View {
+    let coverURL: String
+
+    var body: some View {
+        if let url = URL(string: coverURL), url.isFileURL, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else if let url = URL(string: coverURL), !url.isFileURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image):
+                    image.resizable().scaledToFill()
+                case .failure:
+                    coverPlaceholder
+                case .empty:
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                @unknown default:
+                    coverPlaceholder
+                }
+            }
+        } else if let image = NSImage(contentsOfFile: coverURL) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            coverPlaceholder
+        }
+    }
+
+    private var coverPlaceholder: some View {
+        ZStack {
+            Color.secondary.opacity(0.12)
+            Image(systemName: "photo")
+                .font(.title)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

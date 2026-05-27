@@ -1,5 +1,7 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
+export type PageKind = 'note' | 'studio_note';
+
 export interface Page {
   id: string;
   title: string;
@@ -15,6 +17,7 @@ export interface Page {
   database_schema?: string | null;
   properties?: string | null;
   sort_order: number;
+  page_kind: PageKind;
   created_at: string;
   updated_at: string;
 }
@@ -65,7 +68,8 @@ export async function updatePage(id: string, updates: Partial<Page>): Promise<vo
     'is_template',
     'is_database',
     'database_schema',
-    'properties'
+    'properties',
+    'page_kind'
   ]);
   
   const safeUpdates: Partial<Page> = {};

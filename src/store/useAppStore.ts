@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
-import { Page, getPages, createPage, createPageFromTemplate, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
+import { Page, getPage, getPages, createPage, createPageFromTemplate, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
+import { importStudioDocument, listStudioDocuments, StudioDocument, StudioPanelLayout, updateStudioDocumentViewerState } from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
+type WorkspaceMode = 'notes' | 'studio';
 type CreatePageOptions = { select?: boolean };
 
 interface AppState {
@@ -13,8 +16,16 @@ interface AppState {
   error: string | null;
   notice: AppNotice | null;
   isCommandPaletteOpen: boolean;
+  workspaceMode: WorkspaceMode;
+  studioDocuments: StudioDocument[];
+  currentStudioDocumentId: string | null;
   fetchPages: () => Promise<void>;
+  fetchStudioDocuments: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
+  setCurrentStudioDocumentId: (id: string | null) => void;
+  importStudioPdfAction: () => Promise<StudioDocument | null>;
+  updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
   renamePageAction: (id: string, title: string) => Promise<void>;
@@ -51,6 +62,14 @@ function getStoredPageId(): string | null {
   return localStorage.getItem('opennotion-current-page-id');
 }
 
+function getStoredWorkspaceMode(): WorkspaceMode {
+  return localStorage.getItem('opennotion-workspace-mode') === 'studio' ? 'studio' : 'notes';
+}
+
+function getStoredStudioDocumentId(): string | null {
+  return localStorage.getItem('opennotion-current-studio-document-id');
+}
+
 export const useAppStore = create<AppState>((set) => ({
   pages: [],
   currentPageId: getStoredPageId(),
@@ -58,6 +77,9 @@ export const useAppStore = create<AppState>((set) => ({
   error: null,
   notice: null,
   isCommandPaletteOpen: false,
+  workspaceMode: getStoredWorkspaceMode(),
+  studioDocuments: [],
+  currentStudioDocumentId: getStoredStudioDocumentId(),
   isSidebarOpen: true,
   theme: getStoredTheme(),
   fetchPages: async () => {
@@ -73,9 +95,50 @@ export const useAppStore = create<AppState>((set) => ({
       set({ error: message, notice: { kind: 'error', message }, isLoading: false });
     }
   },
+  fetchStudioDocuments: async () => {
+    try {
+      const studioDocuments = await listStudioDocuments();
+      const studioNotes = (await Promise.all(
+        studioDocuments.map((document) => getPage(document.note_page_id))
+      )).filter((page): page is Page => Boolean(page));
+      set((state) => {
+        const currentStudioDocumentId = studioDocuments.some((document) => document.id === state.currentStudioDocumentId)
+          ? state.currentStudioDocumentId
+          : studioDocuments[0]?.id ?? null;
+        const studioNoteIds = new Set(studioNotes.map((page) => page.id));
+        const pages = [
+          ...state.pages.filter((page) => !studioNoteIds.has(page.id)),
+          ...studioNotes,
+        ];
+
+        if (currentStudioDocumentId) {
+          localStorage.setItem('opennotion-current-studio-document-id', currentStudioDocumentId);
+        } else {
+          localStorage.removeItem('opennotion-current-studio-document-id');
+        }
+
+        return { studioDocuments, currentStudioDocumentId, pages, error: null };
+      });
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+    }
+  },
   setCurrentPageId: (id) => {
     localStorage.setItem('opennotion-current-page-id', id || HOME_PAGE_ID);
     set({ currentPageId: id });
+  },
+  setWorkspaceMode: (mode) => {
+    localStorage.setItem('opennotion-workspace-mode', mode);
+    set({ workspaceMode: mode });
+  },
+  setCurrentStudioDocumentId: (id) => {
+    if (id) {
+      localStorage.setItem('opennotion-current-studio-document-id', id);
+    } else {
+      localStorage.removeItem('opennotion-current-studio-document-id');
+    }
+    set({ currentStudioDocumentId: id });
   },
   clearError: () => set({ error: null }),
   setError: (error) => set({ error, notice: error ? { kind: 'error', message: error } : null }),
@@ -87,6 +150,47 @@ export const useAppStore = create<AppState>((set) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
+  importStudioPdfAction: async () => {
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!path || Array.isArray(path)) return null;
+
+      const document = await importStudioDocument(path);
+      const note = await getPage(document.note_page_id);
+      localStorage.setItem('opennotion-workspace-mode', 'studio');
+      localStorage.setItem('opennotion-current-studio-document-id', document.id);
+      set((state) => ({
+        studioDocuments: [document, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
+        pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
+        currentStudioDocumentId: document.id,
+        workspaceMode: 'studio',
+        error: null
+      }));
+      return document;
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      return null;
+    }
+  },
+  updateStudioViewerAction: async (id, updates) => {
+    const last_opened_at = new Date().toISOString();
+    set((state) => ({
+      studioDocuments: state.studioDocuments.map((document) =>
+        document.id === id ? { ...document, ...updates, last_opened_at } : document
+      )
+    }));
+    try {
+      await updateStudioDocumentViewerState(id, { ...updates, last_opened_at });
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      await useAppStore.getState().fetchStudioDocuments();
+    }
+  },
   addPage: async (title = 'Untitled', parentId = null, options = {}) => {
     try {
       const newPage = await createPage(title, parentId);
