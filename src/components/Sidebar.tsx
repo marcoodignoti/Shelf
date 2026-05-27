@@ -500,6 +500,8 @@ export function Sidebar() {
     fetchStudioDocuments,
     setCurrentStudioDocumentId,
     importStudioPdfAction,
+    sidebarWidth,
+    setSidebarWidth,
   } = useAppStore();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const newPageButtonRef = useRef<HTMLButtonElement>(null);
@@ -785,6 +787,29 @@ export function Sidebar() {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
   const deleteTitle = pendingDelete?.page.title || 'Untitled';
   const deleteMessage = pendingDelete?.hasChildren
     ? `Delete "${deleteTitle}" and its subpages permanently? This cannot be undone.`
@@ -794,10 +819,18 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="on-glass-sidebar w-60 flex flex-col h-full overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="on-glass-sidebar relative flex h-full flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      style={{ width: sidebarWidth }}
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
+      <div
+        className="absolute inset-y-0 right-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-border/70"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={handleResizePointerDown}
+      />
       <div className="h-11 flex-shrink-0" data-tauri-drag-region />
 
       <div className="px-2 pb-3">

@@ -44,10 +44,16 @@ interface AppState {
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   isSidebarOpen: boolean;
+  sidebarWidth: number;
   theme: Theme;
   toggleSidebar: () => void;
+  setSidebarWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
 }
+
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_DEFAULT_WIDTH = 240;
 
 function isTheme(value: string | null): value is Theme {
   return value === 'light' || value === 'dark' || value === 'system';
@@ -70,6 +76,15 @@ function getStoredStudioDocumentId(): string | null {
   return localStorage.getItem('opennotion-current-studio-document-id');
 }
 
+function clampSidebarWidth(width: number): number {
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(width)));
+}
+
+function getStoredSidebarWidth(): number {
+  const storedWidth = Number(localStorage.getItem('opennotion-sidebar-width'));
+  return Number.isFinite(storedWidth) ? clampSidebarWidth(storedWidth) : SIDEBAR_DEFAULT_WIDTH;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   pages: [],
   currentPageId: getStoredPageId(),
@@ -81,6 +96,7 @@ export const useAppStore = create<AppState>((set) => ({
   studioDocuments: [],
   currentStudioDocumentId: getStoredStudioDocumentId(),
   isSidebarOpen: true,
+  sidebarWidth: getStoredSidebarWidth(),
   theme: getStoredTheme(),
   fetchPages: async () => {
     try {
@@ -340,6 +356,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   toggleSidebar: () => {
     set((state) => ({ isSidebarOpen: !state.isSidebarOpen }));
+  },
+
+  setSidebarWidth: (width) => {
+    const sidebarWidth = clampSidebarWidth(width);
+    localStorage.setItem('opennotion-sidebar-width', String(sidebarWidth));
+    set({ sidebarWidth });
   },
 
   setTheme: (theme) => {

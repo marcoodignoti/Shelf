@@ -4,13 +4,14 @@ import { useAppStore } from '../store/useAppStore';
 import { PanelLeft } from 'lucide-react';
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { isSidebarOpen, toggleSidebar } = useAppStore();
+  const { isSidebarOpen, sidebarWidth, toggleSidebar } = useAppStore();
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans">
       {isSidebarOpen && <Sidebar />}
       <div
-        className={`fixed top-2 z-[90] flex items-center gap-2 ${isSidebarOpen ? 'left-[198px]' : 'left-[84px]'}`}
+        className="fixed top-2 z-[90] flex items-center gap-2"
+        style={{ left: isSidebarOpen ? sidebarWidth - 42 : 84 }}
         data-tauri-drag-region
       >
         <button
