@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
-use std::fs::{copy, create_dir_all, metadata, set_permissions, File, Permissions};
+use std::fs::{copy, create_dir_all, metadata, remove_file, set_permissions, File, Permissions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -10,6 +10,7 @@ use tauri::{Manager, Runtime};
 
 const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+const STUDIO_PDF_MAX_BYTES: u64 = 200 * 1024 * 1024;
 const APP_SCHEMA_VERSION: &str = "1";
 
 #[derive(Clone)]
@@ -33,6 +34,7 @@ struct Page {
     database_schema: Option<String>,
     properties: Option<String>,
     sort_order: i64,
+    page_kind: String,
     created_at: String,
     updated_at: String,
 }
@@ -53,6 +55,7 @@ struct ImportedPage {
     database_schema: Option<String>,
     properties: Option<String>,
     sort_order: Option<i64>,
+    page_kind: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -73,9 +76,34 @@ struct SearchResult {
     database_schema: Option<String>,
     properties: Option<String>,
     sort_order: i64,
+    page_kind: String,
     created_at: String,
     updated_at: String,
     matched_content: Option<String>,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+struct StudioDocument {
+    id: String,
+    title: String,
+    original_filename: String,
+    stored_file_path: String,
+    note_page_id: String,
+    last_opened_at: String,
+    viewer_zoom: i64,
+    viewer_page: i64,
+    panel_layout: String,
+    created_at: String,
+    updated_at: String,
+}
+
+struct ImportStudioDocumentRecord<'a> {
+    document_id: &'a str,
+    note_page_id: &'a str,
+    title: &'a str,
+    original_filename: &'a str,
+    stored_file_path: &'a str,
+    imported_at: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +120,15 @@ struct PageUpdates {
     is_database: Option<i64>,
     database_schema: Option<String>,
     properties: Option<String>,
+    page_kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StudioViewerUpdates {
+    viewer_zoom: Option<i64>,
+    viewer_page: Option<i64>,
+    panel_layout: Option<String>,
+    last_opened_at: Option<String>,
 }
 
 async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
@@ -191,6 +228,37 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
             .await?;
     }
 
+    if !columns.iter().any(|column| column == "page_kind") {
+        sqlx::query("ALTER TABLE pages ADD COLUMN page_kind TEXT NOT NULL DEFAULT 'note'")
+            .execute(db)
+            .await?;
+    }
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS studio_documents (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_file_path TEXT NOT NULL,
+            note_page_id TEXT NOT NULL UNIQUE,
+            last_opened_at TEXT NOT NULL,
+            viewer_zoom INTEGER NOT NULL DEFAULT 100,
+            viewer_page INTEGER NOT NULL DEFAULT 1,
+            panel_layout TEXT NOT NULL DEFAULT 'pdf-left',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_studio_documents_last_opened
+         ON studio_documents (last_opened_at DESC)",
+    )
+    .execute(db)
+    .await?;
+
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_pages_active_parent_sort
          ON pages (is_deleted, parent_id, sort_order)",
@@ -236,8 +304,8 @@ async fn create_page_record(
     .await?;
 
     sqlx::query(
-        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, ?, ?)",
+        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)",
     )
     .bind(id)
     .bind(title)
@@ -263,6 +331,46 @@ async fn create_page_record(
         database_schema: None,
         properties: None,
         sort_order,
+        page_kind: "note".to_string(),
+        created_at: created_at.to_string(),
+        updated_at: created_at.to_string(),
+    })
+}
+
+#[allow(dead_code)]
+async fn create_studio_note_record(
+    db: &SqlitePool,
+    id: &str,
+    title: &str,
+    created_at: &str,
+) -> Result<Page, sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+         VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, 'studio_note', ?, ?)",
+    )
+    .bind(id)
+    .bind(title)
+    .bind(created_at)
+    .bind(created_at)
+    .execute(db)
+    .await?;
+
+    Ok(Page {
+        id: id.to_string(),
+        title: title.to_string(),
+        parent_id: None,
+        content: None,
+        search_text: None,
+        icon: None,
+        cover_url: None,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: None,
+        properties: None,
+        sort_order: 0,
+        page_kind: "studio_note".to_string(),
         created_at: created_at.to_string(),
         updated_at: created_at.to_string(),
     })
@@ -270,7 +378,7 @@ async fn create_page_record(
 
 async fn get_page_record(db: &SqlitePool, id: &str) -> Result<Option<Page>, sqlx::Error> {
     sqlx::query_as::<_, Page>(
-        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at
+        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at
          FROM pages
          WHERE id = ?",
     )
@@ -299,9 +407,10 @@ async fn update_page_content(
 
 async fn list_page_records(db: &SqlitePool) -> Result<Vec<Page>, sqlx::Error> {
     sqlx::query_as::<_, Page>(
-        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at
+        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at
          FROM pages
          WHERE is_deleted = 0
+           AND page_kind = 'note'
          ORDER BY sort_order ASC, created_at DESC",
     )
     .fetch_all(db)
@@ -310,7 +419,7 @@ async fn list_page_records(db: &SqlitePool) -> Result<Vec<Page>, sqlx::Error> {
 
 async fn list_all_page_records(db: &SqlitePool) -> Result<Vec<Page>, sqlx::Error> {
     sqlx::query_as::<_, Page>(
-        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at
+        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at
          FROM pages
          ORDER BY sort_order ASC, created_at DESC",
     )
@@ -331,13 +440,14 @@ async fn search_page_records(
     let pattern = format!("%{}%", trimmed.to_lowercase());
 
     sqlx::query_as::<_, SearchResult>(
-        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at,
+        "SELECT id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at,
                 CASE
                   WHEN lower(coalesce(search_text, '')) LIKE ? THEN search_text
                   ELSE NULL
                 END AS matched_content
          FROM pages
          WHERE is_deleted = 0
+           AND page_kind = 'note'
            AND (lower(coalesce(title, '')) LIKE ? OR lower(coalesce(search_text, '')) LIKE ?)
          ORDER BY
            CASE WHEN lower(coalesce(title, '')) LIKE ? THEN 0 ELSE 1 END,
@@ -376,8 +486,8 @@ async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<
 
     for page in pages {
         let result = sqlx::query(
-            "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&page.id)
         .bind(&page.title)
@@ -393,6 +503,7 @@ async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<
         .bind(&page.database_schema)
         .bind(&page.properties)
         .bind(page.sort_order.unwrap_or(0))
+        .bind(page.page_kind.as_deref().unwrap_or("note"))
         .bind(&page.created_at)
         .bind(&page.updated_at)
         .execute(&mut *transaction)
@@ -404,6 +515,108 @@ async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<
     transaction.commit().await?;
 
     Ok(imported_count)
+}
+
+async fn list_studio_document_records(db: &SqlitePool) -> Result<Vec<StudioDocument>, sqlx::Error> {
+    sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         ORDER BY last_opened_at DESC, created_at DESC",
+    )
+    .fetch_all(db)
+    .await
+}
+
+async fn import_studio_document_record(
+    db: &SqlitePool,
+    input: ImportStudioDocumentRecord<'_>,
+) -> Result<StudioDocument, sqlx::Error> {
+    let mut transaction = db.begin().await?;
+
+    sqlx::query(
+        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+         VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, 'studio_note', ?, ?)",
+    )
+    .bind(input.note_page_id)
+    .bind(format!("{} Notes", input.title))
+    .bind(input.imported_at)
+    .bind(input.imported_at)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO studio_documents (id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 100, 1, 'pdf-left', ?, ?)",
+    )
+    .bind(input.document_id)
+    .bind(input.title)
+    .bind(input.original_filename)
+    .bind(input.stored_file_path)
+    .bind(input.note_page_id)
+    .bind(input.imported_at)
+    .bind(input.imported_at)
+    .bind(input.imported_at)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+
+    sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(input.document_id)
+    .fetch_one(db)
+    .await
+}
+
+async fn update_studio_document_viewer_state_record(
+    db: &SqlitePool,
+    id: &str,
+    updates: StudioViewerUpdates,
+    updated_at: &str,
+) -> Result<(), String> {
+    let current = sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    let viewer_zoom = updates
+        .viewer_zoom
+        .unwrap_or(current.viewer_zoom)
+        .clamp(25, 300);
+    let viewer_page = updates.viewer_page.unwrap_or(current.viewer_page).max(1);
+    let panel_layout = match updates.panel_layout.as_deref() {
+        Some("note-left") => "note-left",
+        Some("pdf-left") => "pdf-left",
+        _ => current.panel_layout.as_str(),
+    };
+    let last_opened_at = updates
+        .last_opened_at
+        .as_deref()
+        .unwrap_or(current.last_opened_at.as_str());
+
+    sqlx::query(
+        "UPDATE studio_documents
+         SET viewer_zoom = ?, viewer_page = ?, panel_layout = ?, last_opened_at = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(viewer_zoom)
+    .bind(viewer_page)
+    .bind(panel_layout)
+    .bind(last_opened_at)
+    .bind(updated_at)
+    .bind(id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 async fn create_page_from_template_record(
@@ -429,8 +642,8 @@ async fn create_page_from_template_record(
     .await?;
 
     sqlx::query(
-        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, 'note', ?, ?)",
     )
     .bind(id)
     .bind(&template.title)
@@ -463,6 +676,7 @@ async fn create_page_from_template_record(
         database_schema: template.database_schema,
         properties: template.properties,
         sort_order,
+        page_kind: "note".to_string(),
         created_at: created_at.to_string(),
         updated_at: created_at.to_string(),
     })
@@ -491,8 +705,8 @@ async fn duplicate_page_record(
     .await?;
 
     sqlx::query(
-        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, 'note', ?, ?)",
     )
     .bind(id)
     .bind(&title)
@@ -525,6 +739,7 @@ async fn duplicate_page_record(
         database_schema: source.database_schema,
         properties: source.properties,
         sort_order,
+        page_kind: "note".to_string(),
         created_at: created_at.to_string(),
         updated_at: created_at.to_string(),
     })
@@ -659,6 +874,35 @@ fn cover_extension_from_magic(header: &[u8]) -> Option<&'static str> {
     None
 }
 
+fn validated_pdf_file(path: &Path) -> Result<&'static str, String> {
+    let extension = path
+        .extension()
+        .map(|value| value.to_string_lossy().to_lowercase())
+        .filter(|value| value == "pdf")
+        .ok_or_else(|| "file must be a PDF".to_string())?;
+
+    let file_size = metadata(path).map_err(|error| error.to_string())?.len();
+    if file_size > STUDIO_PDF_MAX_BYTES {
+        return Err("PDF must be 200 MB or smaller".to_string());
+    }
+
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut header = [0_u8; 5];
+    let bytes_read = file.read(&mut header).map_err(|error| error.to_string())?;
+    if bytes_read < 5 || &header != b"%PDF-" {
+        return Err("PDF content is not valid".to_string());
+    }
+
+    let _ = extension;
+    Ok("pdf")
+}
+
+fn safe_storage_id(id: &str) -> String {
+    id.chars()
+        .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
+        .collect()
+}
+
 fn validated_cover_extension(path: &Path, max_bytes: u64) -> Result<&'static str, String> {
     let extension = allowed_cover_extension(path)
         .ok_or_else(|| "cover image must be PNG, JPG, WebP, or GIF".to_string())?;
@@ -730,6 +974,20 @@ fn copy_cover_image<R: Runtime>(
     copy(source_path, &destination).map_err(|error| error.to_string())?;
 
     Ok(destination.to_string_lossy().to_string())
+}
+
+fn studio_pdf_destination<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    document_id: &str,
+) -> Result<PathBuf, String> {
+    let studio_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("studio-documents")
+        .join(safe_storage_id(document_id));
+    ensure_private_directory(&studio_dir).map_err(|error| error.to_string())?;
+    Ok(studio_dir.join("source.pdf"))
 }
 
 #[tauri::command]
@@ -890,6 +1148,16 @@ async fn update_page(
             .map_err(|error| error.to_string())?;
     }
 
+    if let Some(page_kind) = updates.page_kind {
+        sqlx::query("UPDATE pages SET page_kind = ?, updated_at = ? WHERE id = ?")
+            .bind(page_kind)
+            .bind(&updated_at)
+            .bind(&id)
+            .execute(&state.db)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -930,6 +1198,72 @@ async fn import_pages(
     import_page_records(&state.db, &pages)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn list_studio_documents(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<StudioDocument>, String> {
+    list_studio_document_records(&state.db)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn import_studio_document<R: Runtime>(
+    document_id: String,
+    note_page_id: String,
+    source_path: String,
+    imported_at: String,
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<StudioDocument, String> {
+    let source = Path::new(&source_path);
+    validated_pdf_file(source)?;
+    let original_filename = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "PDF file name is invalid".to_string())?
+        .to_string();
+    let title = source
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Imported PDF")
+        .to_string();
+    let destination = studio_pdf_destination(&app, &document_id)?;
+
+    copy(source, &destination).map_err(|error| error.to_string())?;
+    let stored_file_path = destination.to_string_lossy().to_string();
+
+    match import_studio_document_record(
+        &state.db,
+        ImportStudioDocumentRecord {
+            document_id: &document_id,
+            note_page_id: &note_page_id,
+            title: &title,
+            original_filename: &original_filename,
+            stored_file_path: &stored_file_path,
+            imported_at: &imported_at,
+        },
+    )
+    .await
+    {
+        Ok(document) => Ok(document),
+        Err(error) => {
+            let _ = remove_file(&destination);
+            Err(error.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn update_studio_document_viewer_state(
+    id: String,
+    updates: StudioViewerUpdates,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    update_studio_document_viewer_state_record(&state.db, &id, updates, &updated_at).await
 }
 
 #[tauri::command]
@@ -1043,6 +1377,9 @@ pub fn run() {
             move_page,
             reorder_pages,
             import_pages,
+            list_studio_documents,
+            import_studio_document,
+            update_studio_document_viewer_state,
             toggle_favorite,
             toggle_template,
             create_page_from_template,
@@ -1110,6 +1447,54 @@ mod tests {
                     .expect("fetch schema version");
 
             assert_eq!(schema_version, APP_SCHEMA_VERSION);
+        });
+    }
+
+    #[test]
+    fn migrations_create_studio_documents_and_page_kind() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+
+            let page_columns: Vec<String> =
+                sqlx::query_scalar("SELECT name FROM pragma_table_info('pages')")
+                    .fetch_all(&db)
+                    .await
+                    .expect("list page columns");
+            assert!(page_columns.contains(&"page_kind".to_string()));
+
+            let studio_columns: Vec<String> =
+                sqlx::query_scalar("SELECT name FROM pragma_table_info('studio_documents')")
+                    .fetch_all(&db)
+                    .await
+                    .expect("list studio document columns");
+            assert!(studio_columns.contains(&"note_page_id".to_string()));
+            assert!(studio_columns.contains(&"panel_layout".to_string()));
+        });
+    }
+
+    #[test]
+    fn list_pages_hides_studio_notes() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_page_record(&db, "note", "Normal", None, "2026-05-27T00:00:00.000Z")
+                .await
+                .expect("create normal note");
+            create_studio_note_record(&db, "studio-note", "PDF Notes", "2026-05-27T00:01:00.000Z")
+                .await
+                .expect("create studio note");
+
+            let visible_ids: Vec<String> = list_page_records(&db)
+                .await
+                .expect("list pages")
+                .into_iter()
+                .map(|page| page.id)
+                .collect();
+
+            assert_eq!(visible_ids, vec!["note"]);
+            assert!(get_page_record(&db, "studio-note")
+                .await
+                .expect("get studio note")
+                .is_some());
         });
     }
 
@@ -1267,6 +1652,96 @@ mod tests {
         assert_eq!(error, "cover image must be 10 MB or smaller");
 
         let _ = remove_file(&large_path);
+    }
+
+    #[test]
+    fn studio_pdf_validation_accepts_pdf_magic_and_rejects_text() {
+        let pdf_path = temp_path("sample.pdf");
+        write(&pdf_path, b"%PDF-1.7\nbody").expect("write pdf");
+        assert_eq!(validated_pdf_file(&pdf_path).as_deref(), Ok("pdf"));
+        let _ = remove_file(&pdf_path);
+
+        let text_path = temp_path("sample.pdf");
+        write(&text_path, b"not a pdf").expect("write text");
+        let error = validated_pdf_file(&text_path).expect_err("reject text");
+        assert_eq!(error, "PDF content is not valid");
+        let _ = remove_file(&text_path);
+    }
+
+    #[test]
+    fn import_studio_document_records_document_and_note() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            let stored_path = "/tmp/opennotion-studio/doc-1/source.pdf";
+
+            let document = import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "sample.pdf",
+                    stored_file_path: stored_path,
+                    imported_at: "2026-05-27T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("import studio document");
+
+            assert_eq!(document.id, "doc-1");
+            assert_eq!(document.note_page_id, "note-1");
+            assert_eq!(document.viewer_zoom, 100);
+            assert_eq!(document.viewer_page, 1);
+            assert_eq!(document.panel_layout, "pdf-left");
+
+            let note = get_page_record(&db, "note-1")
+                .await
+                .expect("load linked note")
+                .expect("note exists");
+            assert_eq!(note.page_kind, "studio_note");
+        });
+    }
+
+    #[test]
+    fn update_studio_document_viewer_state_persists_preferences() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "sample.pdf",
+                    stored_file_path: "/tmp/sample.pdf",
+                    imported_at: "2026-05-27T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            update_studio_document_viewer_state_record(
+                &db,
+                "doc-1",
+                StudioViewerUpdates {
+                    viewer_zoom: Some(150),
+                    viewer_page: Some(3),
+                    panel_layout: Some("note-left".to_string()),
+                    last_opened_at: Some("2026-05-27T00:10:00.000Z".to_string()),
+                },
+                "2026-05-27T00:10:00.000Z",
+            )
+            .await
+            .expect("update viewer state");
+
+            let document = list_studio_document_records(&db)
+                .await
+                .expect("list documents")
+                .remove(0);
+            assert_eq!(document.viewer_zoom, 150);
+            assert_eq!(document.viewer_page, 3);
+            assert_eq!(document.panel_layout, "note-left");
+        });
     }
 
     #[test]
@@ -1540,6 +2015,7 @@ mod tests {
                 database_schema: Some("{\"properties\":[]}".to_string()),
                 properties: Some("{\"status\":\"Done\"}".to_string()),
                 sort_order: Some(0),
+                page_kind: None,
                 created_at: "2026-05-18T00:00:00.000Z".to_string(),
                 updated_at: "2026-05-18T00:00:00.000Z".to_string(),
             }];
@@ -1599,6 +2075,7 @@ mod tests {
                     database_schema: None,
                     properties: None,
                     sort_order: Some(0),
+                    page_kind: None,
                     created_at: "2026-05-18T00:01:00.000Z".to_string(),
                     updated_at: "2026-05-18T00:01:00.000Z".to_string(),
                 },
@@ -1617,6 +2094,7 @@ mod tests {
                     database_schema: None,
                     properties: None,
                     sort_order: Some(1),
+                    page_kind: None,
                     created_at: "2026-05-18T00:02:00.000Z".to_string(),
                     updated_at: "2026-05-18T00:02:00.000Z".to_string(),
                 },

@@ -15,6 +15,7 @@ type MockPage = {
   database_schema: string | null;
   properties: string | null;
   sort_order: number;
+  page_kind: "note" | "studio_note";
   created_at: string;
   updated_at: string;
 };
@@ -86,6 +87,7 @@ test.beforeEach(async ({ page }) => {
             database_schema: null,
             properties: null,
             sort_order: -1,
+            page_kind: "note",
             created_at: args.createdAt as string,
             updated_at: args.createdAt as string,
           };

@@ -10,6 +10,8 @@ import { clampContextMenuPosition } from '../lib/contextMenu';
 import { computeFloatingPosition } from '../lib/floatingPosition';
 import { dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId } from '../lib/pageOrder';
 import type { DropPosition } from '../lib/pageOrder';
+import { SidebarModeSwitch } from './SidebarModeSwitch';
+import { StudioSidebar } from './StudioSidebar';
 
 type PendingDelete = {
   page: Page;
@@ -486,7 +488,27 @@ function PageItem({
 }
 
 export function Sidebar() {
-  const { pages, fetchPages, addPage, addPageFromTemplate, removePage, movePageAction, reorderPagesAction, toggleFavoriteAction, currentPageId, setCurrentPageId, isLoading, openCommandPalette } = useAppStore();
+  const {
+    pages,
+    fetchPages,
+    addPage,
+    addPageFromTemplate,
+    removePage,
+    movePageAction,
+    reorderPagesAction,
+    toggleFavoriteAction,
+    currentPageId,
+    setCurrentPageId,
+    isLoading,
+    openCommandPalette,
+    workspaceMode,
+    setWorkspaceMode,
+    studioDocuments,
+    currentStudioDocumentId,
+    fetchStudioDocuments,
+    setCurrentStudioDocumentId,
+    importStudioPdfAction,
+  } = useAppStore();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const newPageButtonRef = useRef<HTMLButtonElement>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -507,10 +529,17 @@ export function Sidebar() {
   }, [fetchPages]);
 
   useEffect(() => {
+    if (workspaceMode === 'studio') {
+      void fetchStudioDocuments();
+    }
+  }, [fetchStudioDocuments, workspaceMode]);
+
+  useEffect(() => {
     pagesRef.current = pages;
   }, [pages]);
 
-  const sortedPages = sortPages(pages);
+  const notePages = pages.filter((page) => page.page_kind === 'note');
+  const sortedPages = sortPages(notePages);
   const rootPages = sortedPages.filter(p => p.parent_id === null);
   const templatePages = sortedPages.filter(p => p.is_template === 1);
   const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
@@ -565,12 +594,12 @@ export function Sidebar() {
     if (activeElement.closest('input,textarea,[contenteditable="true"]')) return;
     if (currentPageId === HOME_PAGE_ID) return;
 
-    const currentPage = pages.find(page => page.id === currentPageId);
+    const currentPage = notePages.find(page => page.id === currentPageId);
     if (!currentPage) return;
 
     const childPages = sortedPages.filter(page => page.parent_id === currentPage.id);
-    const expandedIds = expandedPageIds(pages);
-    const visibleIds = visiblePageIds(pages, expandedIds);
+    const expandedIds = expandedPageIds(notePages);
+    const visibleIds = visiblePageIds(notePages, expandedIds);
     const currentIndex = visibleIds.indexOf(currentPage.id);
 
     if (event.key === 'ArrowDown' && currentIndex >= 0 && currentIndex < visibleIds.length - 1) {
@@ -773,12 +802,26 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="w-60 bg-secondary/95 border-r border-border flex flex-col h-full overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="on-glass-sidebar w-60 flex flex-col h-full overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
       <div className="h-11 flex-shrink-0" data-tauri-drag-region />
 
+      <div className="px-2 pb-3">
+        <SidebarModeSwitch mode={workspaceMode} onChange={setWorkspaceMode} />
+      </div>
+
+      {workspaceMode === 'studio' ? (
+        <StudioSidebar
+          documents={studioDocuments}
+          currentDocumentId={currentStudioDocumentId}
+          isLoading={isLoading}
+          onImport={() => void importStudioPdfAction()}
+          onSelectDocument={setCurrentStudioDocumentId}
+        />
+      ) : (
+        <>
       <div className="px-1 mb-0 space-y-[0px]">
         <button
           className={`on-shell-row ${currentPageId === HOME_PAGE_ID ? 'on-shell-row-active' : ''}`}
@@ -919,6 +962,8 @@ export function Sidebar() {
             ))}
         </div>
       </div>
+        </>
+      )}
       {pendingDelete && (
         <div className="on-modal-overlay z-50 items-center justify-center">
           <div className="on-modal-panel w-[420px]">

@@ -8,9 +8,21 @@ import { AppNotice } from "./components/AppNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { HomeView } from "./components/HomeView";
+import { StudioWorkspace } from "./components/StudioWorkspace";
 
 export default function App() {
-  const { pages, currentPageId, theme, isLoading, addPage, setCurrentPageId } = useAppStore();
+  const {
+    pages,
+    currentPageId,
+    theme,
+    isLoading,
+    addPage,
+    setCurrentPageId,
+    workspaceMode,
+    studioDocuments,
+    currentStudioDocumentId,
+    updateStudioViewerAction,
+  } = useAppStore();
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -52,6 +64,10 @@ export default function App() {
   }, []);
 
   const currentPage = pages.find(p => p.id === currentPageId);
+  const currentStudioDocument = studioDocuments.find((document) => document.id === currentStudioDocumentId);
+  const currentStudioNote = currentStudioDocument
+    ? pages.find((page) => page.id === currentStudioDocument.note_page_id) ?? null
+    : null;
 
   return (
     <Layout>
@@ -59,6 +75,22 @@ export default function App() {
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
           Loading workspace...
         </div>
+      ) : workspaceMode === 'studio' ? (
+        currentStudioDocument ? (
+          <ErrorBoundary key={currentStudioDocument.id}>
+            <StudioWorkspace
+              document={currentStudioDocument}
+              note={currentStudioNote}
+              pages={pages}
+              onSelectPage={setCurrentPageId}
+              onUpdateViewer={(id, updates) => void updateStudioViewerAction(id, updates)}
+            />
+          </ErrorBoundary>
+        ) : (
+          <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
+            Import a PDF from the Studio sidebar to start.
+          </div>
+        )
       ) : currentPageId === HOME_PAGE_ID ? (
         <HomeView
           pages={pages}

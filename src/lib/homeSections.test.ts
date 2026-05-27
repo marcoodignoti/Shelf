@@ -15,6 +15,7 @@ function page(id: string, updatedAt: string, isFavorite = 0): Page {
     is_favorite: isFavorite,
     is_template: 0,
     sort_order: 0,
+    page_kind: "note",
     created_at: updatedAt,
     updated_at: updatedAt,
   };
@@ -29,6 +30,15 @@ describe("recentPages", () => {
     ];
 
     expect(recentPages(pages).map((item) => item.id)).toEqual(["new", "middle", "old"]);
+  });
+
+  it("excludes Studio notes", () => {
+    expect(
+      recentPages([
+        page("regular", "2026-05-18T08:00:00.000Z"),
+        { ...page("studio", "2026-05-18T10:00:00.000Z"), page_kind: "studio_note" },
+      ]).map((item) => item.id)
+    ).toEqual(["regular"]);
   });
 });
 

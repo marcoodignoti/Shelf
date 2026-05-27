@@ -221,10 +221,12 @@ export function Editor({
   page,
   pages,
   onSelectPage,
+  variant = "page",
 }: {
   page: Page;
   pages: Page[];
   onSelectPage: (id: string) => void;
+  variant?: "page" | "studio";
 }) {
   const saveTimeoutRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Partial<Page>>({});
@@ -278,6 +280,7 @@ export function Editor({
     [page.id]
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
+  const isStudioVariant = variant === "studio";
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -487,7 +490,8 @@ export function Editor({
 
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
-      <div className="max-w-3xl mx-auto flex flex-col flex-1 w-full px-8 pt-20 pb-16 overflow-y-auto">
+      <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex flex-col flex-1 w-full pb-16 overflow-y-auto`}>
+        {!isStudioVariant && (
         <div className="mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
           {breadcrumbs.map((breadcrumb, index) => {
             const isCurrent = breadcrumb.id === page.id;
@@ -507,7 +511,9 @@ export function Editor({
             );
           })}
         </div>
+        )}
 
+        {!isStudioVariant && (
         <div className="group/page-actions mb-3 flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
           <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
             {!icon && (
@@ -703,7 +709,8 @@ export function Editor({
             </FloatingPopover>
           </div>
         </div>
-        {coverUrl && (
+        )}
+        {!isStudioVariant && coverUrl && (
           <div className="group relative mb-8 h-44 w-full overflow-hidden rounded-md bg-muted">
             <div
               className="h-full w-full bg-cover bg-center"
@@ -729,6 +736,7 @@ export function Editor({
             </div>
           </div>
         )}
+        {!isStudioVariant && (
         <div className="relative">
           {icon && (
             <button
@@ -787,24 +795,25 @@ export function Editor({
             </FloatingPopover>
           )}
         </div>
+        )}
         <input
-          className="text-4xl font-bold mb-6 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+          className={`${isStudioVariant ? "text-2xl" : "text-4xl"} font-bold mb-6 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground`}
           value={title}
           placeholder="Untitled"
           onChange={(event) => handleTitleChange(event.target.value)}
         />
-        {page.is_template === 1 && (
+        {!isStudioVariant && page.is_template === 1 && (
           <div className="mb-6 inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
             <Copy className="h-3.5 w-3.5" />
             Template
           </div>
         )}
-        {databaseParentPage && (
+        {!isStudioVariant && databaseParentPage && (
           <DatabaseRowPropertiesPanel databasePage={databaseParentPage} rowPage={page} />
         )}
-        {page.is_database === 1 ? (
+        {!isStudioVariant && page.is_database === 1 ? (
           <DatabaseTableView databasePage={page} rows={childPages} onSelectPage={onSelectPage} />
-        ) : subpageMode === "list" ? (
+        ) : !isStudioVariant && subpageMode === "list" ? (
           <div className="mb-8 space-y-1">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subpages</div>
@@ -843,7 +852,7 @@ export function Editor({
               </button>
             ))}
           </div>
-        ) : (
+        ) : !isStudioVariant ? (
           <div className="group/subpage relative mb-8 min-h-8">
             <button
               ref={subpageMenuButtonRef}
@@ -863,7 +872,7 @@ export function Editor({
               onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
             />
           </div>
-        )}
+        ) : null}
         <div className="relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
           <BlockNoteView
             editor={editor}

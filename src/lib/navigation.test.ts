@@ -12,8 +12,9 @@ const page = (id: string, updatedAt: string): Page => ({
   cover_url: null,
   is_deleted: 0,
   is_favorite: 0,
-    is_template: 0,
-    sort_order: 0,
+  is_template: 0,
+  sort_order: 0,
+  page_kind: "note",
   created_at: updatedAt,
   updated_at: updatedAt,
 });
