@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { allStudioDocuments, normalizePanelLayout, recentStudioDocuments } from "./studioDocuments";
+import {
+  allStudioDocuments,
+  remainingStudioDocuments,
+  studioDocumentMetadata,
+  normalizePanelLayout,
+  recentStudioDocuments,
+} from "./studioDocuments";
 import { StudioDocument } from "./studio";
 
 function doc(id: string, lastOpenedAt: string): StudioDocument {
@@ -36,6 +42,20 @@ describe("studio document helpers", () => {
         doc("Alpha", "2026-05-27T08:00:00.000Z"),
       ]).map((item) => item.id)
     ).toEqual(["Alpha", "Bravo"]);
+  });
+
+  it("excludes recent documents from remaining documents", () => {
+    const old = doc("old", "2026-05-27T08:00:00.000Z");
+    const newer = doc("newer", "2026-05-27T09:00:00.000Z");
+    const newest = doc("newest", "2026-05-27T10:00:00.000Z");
+
+    expect(remainingStudioDocuments([old, newest, newer], [newest, newer]).map((item) => item.id)).toEqual(["old"]);
+  });
+
+  it("formats document metadata from filename and last opened date", () => {
+    expect(studioDocumentMetadata(doc("Chapter One", "2026-05-27T10:15:00.000Z"))).toBe(
+      "Chapter One.pdf · 27 mag 2026"
+    );
   });
 
   it("normalizes panel layout", () => {

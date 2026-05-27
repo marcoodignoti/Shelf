@@ -1,6 +1,6 @@
-import { FileText, Upload } from "lucide-react";
+import { FileText, Loader2, Upload } from "lucide-react";
 import { StudioDocument } from "../lib/studio";
-import { allStudioDocuments, recentStudioDocuments } from "../lib/studioDocuments";
+import { recentStudioDocuments, remainingStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
@@ -26,9 +26,14 @@ function StudioDocumentRow({
       onClick={onSelect}
       title={document.original_filename}
     >
-      <div className="flex min-w-0 items-center">
-        <FileText className="mr-2 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-        <span className="truncate">{document.title}</span>
+      <div className="flex min-w-0 items-start gap-2">
+        <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        <span className="min-w-0 text-left">
+          <span className="block truncate">{document.title}</span>
+          <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+            {studioDocumentMetadata(document)}
+          </span>
+        </span>
       </div>
     </button>
   );
@@ -41,8 +46,8 @@ export function StudioSidebar({
   onImport,
   onSelectDocument,
 }: StudioSidebarProps) {
-  const recent = recentStudioDocuments(documents);
-  const all = allStudioDocuments(documents);
+  const recent = recentStudioDocuments(documents, 4);
+  const remaining = remainingStudioDocuments(documents, recent);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -53,10 +58,16 @@ export function StudioSidebar({
         </button>
       </div>
       <div className="mt-4 flex-1 overflow-y-auto px-2 pb-20">
-        {isLoading && <div className="px-3 py-4 text-xs text-muted-foreground">Loading Studio...</div>}
+        {isLoading && (
+          <div className="mx-1 flex items-center gap-2 rounded-xl border border-border/60 bg-background/35 p-3 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading Studio documents...
+          </div>
+        )}
         {!isLoading && documents.length === 0 && (
           <div className="mx-1 rounded-xl border border-dashed border-border/70 bg-background/35 p-3 text-xs text-muted-foreground">
-            Import a PDF to start Studio notes.
+            <div className="font-medium text-foreground/80">No Studio documents</div>
+            <div className="mt-1">Import a PDF to create a linked note.</div>
           </div>
         )}
         {recent.length > 0 && (
@@ -72,10 +83,10 @@ export function StudioSidebar({
             ))}
           </section>
         )}
-        {all.length > 0 && (
+        {remaining.length > 0 && (
           <section>
             <div className="on-section-label mb-1">Tutti i documenti</div>
-            {all.map((document) => (
+            {remaining.map((document) => (
               <StudioDocumentRow
                 key={`all-${document.id}`}
                 document={document}
@@ -84,6 +95,11 @@ export function StudioSidebar({
               />
             ))}
           </section>
+        )}
+        {!isLoading && documents.length > 0 && remaining.length === 0 && (
+          <div className="px-3 py-2 text-[11px] text-muted-foreground">
+            Tutti i documenti sono gia in Recenti.
+          </div>
         )}
       </div>
     </div>
