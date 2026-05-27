@@ -102,7 +102,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
-  await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("civil-law Notes");
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
   await page.getByTitle("Swap panels").click();
   await expect(page.getByText("100%")).toBeVisible();
@@ -160,7 +160,7 @@ test("stacks Studio panels when resized below usable split width", async ({ page
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
+  const noteTitleBox = await page.locator("textarea[placeholder='Untitled']").boundingBox();
 
   expect(pdfBox).not.toBeNull();
   expect(noteTitleBox).not.toBeNull();
@@ -174,7 +174,7 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
+  const noteTitleBox = await page.locator("textarea[placeholder='Untitled']").boundingBox();
 
   expect(pdfBox).not.toBeNull();
   expect(noteTitleBox).not.toBeNull();

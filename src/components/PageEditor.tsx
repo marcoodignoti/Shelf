@@ -400,6 +400,7 @@ export function Editor({
   const pendingUpdatesRef = useRef<Partial<Page>>({});
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -590,6 +591,53 @@ export function Editor({
     const savedTitle = nextTitle || "Untitled";
     queueSave({ title: savedTitle });
   };
+
+  const resizeTitleInput = useCallback(() => {
+    const element = titleInputRef.current;
+    if (!element) return;
+
+    element.style.height = "0px";
+    element.style.height = `${element.scrollHeight}px`;
+  }, []);
+
+  const focusEditorBody = useCallback(() => {
+    const firstBlock = editor.document[0];
+    if (!firstBlock) return;
+
+    const editable = editor.domElement?.querySelector<HTMLElement>("[contenteditable='true']");
+
+    editable?.focus();
+    editor.focus();
+    editor.setTextCursorPosition(firstBlock, "end");
+    requestAnimationFrame(() => {
+      editable?.focus();
+      editor.focus();
+      editor.setTextCursorPosition(firstBlock, "end");
+    });
+  }, [editor]);
+
+  const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter") return;
+
+    if (event.altKey) {
+      event.preventDefault();
+      const element = event.currentTarget;
+      const selectionStart = element.selectionStart;
+      const selectionEnd = element.selectionEnd;
+      element.setRangeText("\n", selectionStart, selectionEnd, "end");
+      handleTitleChange(element.value);
+      resizeTitleInput();
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.blur();
+    focusEditorBody();
+  };
+
+  useEffect(() => {
+    resizeTitleInput();
+  }, [resizeTitleInput, title]);
 
   const handleEditorChange = () => {
     if (!isNormalizingMathRef.current) {
@@ -1077,11 +1125,16 @@ export function Editor({
         </div>
         )}
         <div className={`${isStudioVariant ? "mb-6" : "mb-4"} flex items-start gap-4`}>
-          <input
-            className={`${isStudioVariant ? "text-2xl" : "text-4xl"} min-w-0 flex-1 bg-transparent font-bold text-foreground outline-none placeholder:text-muted-foreground`}
+          <textarea
+            ref={titleInputRef}
+            className={`${isStudioVariant ? "text-2xl" : "text-4xl"} min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground`}
             value={title}
             placeholder="Untitled"
+            rows={1}
+            spellCheck={false}
             onChange={(event) => handleTitleChange(event.target.value)}
+            onInput={resizeTitleInput}
+            onKeyDown={handleTitleKeyDown}
           />
           {!isStudioVariant && subpageMode !== "list" && (
             <div className="relative mt-2 shrink-0">

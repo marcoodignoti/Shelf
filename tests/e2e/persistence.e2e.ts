@@ -127,9 +127,9 @@ test("create, edit, reload, and search preserves page content", async ({ page })
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill(pageTitle);
+  await page.locator("textarea[placeholder='Untitled']").fill(pageTitle);
   await page.getByRole("textbox").last().click();
   await page.keyboard.type(bodyText);
   await page.waitForFunction(
@@ -142,7 +142,7 @@ test("create, edit, reload, and search preserves page content", async ({ page })
 
   await page.reload();
 
-  await expect(page.locator("input[placeholder='Untitled']")).toHaveValue(pageTitle);
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue(pageTitle);
   await expect(page.getByText(bodyText)).toBeVisible();
 
   await page.getByRole("button", { name: "Search" }).click();
@@ -157,7 +157,7 @@ test("keeps custom icon input focused when opening the native picker", async ({ 
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.getByRole("button", { name: "Add icon" }).click();
   const iconInput = page.getByLabel("Custom page icon");
@@ -174,9 +174,9 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Markdown Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Markdown Smoke");
   await page.getByRole("textbox").last().click();
 
   await page.keyboard.type("# Markdown heading");
@@ -202,13 +202,39 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
   );
 });
 
+test("supports multiline page titles with alt enter and enter moves to body", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  const titleInput = page.locator("textarea[placeholder='Untitled']");
+  await expect(titleInput).toBeVisible();
+
+  await titleInput.fill("First title line");
+  await titleInput.press("Alt+Enter");
+  await page.keyboard.type("Second title line");
+  await expect(titleInput).toHaveValue("First title line\nSecond title line");
+
+  await titleInput.press("Enter");
+  await expect(page.getByRole("textbox").last()).toBeFocused();
+  await page.keyboard.type("Body starts here");
+  await expect(page.getByText("Body starts here")).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const savedPage = pages.find((page) => page.title === "First title line\nSecond title line");
+      return (savedPage?.search_text ?? "").includes("Body starts here");
+    },
+    { key: storageKey }
+  );
+});
+
 test("selects all editor blocks with command a", async ({ page }) => {
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Select All Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Select All Smoke");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("First block");
   await page.keyboard.press("Enter");
@@ -233,9 +259,9 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Math Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Math Smoke");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
 
@@ -256,7 +282,7 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("Math Smoke");
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Math Smoke");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{B}")).toBeVisible();
 });
 
@@ -264,9 +290,9 @@ test("centers a block that contains inline math from the formatting toolbar", as
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Inline Math Alignment");
+  await page.locator("textarea[placeholder='Untitled']").fill("Inline Math Alignment");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
@@ -287,9 +313,9 @@ test("turns bracketed latex lines into editable formula blocks", async ({ page }
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Formula Block Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Formula Block Smoke");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("[\\oint{Sigma} \\vec{E}\\cdot d\\vec{S}=\\frac{Q\\text{int}}{\\varepsilon_0}]");
 
@@ -311,9 +337,9 @@ test("turns pasted display math fences into one formula block", async ({ page })
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Display Math Paste Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Display Math Paste Smoke");
   await page.getByRole("textbox").last().click();
   await page.evaluate(() => {
     const data = new DataTransfer();
@@ -340,9 +366,9 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("One Line Display Math Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("One Line Display Math Smoke");
   await page.getByRole("textbox").last().click();
   await page.evaluate(() => {
     const data = new DataTransfer();
@@ -357,9 +383,9 @@ test("can convert a selected paragraph into a formula block from the block type 
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Formula Menu Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Formula Menu Smoke");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("E = mc^2");
   await page.keyboard.press("Meta+A");
@@ -376,9 +402,9 @@ test("keeps scroll position when converting a block into a formula", async ({ pa
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Formula Scroll Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Formula Scroll Smoke");
   await page.getByRole("textbox").last().click();
   for (let index = 0; index < 24; index += 1) {
     await page.keyboard.type(`Filler ${index}`);
@@ -405,9 +431,9 @@ test("keeps scroll position when converting a block into another text block type
   await page.goto("/");
 
   await page.getByText("Create first page").click();
-  await expect(page.locator("input[placeholder='Untitled']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
-  await page.locator("input[placeholder='Untitled']").fill("Block Type Scroll Smoke");
+  await page.locator("textarea[placeholder='Untitled']").fill("Block Type Scroll Smoke");
   await page.getByRole("textbox").last().click();
   for (let index = 0; index < 24; index += 1) {
     await page.keyboard.type(`Filler ${index}`);
