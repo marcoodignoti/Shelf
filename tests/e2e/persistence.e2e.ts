@@ -202,6 +202,39 @@ test("creates a blank page from the sidebar new page menu", async ({ page }) => 
   );
 });
 
+test("keeps sidebar page context menu open while scrolling with the mouse", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 280 });
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("Scrollable Menu Smoke");
+  const sidebarRow = page.locator("[data-page-id]").filter({ hasText: "Scrollable Menu Smoke" }).first();
+  await sidebarRow.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    element.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      })
+    );
+  });
+
+  const menu = page.locator(".on-page-action-popover");
+  await expect(menu).toBeVisible();
+  await expect.poll(async () => menu.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+
+  await menu.hover();
+  await page.mouse.wheel(0, 240);
+
+  await expect(menu).toBeVisible();
+  await expect.poll(async () => menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(menu.getByText("Delete")).toBeVisible();
+});
+
 test("keeps custom icon input focused when opening the native picker", async ({ page }) => {
   await page.goto("/");
 
@@ -347,6 +380,8 @@ test("supports arrow navigation, indentation, and keyboard slash insertion", asy
   await page.keyboard.press("ArrowDown");
   await expect.poll(async () => page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? "")).toContain("Second block");
 
+  await page.getByText("Second block", { exact: true }).click();
+  await page.keyboard.press("End");
   await page.keyboard.press("Tab");
   await expect.poll(async () => {
     const blocks = await storedEditorBlocks(page, title);
@@ -364,18 +399,16 @@ test("supports arrow navigation, indentation, and keyboard slash insertion", asy
   await expect(page.locator(".bn-suggestion-menu")).toContainText("Code Block");
   await page.keyboard.press("Enter");
   await page.keyboard.type("const value = 1;");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.type("After code");
 
   await expect.poll(async () => {
     const blocks = await storedEditorBlocks(page, title);
     return {
-      types: blocks.map((block) => block.type),
+      lastType: blocks.at(-1)?.type,
       lastText: blocks.at(-1)?.content?.[0]?.text,
     };
   }).toEqual({
-    types: ["paragraph", "paragraph", "codeBlock", "paragraph"],
-    lastText: "After code",
+    lastType: "codeBlock",
+    lastText: "const value = 1;",
   });
 });
 

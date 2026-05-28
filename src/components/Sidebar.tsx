@@ -110,6 +110,8 @@ function PageItem({
   const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [moveMenuPosition, setMoveMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const moveMenuRef = useRef<HTMLDivElement>(null);
 
   const childPages = allPages.filter(p => p.parent_id === page.id);
   const hasChildren = childPages.length > 0;
@@ -159,18 +161,24 @@ function PageItem({
     if (!contextMenuPosition) return;
 
     const closeMenu = () => setContextMenuPosition(null);
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && contextMenuRef.current?.contains(target)) return;
+
+      closeMenu();
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMenu();
     };
 
     window.addEventListener('click', closeMenu);
-    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener('click', closeMenu);
-      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
@@ -183,18 +191,24 @@ function PageItem({
       setIsMoveOpen(false);
       setMoveMenuPosition(null);
     };
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && moveMenuRef.current?.contains(target)) return;
+
+      closeMenu();
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMenu();
     };
 
     window.addEventListener('click', closeMenu);
-    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener('click', closeMenu);
-      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
@@ -352,6 +366,7 @@ function PageItem({
 
       {isMoveOpen && moveMenuPosition && createPortal(
         <div
+          ref={moveMenuRef}
           className="fixed z-[130] w-56 on-popover"
           style={sidebarPopoverStyle(moveMenuPosition.left, moveMenuPosition.top)}
           onClick={(event) => event.stopPropagation()}
@@ -393,6 +408,7 @@ function PageItem({
 
       {contextMenuPosition && createPortal(
         <div
+          ref={contextMenuRef}
           className="fixed z-[180] w-56 on-popover on-page-action-popover"
           style={sidebarPopoverStyle(contextMenuPosition.left, contextMenuPosition.top)}
           onClick={(event) => event.stopPropagation()}
