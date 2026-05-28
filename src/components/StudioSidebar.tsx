@@ -1,11 +1,11 @@
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudioDocument, StudioProject } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
-import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
+import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata, studioProjectDepth } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
@@ -35,6 +35,8 @@ function StudioDocumentRow({
   onDelete,
   projects,
   onMove,
+  onDragStart,
+  onDragEnd,
 }: {
   document: StudioDocument;
   active: boolean;
@@ -43,6 +45,8 @@ function StudioDocumentRow({
   onDelete: () => void;
   projects: StudioProject[];
   onMove: (projectId: string | null) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -118,8 +122,18 @@ function StudioDocumentRow({
       <div
         role="button"
         tabIndex={0}
+        draggable
+        data-studio-document-id={document.id}
         className={`on-shell-row on-sidebar-page-row group mb-[1px] justify-between py-[3px] text-[13px] ${active ? "on-shell-row-active" : ""}`}
         onClick={onSelect}
+        onDragStart={(event) => {
+          closeOpenOverlays();
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-opennotion-studio-document-id", document.id);
+          event.dataTransfer.setData("text/plain", document.id);
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -187,27 +201,27 @@ function StudioDocumentRow({
               <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
               Open PDF
             </button>
-	            <div className="my-1 border-t border-border/70" />
-	            <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-	              Move to project
-	            </div>
-	            <button type="button" role="menuitem" className="on-menu-item" onClick={() => handleMove(null)}>
-	              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-	              Move to Inbox
-	            </button>
-	            {projects.map((project) => (
-	              <button
-	                key={project.id}
-	                type="button"
-	                role="menuitem"
-	                className="on-menu-item"
-	                onClick={() => handleMove(project.id)}
-	              >
-	                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-	                Move to {project.name}
-	              </button>
-	            ))}
-	            <div className="my-1 border-t border-border/70" />
+            <div className="my-1 border-t border-border/70" />
+            <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Move to project
+            </div>
+            <button type="button" role="menuitem" className="on-menu-item" onClick={() => handleMove(null)}>
+              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+              Move to Inbox
+            </button>
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                role="menuitem"
+                className="on-menu-item"
+                onClick={() => handleMove(project.id)}
+              >
+                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                Move to {project.name}
+              </button>
+            ))}
+            <div className="my-1 border-t border-border/70" />
             <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete document
@@ -222,15 +236,20 @@ function StudioDocumentRow({
 function StudioProjectHeader({
   project,
   count,
+  depth,
   onRename,
   onDelete,
 }: {
   project: StudioProject;
   count: number;
+  depth: number;
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(project.name);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isInbox = project.id === DEFAULT_STUDIO_PROJECT_ID;
 
   useEffect(() => {
@@ -274,8 +293,8 @@ function StudioProjectHeader({
 
   const handleRename = () => {
     setMenuPosition(null);
-    const nextName = window.prompt("Rename Studio project", project.name)?.trim();
-    if (nextName) onRename(nextName);
+    setDraftName(project.name);
+    setIsRenaming(true);
   };
 
   const handleDelete = () => {
@@ -285,11 +304,60 @@ function StudioProjectHeader({
     }
   };
 
+  useEffect(() => {
+    if (!isRenaming) setDraftName(project.name);
+  }, [isRenaming, project.name]);
+
+  useEffect(() => {
+    if (!isRenaming) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [isRenaming]);
+
+  const submitRename = () => {
+    const nextName = draftName.trim();
+    setIsRenaming(false);
+    setDraftName(project.name);
+    if (nextName && nextName !== project.name) onRename(nextName);
+  };
+
   return (
     <>
-      <div className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground">
+      <div
+        className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground"
+        style={{ paddingLeft: 12 + depth * 10 }}
+      >
         <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-foreground/80">{project.name}</span>
+        {isRenaming && !isInbox ? (
+          <input
+            ref={inputRef}
+            aria-label="Project name"
+            className="min-w-0 flex-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-0.5 text-xs text-foreground outline-none focus:border-ring"
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={submitRename}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submitRename();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setIsRenaming(false);
+                setDraftName(project.name);
+              }
+            }}
+          />
+        ) : (
+          <span
+            className="min-w-0 flex-1 truncate text-foreground/80"
+            onDoubleClick={() => {
+              if (!isInbox) handleRename();
+            }}
+          >
+            {project.name}
+          </span>
+        )}
         <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span>
         {!isInbox && (
           <button
@@ -316,11 +384,11 @@ function StudioProjectHeader({
             }}
             onClick={(event) => event.stopPropagation()}
           >
-            <button type="button" className="on-menu-item" onClick={handleRename}>
+            <button type="button" role="menuitem" className="on-menu-item" onClick={handleRename}>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
               Rename project
             </button>
-            <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
+            <button type="button" role="menuitem" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete project
             </button>
@@ -347,10 +415,25 @@ export function StudioSidebar({
 }: StudioSidebarProps) {
   const recent = recentStudioDocuments(documents, 4);
   const projectGroups = groupStudioDocumentsByProject(documents, projects);
+  const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
+  const [dropProjectId, setDropProjectId] = useState<string | null>(null);
 
   const handleCreateProject = () => {
     const name = window.prompt("New Studio project")?.trim();
     if (name) onCreateProject(name);
+  };
+
+  const clearDragState = () => {
+    setDraggedDocumentId(null);
+    setDropProjectId(null);
+  };
+
+  const moveDraggedDocument = (documentId: string, projectId: string) => {
+    const targetProjectId = projectId === DEFAULT_STUDIO_PROJECT_ID ? null : projectId;
+    const document = documents.find((candidate) => candidate.id === documentId);
+    if (!document) return;
+    if ((document.project_id ?? null) === targetProjectId) return;
+    onMoveDocument(documentId, targetProjectId);
   };
 
   return (
@@ -387,6 +470,8 @@ export function StudioSidebar({
                 onDelete={() => onDeleteDocument(document.id)}
                 projects={projects}
                 onMove={(projectId) => onMoveDocument(document.id, projectId)}
+                onDragStart={() => setDraggedDocumentId(document.id)}
+                onDragEnd={clearDragState}
               />
             ))}
           </section>
@@ -404,28 +489,77 @@ export function StudioSidebar({
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
-            {projectGroups.map((group) => (
-              <div key={group.project.id} className="mb-3" data-studio-project-id={group.project.id}>
-                <StudioProjectHeader
-                  project={group.project}
-                  count={group.documents.length}
-                  onRename={(name) => onRenameProject(group.project.id, name)}
-                  onDelete={() => onDeleteProject(group.project.id)}
-                />
-                {group.documents.map((document) => (
-                  <StudioDocumentRow
-                    key={`project-${group.project.id}-${document.id}`}
-                    document={document}
-                    active={document.id === currentDocumentId}
-                    onSelect={() => onSelectDocument(document.id)}
-                    onRename={(title) => onRenameDocument(document.id, title)}
-                    onDelete={() => onDeleteDocument(document.id)}
-                    projects={projects}
-                    onMove={(projectId) => onMoveDocument(document.id, projectId)}
-                  />
-                ))}
+            {projectGroups.length === 0 && (
+              <div className="mx-1 rounded-lg border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                Create a project to organize PDFs.
               </div>
-            ))}
+            )}
+            {projectGroups.map((group) => {
+              const depth = studioProjectDepth(group.project, projects);
+              const isDropTarget = dropProjectId === group.project.id;
+
+              return (
+                <div
+                  key={group.project.id}
+                  className={`mb-3 rounded-lg transition-colors ${isDropTarget ? "bg-primary/5 ring-1 ring-primary/35" : ""}`}
+                  data-studio-project-id={group.project.id}
+                  data-studio-project-parent-id={group.project.parent_id ?? ""}
+                  data-studio-project-depth={depth}
+                  onDragEnter={(event) => {
+                    if (!draggedDocumentId) return;
+                    event.preventDefault();
+                    setDropProjectId(group.project.id);
+                  }}
+                  onDragOver={(event) => {
+                    if (!draggedDocumentId) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDragLeave={(event) => {
+                    const relatedTarget = event.relatedTarget;
+                    if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
+                      setDropProjectId(null);
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const documentId = event.dataTransfer.getData("application/x-opennotion-studio-document-id") || draggedDocumentId;
+                    clearDragState();
+                    if (documentId) moveDraggedDocument(documentId, group.project.id);
+                  }}
+                >
+                  <StudioProjectHeader
+                    project={group.project}
+                    count={group.documents.length}
+                    depth={depth}
+                    onRename={(name) => onRenameProject(group.project.id, name)}
+                    onDelete={() => onDeleteProject(group.project.id)}
+                  />
+                  {group.documents.length === 0 && (
+                    <div
+                      className="mx-3 mb-2 rounded-md border border-dashed border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground"
+                      data-studio-project-empty
+                    >
+                      Drop PDFs here
+                    </div>
+                  )}
+                  {group.documents.map((document) => (
+                    <StudioDocumentRow
+                      key={`project-${group.project.id}-${document.id}`}
+                      document={document}
+                      active={document.id === currentDocumentId}
+                      onSelect={() => onSelectDocument(document.id)}
+                      onRename={(title) => onRenameDocument(document.id, title)}
+                      onDelete={() => onDeleteDocument(document.id)}
+                      projects={projects}
+                      onMove={(projectId) => onMoveDocument(document.id, projectId)}
+                      onDragStart={() => setDraggedDocumentId(document.id)}
+                      onDragEnd={clearDragState}
+                    />
+                  ))}
+                </div>
+              );
+            })}
           </section>
         )}
       </div>
