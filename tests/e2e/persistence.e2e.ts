@@ -153,6 +153,23 @@ test("create, edit, reload, and search preserves page content", async ({ page })
   await expect(commandPalette.getByText(bodyText, { exact: true })).toBeVisible();
 });
 
+test("creates a blank page from the sidebar new page menu", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "New page" }).click();
+  await expect(page.getByText("Blank page")).toBeVisible();
+  await page.getByText("Blank page").click();
+
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => page.title === "Untitled" && page.is_deleted === 0);
+    },
+    { key: storageKey }
+  );
+});
+
 test("keeps custom icon input focused when opening the native picker", async ({ page }) => {
   await page.goto("/");
 

@@ -109,6 +109,13 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 });
 
 test("creates editable formula blocks in Studio notes", async ({ page }) => {
+  const duplicateKeyErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().includes("Encountered two children with the same key")) {
+      duplicateKeyErrors.push(message.text());
+    }
+  });
+
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
@@ -136,6 +143,7 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
       (item.search_text ?? "").includes("\\int_0^1 x^2 dx")
     );
   });
+  expect(duplicateKeyErrors).toEqual([]);
 });
 
 test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", async ({ page }) => {
