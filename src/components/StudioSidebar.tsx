@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudioDocument } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { recentStudioDocuments, remainingStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
@@ -47,6 +48,7 @@ function StudioDocumentRow({
     window.addEventListener("resize", closeMenu);
     window.addEventListener("scroll", closeMenu, true);
     window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener("click", closeMenu);
@@ -54,10 +56,12 @@ function StudioDocumentRow({
       window.removeEventListener("resize", closeMenu);
       window.removeEventListener("scroll", closeMenu, true);
       window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
   }, [menuPosition]);
 
   const openMenu = (clientX: number, clientY: number) => {
+    closeOpenOverlays();
     setMenuPosition(
       clampContextMenuPosition(
         clientX,
@@ -199,7 +203,7 @@ export function StudioSidebar({
           <span>Import PDF</span>
         </button>
       </div>
-      <div className="mt-4 flex-1 overflow-y-auto px-2 pb-20">
+      <div className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto px-2 pb-20 pt-3">
         {isLoading && (
           <div className="mx-1 flex items-center gap-2 rounded-xl border border-border/60 bg-background/35 p-3 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

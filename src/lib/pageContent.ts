@@ -1,6 +1,20 @@
 import { PartialBlock } from "@blocknote/core";
 
 const EMPTY_DOCUMENT: PartialBlock[] = [{ type: "paragraph" }];
+const SUPPORTED_BLOCK_TYPES = new Set([
+  "paragraph",
+  "heading",
+  "bulletListItem",
+  "numberedListItem",
+  "checkListItem",
+  "table",
+  "image",
+  "video",
+  "audio",
+  "file",
+  "codeBlock",
+  "formula",
+]);
 
 function plainTextToBlocks(text: string): PartialBlock[] {
   const lines = text.split("\n");
@@ -13,12 +27,49 @@ function plainTextToBlocks(text: string): PartialBlock[] {
 }
 
 function sanitizePageBlocks(blocks: unknown[]): PartialBlock[] {
-  const validBlocks = blocks.filter(
-    (block): block is PartialBlock =>
-      typeof block === "object" && block !== null && !Array.isArray(block)
-  );
+  const validBlocks = blocks
+    .map(sanitizePageBlock)
+    .filter((block): block is PartialBlock => block !== null);
 
   return validBlocks.length > 0 ? validBlocks : EMPTY_DOCUMENT;
+}
+
+function sanitizePageChildren(children: unknown[]): PartialBlock[] {
+  return children
+    .map(sanitizePageBlock)
+    .filter((block): block is PartialBlock => block !== null);
+}
+
+function sanitizePageBlock(block: unknown): PartialBlock | null {
+  if (typeof block !== "object" || block === null || Array.isArray(block)) return null;
+
+  const record = block as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : undefined;
+  const children = Array.isArray(record.children) ? sanitizePageChildren(record.children) : undefined;
+
+  if (record.type === "divider") {
+    return {
+      ...(id ? { id } : {}),
+      type: "paragraph",
+      ...(children ? { children } : {}),
+    } as PartialBlock;
+  }
+
+  if (typeof record.type !== "string" || !SUPPORTED_BLOCK_TYPES.has(record.type)) {
+    const text = textFromBlock(record).join(" ");
+
+    return {
+      ...(id ? { id } : {}),
+      type: "paragraph",
+      ...(text ? { content: text } : {}),
+      ...(children ? { children } : {}),
+    } as PartialBlock;
+  }
+
+  return {
+    ...record,
+    ...(children ? { children } : {}),
+  } as PartialBlock;
 }
 
 function normalizeWhitespace(text: string): string {
@@ -77,7 +128,12 @@ function textFromBlock(block: unknown): string[] {
   if (typeof block !== "object" || block === null || Array.isArray(block)) return [];
 
   const record = block as Record<string, unknown>;
+  const props = typeof record.props === "object" && record.props !== null ? record.props : {};
+  const formula = record.type === "formula" && "formula" in props && typeof props.formula === "string" ? props.formula : "";
   const parts = [textFromInlineContent(record.content), ...textFromTableContent(record.content)];
+  if (formula) {
+    parts.push(formula);
+  }
 
   if (Array.isArray(record.children)) {
     parts.push(...record.children.flatMap(textFromBlock));

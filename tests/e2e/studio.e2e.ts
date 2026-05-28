@@ -83,7 +83,11 @@ test.beforeEach(async ({ page }) => {
           save(documentsKey, documents.map((document) => document.id === args.id ? { ...document, ...(args.updates as object) } : document));
           return null;
         }
-        if (cmd === "update_page") return null;
+        if (cmd === "update_page") {
+          const pages = load<any>(pagesKey);
+          save(pagesKey, pages.map((item) => item.id === args.id ? { ...item, ...(args.updates as object), updated_at: args.updatedAt } : item));
+          return null;
+        }
         if (cmd === "search_pages") return [];
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
@@ -98,10 +102,40 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
-  await expect(page.locator("input[placeholder='Untitled']")).toHaveValue("civil-law Notes");
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
-  await page.getByTitle("Swap panels").click();
+  await page.getByTitle("Swap PDF and notes").click();
   await expect(page.getByText("100%")).toBeVisible();
+});
+
+test("creates editable formula blocks in Studio notes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  await page.getByRole("textbox").last().click();
+  await page.keyboard.type("/formula");
+  await page.getByText("Formula", { exact: true }).click();
+
+  await expect(page.getByLabel("Formula input")).toBeHidden();
+  await page.getByLabel("Formula preview: \\nabla \\cdot \\vec{E}").click();
+  const formulaInput = page.getByLabel("Formula input");
+  await expect(formulaInput).toBeVisible();
+  await formulaInput.fill("\\int_0^1 x^2 dx");
+
+  await expect(page.getByLabel("Formula preview: \\int_0^1 x^2 dx")).toBeVisible();
+  await page.waitForFunction(() => {
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
+      page_kind: string;
+      content: string | null;
+      search_text: string | null;
+    }>;
+    return pages.some((item) =>
+      item.page_kind === "studio_note" &&
+      (item.content ?? "").includes('"type":"formula"') &&
+      (item.search_text ?? "").includes("\\int_0^1 x^2 dx")
+    );
+  });
 });
 
 test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", async ({ page }) => {
@@ -125,12 +159,12 @@ test("stacks Studio panels when resized below usable split width", async ({ page
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
+  const pdfBox = await page.getByLabel("PDF panel").boundingBox();
+  const noteBox = await page.getByLabel("Notes panel").boundingBox();
 
   expect(pdfBox).not.toBeNull();
-  expect(noteTitleBox).not.toBeNull();
-  expect(noteTitleBox!.y).toBeGreaterThan(pdfBox!.y + pdfBox!.height);
+  expect(noteBox).not.toBeNull();
+  expect(noteBox!.y).toBeGreaterThanOrEqual(pdfBox!.y + pdfBox!.height);
 });
 
 test("keeps Studio panels side by side at ordinary desktop widths", async ({ page }) => {
@@ -139,11 +173,11 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("input[placeholder='Untitled']").boundingBox();
+  const pdfBox = await page.getByLabel("PDF panel").boundingBox();
+  const noteBox = await page.getByLabel("Notes panel").boundingBox();
 
   expect(pdfBox).not.toBeNull();
-  expect(noteTitleBox).not.toBeNull();
-  expect(Math.abs(noteTitleBox!.y - pdfBox!.y)).toBeLessThan(120);
-  expect(noteTitleBox!.x).toBeGreaterThan(pdfBox!.x + pdfBox!.width);
+  expect(noteBox).not.toBeNull();
+  expect(Math.abs(noteBox!.y - pdfBox!.y)).toBeLessThan(120);
+  expect(noteBox!.x).toBeGreaterThan(pdfBox!.x + pdfBox!.width);
 });

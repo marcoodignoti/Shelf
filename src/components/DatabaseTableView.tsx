@@ -27,6 +27,7 @@ import { clampContextMenuPosition } from "../lib/contextMenu";
 import { Page, updatePage } from "../lib/db";
 import { normalizePageTitle } from "../lib/pageTitle";
 import { appendedSiblingId, dropPositionFromOffset, reorderedSiblingIds } from "../lib/pageOrder";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -103,11 +104,13 @@ export function DatabaseTableView({
     window.addEventListener("click", closeMenu);
     window.addEventListener("scroll", closeMenu, true);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener("click", closeMenu);
       window.removeEventListener("scroll", closeMenu, true);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
   }, [rowContextMenu]);
 
@@ -309,6 +312,7 @@ export function DatabaseTableView({
 
     event.preventDefault();
     event.stopPropagation();
+    closeOpenOverlays();
     setOpenPropertyId(null);
     setTemplateMenuOpen(false);
     setRowContextMenu({
@@ -402,7 +406,7 @@ export function DatabaseTableView({
                       draggable
                       role="button"
                       tabIndex={0}
-                      className={`w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm shadow-sm hover:bg-background ${
+                      className={`on-liquid-card w-full rounded-md px-3 py-2 text-left text-sm ${
                         draggedRowId === row.id ? "opacity-45" : ""
                       }`}
                       onClick={() => {
@@ -493,7 +497,7 @@ export function DatabaseTableView({
                   onOpenChange={(open) => {
                     if (!open) setOpenPropertyId(null);
                   }}
-                  className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+                  className="on-popover p-2"
                 >
                   <PropertyEditor
                     property={property}
@@ -657,7 +661,7 @@ export function DatabaseTableView({
             open={templateMenuOpen}
             width={224}
             onOpenChange={setTemplateMenuOpen}
-            className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+            className="on-popover"
           >
             {rowTemplates.map((template) => (
               <button
@@ -675,7 +679,7 @@ export function DatabaseTableView({
       )}
       {rowContextMenu && contextMenuRow && (
         <div
-          className="fixed z-[160] w-44 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          className="fixed z-[160] w-44 overflow-y-auto on-popover"
           style={{
             left: rowContextMenu.left,
             top: rowContextMenu.top,

@@ -5,6 +5,7 @@ import { SearchResult, searchPages } from '../lib/db';
 import { pageContentPreview } from '../lib/pageContent';
 import { splitSearchMatch } from '../lib/searchDisplay';
 import { commandPaletteSections, CommandPalettePage } from '../lib/commandPaletteSections';
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
 
 function HighlightedText({
   text,
@@ -52,6 +53,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     if (isCommandPaletteOpen) {
+      closeOpenOverlays();
       setQuery('');
       setSelectedIndex(0);
       setSearchResults([]);
@@ -60,6 +62,13 @@ export function CommandPalette() {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isCommandPaletteOpen]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) return;
+
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeCommandPalette);
+    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeCommandPalette);
+  }, [closeCommandPalette, isCommandPaletteOpen]);
 
   useEffect(() => {
     if (!isCommandPaletteOpen || !query.trim()) {
@@ -147,7 +156,7 @@ export function CommandPalette() {
           <div className="on-kbd">ESC</div>
         </div>
         
-        <div className="max-h-[380px] overflow-y-auto p-2">
+        <div className="on-scroll-fade on-scroll-fade-popover max-h-[380px] overflow-y-auto p-2">
           {isSearching ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               Searching...

@@ -1,13 +1,27 @@
-import { Block, BlockNoteEditor } from "@blocknote/core";
+import { Block, BlockNoteEditor, editorHasBlockWithType } from "@blocknote/core";
 import "@blocknote/core/fonts/inter.css";
-import { SideMenuExtension } from "@blocknote/core/extensions";
+import { filterSuggestionItems, SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import "katex/dist/katex.min.css";
-import { AddBlockButton, SideMenu, SideMenuController, useBlockNoteEditor, useExtensionState } from "@blocknote/react";
+import {
+  AddBlockButton,
+  blockTypeSelectItems,
+  FormattingToolbar,
+  FormattingToolbarController,
+  getFormattingToolbarItems,
+  getDefaultReactSlashMenuItems,
+  SideMenu,
+  SideMenuController,
+  SuggestionMenuController,
+  useBlockNoteEditor,
+  useEditorState,
+  useExtensionState,
+} from "@blocknote/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertTriangle, Check, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
@@ -15,11 +29,12 @@ import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -29,6 +44,12 @@ type BlockDropTarget = {
   blockId: string;
   placement: BlockDropPlacement;
   element: HTMLElement;
+};
+
+type HeadingRailItem = {
+  id: string;
+  level: number;
+  title: string;
 };
 
 function moveEditorBlock(editor: BlockNoteEditor, sourceId: string, targetId: string, placement: BlockDropPlacement) {
@@ -92,6 +113,155 @@ function OpenNotionSideMenu() {
       <OpenNotionDragHandleButton />
     </SideMenu>
   );
+}
+
+function PageHeadingRail({
+  items,
+  activeId,
+  onSelect,
+}: {
+  items: HeadingRailItem[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const activeIndex = Math.max(0, items.findIndex((item) => item.id === activeId));
+  const previousItem = items[Math.max(0, activeIndex - 1)] ?? null;
+  const nextItem = items[Math.min(items.length - 1, activeIndex + 1)] ?? null;
+
+  if (items.length === 0) return null;
+
+  return (
+    <nav
+      aria-label="Page sections"
+      className="group/rail absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center overflow-visible xl:flex"
+    >
+      <div className="flex h-full max-h-[34rem] flex-col items-center justify-between gap-2 rounded-full py-1 text-muted-foreground/70 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          className="on-heading-rail-arrow"
+          aria-label="Previous section"
+          disabled={!previousItem || previousItem.id === activeId}
+          onClick={() => previousItem && onSelect(previousItem.id)}
+        >
+          <ChevronUp className="h-4 w-4" />
+        </button>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-visible py-1">
+          {items.map((item) => {
+            const isActive = item.id === activeId;
+            const tickWidth = item.level <= 1 ? "w-8" : item.level === 2 ? "w-6" : "w-4";
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                aria-label={`Go to ${item.title}`}
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => onSelect(item.id)}
+              >
+                <span
+                  className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
+                />
+                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 z-10 max-w-80 -translate-y-1/2 translate-x-1 truncate px-4 py-2 text-sm font-semibold leading-tight text-popover-foreground opacity-0 transition-all duration-150 group-hover/railitem:pointer-events-auto group-hover/railitem:translate-x-0 group-hover/railitem:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:pointer-events-auto group-focus-visible/railitem:translate-x-0 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
+                  {item.title}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="on-heading-rail-arrow"
+          aria-label="Next section"
+          disabled={!nextItem || nextItem.id === activeId}
+          onClick={() => nextItem && onSelect(nextItem.id)}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+function isNativeTextInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+}
+
+function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
+  const scrollContainer = editor.domElement?.closest(".on-scroll-fade");
+  if (!(scrollContainer instanceof HTMLElement)) return () => {};
+
+  const scrollTop = scrollContainer.scrollTop;
+  const restore = () => {
+    scrollContainer.scrollTop = scrollTop;
+  };
+
+  return () => {
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+    });
+    window.setTimeout(restore, 0);
+  };
+}
+
+function isEmptyEditorBlock(block: Block<any, any, any>): boolean {
+  if (block.children.length > 0) return false;
+  const content = block.content as unknown;
+  if (typeof content === "string") return content.trim().length === 0;
+  if (!Array.isArray(content)) return true;
+
+  return content.every((item) => {
+    if (typeof item === "string") return item.trim().length === 0;
+    if (typeof item !== "object" || item === null || Array.isArray(item)) return true;
+    return !("text" in item) || typeof item.text !== "string" || item.text.trim().length === 0;
+  });
+}
+
+function textFromInlineContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item !== "object" || item === null || Array.isArray(item)) return "";
+      if ("text" in item && typeof item.text === "string") return item.text;
+      if ("props" in item && typeof item.props === "object" && item.props !== null) {
+        const props = item.props as Record<string, unknown>;
+        return typeof props.formula === "string" ? props.formula : "";
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function headingItemsFromBlocks(blocks: Block<any, any, any>[]): HeadingRailItem[] {
+  return blocks.flatMap((block) => {
+    const children = Array.isArray(block.children) ? headingItemsFromBlocks(block.children as Block<any, any, any>[]) : [];
+
+    if (block.type !== "heading") {
+      return children;
+    }
+
+    const props = block.props as Record<string, unknown>;
+    const level = typeof props.level === "number" ? props.level : 1;
+    const title = textFromInlineContent(block.content) || "Untitled section";
+
+    return [{ id: block.id, level, title }, ...children];
+  });
+}
+
+function blockElementSelector(blockId: string): string {
+  const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(blockId)
+    : blockId.replace(/"/g, '\\"');
+
+  return `.bn-block-outer[data-id="${escaped}"]`;
 }
 
 function OpenNotionDragHandleButton() {
@@ -169,6 +339,273 @@ function OpenNotionDragHandleButton() {
   );
 }
 
+function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
+  return async (query: string) =>
+    filterSuggestionItems(
+      [
+        ...getDefaultReactSlashMenuItems(editor),
+        {
+          ...formulaSlashMenuItem(editor),
+          icon: <Sigma size={18} />,
+        },
+      ],
+      query
+    );
+}
+
+function OpenNotionBlockTypeSelect() {
+  const editor = useBlockNoteEditor<any, any, any>();
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedBlocks = useEditorState({
+    editor,
+    selector: ({ editor }) => editor.getSelection()?.blocks || [editor.getTextCursorPosition().block],
+  });
+  const firstSelectedBlock = selectedBlocks[0];
+
+  const items = useMemo(
+    () => [
+      ...blockTypeSelectItems(editor.dictionary),
+      {
+        name: "Formula",
+        type: "formula",
+        icon: RiFormula,
+      },
+    ],
+    [editor]
+  );
+
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) =>
+        editorHasBlockWithType(
+          editor,
+          item.type,
+          Object.fromEntries(
+            Object.entries(item.props || {}).map(([propName, propValue]) => [
+              propName,
+              typeof propValue,
+            ])
+          ) as Record<string, "string" | "number" | "boolean">
+        )
+      ),
+    [editor, items]
+  );
+
+  const selectItems = useMemo(
+    () =>
+      filteredItems.map((item) => {
+        const Icon = item.icon;
+        const typesMatch = item.type === firstSelectedBlock.type;
+        const propsMatch =
+          Object.entries(item.props || {}).filter(
+            ([propName, propValue]) => propValue !== firstSelectedBlock.props[propName]
+          ).length === 0;
+
+        return {
+          text: item.name,
+          icon: <Icon size={16} />,
+          isSelected: typesMatch && propsMatch,
+          onClick: () => {
+            const restoreScroll = preserveEditorScroll(editor);
+            editor.transact(() => {
+              for (const block of selectedBlocks) {
+                if (item.type === "formula") {
+                  editor.updateBlock(block, {
+                    type: "formula",
+                    props: {
+                      formula: formulaInputFromBlockContent(block.content) || block.props.formula || "\\nabla \\cdot \\vec{E}",
+                    },
+                    content: undefined,
+                  } as never);
+                } else {
+                  editor.updateBlock(block, {
+                    type: item.type as never,
+                    props: item.props as never,
+                  });
+                }
+              }
+            });
+            restoreScroll();
+          },
+        };
+      }),
+    [editor, filteredItems, firstSelectedBlock.props, firstSelectedBlock.type, selectedBlocks]
+  );
+
+  const selectedItem = selectItems.find((item) => item.isSelected) ?? null;
+  const selectedIndex = Math.max(0, selectItems.findIndex((item) => item.isSelected));
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    activeIndexRef.current = selectedIndex;
+    setActiveIndex(selectedIndex);
+    const frame = window.requestAnimationFrame(() => {
+      menuItemRefs.current[selectedIndex]?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isOpen, selectedIndex]);
+
+  const chooseItem = useCallback(
+    (index: number) => {
+      const item = selectItems[index];
+      if (!item) return;
+
+      item.onClick();
+      setIsOpen(false);
+      buttonRef.current?.focus();
+    },
+    [selectItems]
+  );
+
+  const openMenuAt = useCallback(
+    (index: number) => {
+      const lastIndex = selectItems.length - 1;
+      const clampedIndex = Math.max(0, Math.min(index, lastIndex));
+
+      activeIndexRef.current = clampedIndex;
+      setActiveIndex(clampedIndex);
+      setIsOpen(true);
+    },
+    [selectItems.length]
+  );
+
+  const moveActiveItem = useCallback(
+    (nextIndex: number) => {
+      const lastIndex = selectItems.length - 1;
+      const clampedIndex = Math.max(0, Math.min(nextIndex, lastIndex));
+
+      activeIndexRef.current = clampedIndex;
+      setActiveIndex(clampedIndex);
+      menuItemRefs.current[clampedIndex]?.focus();
+    },
+    [selectItems.length]
+  );
+
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        const currentIndex = activeIndexRef.current;
+        moveActiveItem(currentIndex >= selectItems.length - 1 ? 0 : currentIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        const currentIndex = activeIndexRef.current;
+        moveActiveItem(currentIndex <= 0 ? selectItems.length - 1 : currentIndex - 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        moveActiveItem(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        moveActiveItem(selectItems.length - 1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        chooseItem(activeIndexRef.current);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        setIsOpen(false);
+        buttonRef.current?.focus();
+      }
+    },
+    [chooseItem, moveActiveItem, selectItems.length]
+  );
+
+  if (!selectedItem || !editor.isEditable) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="opennotion-block-type-select"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.currentTarget.focus();
+          setIsOpen((open) => !open);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openMenuAt(isOpen ? activeIndexRef.current + 1 : selectedIndex);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openMenuAt(isOpen ? activeIndexRef.current - 1 : selectItems.length - 1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            openMenuAt(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            openMenuAt(selectItems.length - 1);
+          } else if (isOpen && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            chooseItem(activeIndexRef.current);
+          } else if (isOpen && event.key === "Escape") {
+            event.preventDefault();
+            setIsOpen(false);
+          }
+        }}
+      >
+        {selectedItem.icon}
+        <span className="truncate">{selectedItem.text}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+      <FloatingPopover
+        anchorElement={buttonRef.current}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        placement="bottom-start"
+        width={230}
+        zIndex={240}
+        className="on-popover opennotion-block-type-menu"
+      >
+        <div role="menu" aria-label="Block type" className="grid gap-0.5" onKeyDown={handleMenuKeyDown}>
+          {selectItems.map((item, index) => (
+            <button
+              key={`${item.text}-${item.isSelected ? "selected" : "available"}`}
+              ref={(element) => {
+                menuItemRefs.current[index] = element;
+              }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={item.isSelected}
+              tabIndex={index === activeIndex ? 0 : -1}
+              className="opennotion-block-type-menu-item"
+              data-active={index === activeIndex ? "true" : undefined}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => {
+                chooseItem(index);
+              }}
+            >
+              {item.icon}
+              <span className="min-w-0 flex-1 truncate text-left">{item.text}</span>
+              {item.isSelected && <Check className="h-3.5 w-3.5 text-foreground" />}
+            </button>
+          ))}
+        </div>
+      </FloatingPopover>
+    </>
+  );
+}
+
+function OpenNotionFormattingToolbar() {
+  return (
+    <FormattingToolbar>
+      <OpenNotionBlockTypeSelect />
+      {getFormattingToolbarItems([]).slice(1)}
+    </FormattingToolbar>
+  );
+}
+
 function SubpageCreateMenu({
   anchorElement,
   open,
@@ -193,7 +630,7 @@ function SubpageCreateMenu({
       width={224}
       placement={align === "end" ? "bottom-end" : "bottom-start"}
       onOpenChange={onOpenChange}
-      className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+      className="on-popover"
     >
       <button
         type="button"
@@ -238,7 +675,11 @@ export function Editor({
   const pendingUpdatesRef = useRef<Partial<Page>>({});
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
+  const titleEnterModifierRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const subpageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [title, setTitle] = useState(page.title || "");
@@ -292,6 +733,18 @@ export function Editor({
           const imageFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
             file.type.startsWith("image/")
           );
+          const pastedText = event.clipboardData?.getData("text/plain") ?? "";
+          const mathBlocks = imageFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
+
+          if (mathBlocks) {
+            const cursorBlock = editor.getTextCursorPosition().block;
+            if (isEmptyEditorBlock(cursorBlock)) {
+              editor.replaceBlocks([cursorBlock], mathBlocks as never);
+            } else {
+              editor.insertBlocks(mathBlocks as never, cursorBlock, "after");
+            }
+            return true;
+          }
 
           if (imageFiles.length === 0) {
             return defaultPasteHandler();
@@ -321,6 +774,12 @@ export function Editor({
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
+  const slashMenuItems = useMemo(() => openNotionSlashMenuItems(editor), [editor]);
+  const headingItems = useEditorState({
+    editor,
+    selector: ({ editor }) => headingItemsFromBlocks(editor.document as Block<any, any, any>[]),
+  }) ?? [];
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(headingItems[0]?.id ?? null);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -353,6 +812,23 @@ export function Editor({
       }
     };
   }, [page.id]);
+
+  useEffect(() => {
+    if (!isIconMenuOpen) return;
+
+    requestAnimationFrame(() => {
+      iconInputRef.current?.focus();
+    });
+  }, [isIconMenuOpen]);
+
+  useEffect(() => {
+    if (!isDeleteConfirmOpen) return;
+
+    closeOpenOverlays();
+    const closeDialog = () => setIsDeleteConfirmOpen(false);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+  }, [isDeleteConfirmOpen]);
 
   const saveNow = useCallback(async () => {
     if (isSavingRef.current) return;
@@ -406,6 +882,130 @@ export function Editor({
     const savedTitle = nextTitle || "Untitled";
     queueSave({ title: savedTitle });
   };
+
+  const resizeTitleInput = useCallback(() => {
+    const element = titleInputRef.current;
+    if (!element) return;
+
+    element.style.height = "0px";
+    element.style.height = `${element.scrollHeight}px`;
+  }, []);
+
+  const focusEditorBody = useCallback(() => {
+    const firstBlock = editor.document[0];
+    if (!firstBlock) return;
+
+    const editable = editor.domElement?.querySelector<HTMLElement>("[contenteditable='true']");
+
+    editable?.focus();
+    editor.focus();
+    editor.setTextCursorPosition(firstBlock, "end");
+    requestAnimationFrame(() => {
+      editable?.focus();
+      editor.focus();
+      editor.setTextCursorPosition(firstBlock, "end");
+    });
+  }, [editor]);
+
+  const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter") return;
+
+    titleEnterModifierRef.current = event.altKey || event.shiftKey;
+
+    if (titleEnterModifierRef.current) {
+      event.preventDefault();
+      const element = event.currentTarget;
+      const selectionStart = element.selectionStart;
+      const selectionEnd = element.selectionEnd;
+      element.setRangeText("\n", selectionStart, selectionEnd, "end");
+      handleTitleChange(element.value);
+      resizeTitleInput();
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.blur();
+    focusEditorBody();
+  };
+
+  const handleTitleBeforeInput = (event: React.FormEvent<HTMLTextAreaElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    if (nativeEvent.inputType !== "insertLineBreak") return;
+
+    if (!titleEnterModifierRef.current) {
+      event.preventDefault();
+      event.currentTarget.blur();
+      focusEditorBody();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      handleTitleChange(event.currentTarget.value);
+      resizeTitleInput();
+      titleEnterModifierRef.current = false;
+    });
+  };
+
+  useEffect(() => {
+    resizeTitleInput();
+  }, [resizeTitleInput, title]);
+
+  const scrollToHeading = useCallback((headingId: string) => {
+    const scrollContainer = scrollContainerRef.current;
+    const headingElement = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(headingId));
+    if (!scrollContainer || !headingElement) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const headingRect = headingElement.getBoundingClientRect();
+    const top = scrollContainer.scrollTop + headingRect.top - containerRect.top - 96;
+
+    setActiveHeadingId(headingId);
+    scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [editor]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer || headingItems.length === 0) {
+      setActiveHeadingId(null);
+      return;
+    }
+
+    let frame = 0;
+
+    const updateActiveHeading = () => {
+      frame = 0;
+      const containerTop = scrollContainer.getBoundingClientRect().top;
+      let current = headingItems[0]?.id ?? null;
+
+      for (const item of headingItems) {
+        const element = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(item.id));
+        if (!element) continue;
+
+        if (element.getBoundingClientRect().top <= containerTop + 140) {
+          current = item.id;
+        } else {
+          break;
+        }
+      }
+
+      setActiveHeadingId((previous) => previous === current ? previous : current);
+    };
+
+    const queueUpdate = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(updateActiveHeading);
+    };
+
+    updateActiveHeading();
+    scrollContainer.addEventListener("scroll", queueUpdate, { passive: true });
+    window.addEventListener("resize", queueUpdate);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      scrollContainer.removeEventListener("scroll", queueUpdate);
+      window.removeEventListener("resize", queueUpdate);
+    };
+  }, [editor, headingItems]);
 
   const handleEditorChange = () => {
     if (!isNormalizingMathRef.current) {
@@ -474,6 +1074,7 @@ export function Editor({
   };
 
   const handleOpenNativeIconPicker = () => {
+    iconInputRef.current?.focus();
     void invoke("show_character_palette").catch((error: unknown) => {
       console.error("Failed to open character palette:", error);
     });
@@ -544,6 +1145,22 @@ export function Editor({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "a") {
+      if (isNativeTextInput(event.target)) return;
+
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || !editor.domElement?.contains(target)) return;
+
+      const firstBlock = editor.document[0];
+      const lastBlock = editor.document[editor.document.length - 1];
+      if (!firstBlock || !lastBlock) return;
+      if (firstBlock.id === lastBlock.id) return;
+
+      event.preventDefault();
+      editor.setSelection(firstBlock, lastBlock);
+      return;
+    }
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
       if (saveTimeoutRef.current) {
@@ -555,9 +1172,17 @@ export function Editor({
 
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
-      <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex flex-col flex-1 w-full pb-16 overflow-y-auto`}>
+      {!isStudioVariant && (
+        <PageHeadingRail
+          items={headingItems}
+          activeId={activeHeadingId}
+          onSelect={scrollToHeading}
+        />
+      )}
+      <div ref={scrollContainerRef} className="on-scroll-fade flex-1 w-full overflow-y-auto">
+        <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
         {!isStudioVariant && (
-        <div className="mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
+        <div className="on-page-breadcrumb-sticky mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
           {breadcrumbs.map((breadcrumb, index) => {
             const isCurrent = breadcrumb.id === page.id;
             return (
@@ -674,11 +1299,11 @@ export function Editor({
               width={224}
               placement="bottom-end"
               onOpenChange={setPageMenuOpen}
-              className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+              className="on-popover on-page-action-popover"
             >
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleDuplicatePage()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -686,16 +1311,16 @@ export function Editor({
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={handleOpenMoveMenu}
               >
                 <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
                 Move to...
               </button>
-              <div className="my-1 h-px bg-border" />
+              <div className="on-menu-separator" />
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleToggleFavorite()}
               >
                 <Star className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? "fill-current" : ""}`} />
@@ -703,7 +1328,7 @@ export function Editor({
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleToggleTemplate()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -712,17 +1337,17 @@ export function Editor({
               {page.is_database !== 1 && (
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  className="on-menu-item"
                   onClick={handleTurnIntoDatabase}
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                   Turn into Database
                 </button>
               )}
-              <div className="my-1 h-px bg-border" />
+              <div className="on-menu-separator" />
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+                className="on-menu-item on-menu-item-danger"
                 onClick={handleRequestDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -735,11 +1360,11 @@ export function Editor({
               width={288}
               placement="bottom-end"
               onOpenChange={setMoveMenuOpen}
-              className="overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+              className="on-popover"
             >
-              <div className="border-b border-border p-2">
+              <div className="on-popover-search">
                 <input
-                  className="w-full rounded-md bg-muted px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground"
+                  className="w-full rounded-full bg-background/60 px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
                   placeholder="Move to..."
                   value={moveQuery}
                   onChange={(event) => setMoveQuery(event.target.value)}
@@ -749,7 +1374,7 @@ export function Editor({
               <div className="max-h-64 overflow-y-auto p-1">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  className="on-menu-item justify-between"
                   onClick={() => void handleMovePage(null)}
                 >
                   <span className="truncate text-muted-foreground">Root</span>
@@ -759,7 +1384,7 @@ export function Editor({
                   <button
                     type="button"
                     key={target.id}
-                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                    className="on-menu-item justify-between"
                     onClick={() => void handleMovePage(target.id)}
                   >
                     <span className="truncate">
@@ -822,11 +1447,12 @@ export function Editor({
               open={isIconMenuOpen}
               width={256}
               onOpenChange={setIsIconMenuOpen}
-              className="rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+              className="on-popover p-2"
             >
               <button
                 type="button"
                 className="mb-2 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={handleOpenNativeIconPicker}
               >
                 <Smile className="h-3.5 w-3.5 text-muted-foreground" />
@@ -850,6 +1476,7 @@ export function Editor({
               <div className="mt-2 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5">
                 <Smile className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <input
+                  ref={iconInputRef}
                   className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                   value={icon}
                   placeholder="Custom icon"
@@ -872,12 +1499,42 @@ export function Editor({
           )}
         </div>
         )}
-        <input
-          className={`${isStudioVariant ? "text-2xl" : "text-4xl"} font-bold mb-6 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground`}
-          value={title}
-          placeholder="Untitled"
-          onChange={(event) => handleTitleChange(event.target.value)}
-        />
+        <div className={`${isStudioVariant ? "mb-6" : "mb-4"} flex items-start gap-4`}>
+          <textarea
+            ref={titleInputRef}
+            className={`${isStudioVariant ? "text-2xl" : "text-4xl"} min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground`}
+            value={title}
+            placeholder="Untitled"
+            rows={1}
+            spellCheck={false}
+            onChange={(event) => handleTitleChange(event.target.value)}
+            onInput={resizeTitleInput}
+            onBeforeInput={handleTitleBeforeInput}
+            onKeyDown={handleTitleKeyDown}
+          />
+          {!isStudioVariant && subpageMode !== "list" && (
+            <div className="relative mt-2 shrink-0">
+              <button
+                ref={subpageMenuButtonRef}
+                type="button"
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setSubpageMenuOpen((open) => !open)}
+              >
+                <PlusCircle className="h-4 w-4" />
+                <span>Add subpage</span>
+              </button>
+              <SubpageCreateMenu
+                anchorElement={subpageMenuButtonRef.current}
+                open={subpageMenuOpen}
+                align="end"
+                templatePages={templatePages}
+                onOpenChange={setSubpageMenuOpen}
+                onCreateBlank={() => void handleCreateSubpage()}
+                onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
+              />
+            </div>
+          )}
+        </div>
         {!isStudioVariant && page.is_template === 1 && (
           <div className="mb-6 inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
             <Copy className="h-3.5 w-3.5" />
@@ -929,45 +1586,29 @@ export function Editor({
               </button>
             ))}
           </div>
-        ) : !isStudioVariant ? (
-          <div className="group/subpage relative mb-8 min-h-8">
-            <button
-              ref={subpageMenuButtonRef}
-              type="button"
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/subpage:opacity-100 focus:opacity-100"
-              onClick={() => setSubpageMenuOpen((open) => !open)}
-            >
-              <PlusCircle className="h-4 w-4" />
-              <span>Add subpage</span>
-            </button>
-            <SubpageCreateMenu
-              anchorElement={subpageMenuButtonRef.current}
-              open={subpageMenuOpen}
-              align="start"
-              templatePages={templatePages}
-              onOpenChange={setSubpageMenuOpen}
-              onCreateBlank={() => void handleCreateSubpage()}
-              onCreateFromTemplate={(templateId) => void handleCreateSubpageFromTemplate(templateId)}
-            />
-          </div>
         ) : null}
-        <div className="relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
+        <div className="on-page-editor-blocks relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
           <BlockNoteView
             editor={editor}
             theme={blockNoteTheme}
+            formattingToolbar={false}
+            slashMenu={false}
             sideMenu={false}
             portalElements={{ default: null }}
             onChange={handleEditorChange}
           >
+            <FormattingToolbarController formattingToolbar={OpenNotionFormattingToolbar} />
+            <SuggestionMenuController triggerCharacter="/" getItems={slashMenuItems} />
             <SideMenuController sideMenu={OpenNotionSideMenu} />
           </BlockNoteView>
         </div>
       </div>
+      </div>
       {isDeleteConfirmOpen && (
-        <div className="on-modal-overlay z-[150] items-center justify-center">
-          <div className="on-modal-panel w-[420px]">
-            <div className="flex items-start gap-3 border-b border-border p-4">
-              <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
+        <div className="on-modal-overlay z-[150] items-center justify-center" onMouseDown={() => setIsDeleteConfirmOpen(false)}>
+          <div className="on-modal-panel on-delete-dialog w-[420px]" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="on-delete-dialog-content">
+              <div className="on-delete-dialog-icon">
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
@@ -979,7 +1620,7 @@ export function Editor({
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 p-3">
+            <div className="on-delete-dialog-actions">
               <button
                 type="button"
                 className="on-button-secondary"

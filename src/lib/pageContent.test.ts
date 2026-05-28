@@ -38,6 +38,25 @@ describe("parsePageBlocks", () => {
     expect(parsePageBlocks(JSON.stringify([null, [], "bad", validBlock]))).toEqual([validBlock]);
     expect(parsePageBlocks(JSON.stringify([null, [], "bad"]))).toEqual([{ type: "paragraph" }]);
   });
+
+  it("converts unsupported legacy blocks while preserving supported formula blocks", () => {
+    expect(
+      parsePageBlocks(
+        JSON.stringify([
+          { id: "separator", type: "divider", props: {}, children: [] },
+          { id: "eq", type: "formula", props: { formula: "E=mc^2" }, children: [] },
+        ])
+      )
+    ).toEqual([
+      { id: "separator", type: "paragraph", children: [] },
+      {
+        id: "eq",
+        type: "formula",
+        props: { formula: "E=mc^2" },
+        children: [],
+      },
+    ]);
+  });
 });
 
 describe("pageContentToSearchText", () => {
@@ -96,6 +115,18 @@ describe("pageContentToSearchText", () => {
     ]);
 
     expect(pageContentToSearchText(content)).toBe("Name Status Launch plan Ready");
+  });
+
+  it("extracts readable text from persisted formula blocks", () => {
+    const content = JSON.stringify([
+      {
+        type: "formula",
+        props: { formula: "\\oint \\vec{E}\\cdot d\\vec{S}" },
+        children: [],
+      },
+    ]);
+
+    expect(pageContentToSearchText(content)).toBe("\\oint \\vec{E}\\cdot d\\vec{S}");
   });
 });
 

@@ -15,10 +15,12 @@
         "title": "OpenNotion",
         "width": 1000,
         "height": 700,
+        "minWidth": 900,
+        "minHeight": 620,
         "titleBarStyle": "Overlay",
         "trafficLightPosition": {
-          "x": 16,
-          "y": 26
+          "x": 30,
+          "y": 30
         },
         "hiddenTitle": true
       }
