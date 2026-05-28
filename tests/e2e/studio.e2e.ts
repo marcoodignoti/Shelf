@@ -52,6 +52,7 @@ test.beforeEach(async ({ page }) => {
             created_at: args.importedAt as string,
             updated_at: args.importedAt as string,
           };
+          const shouldSkipNote = window.localStorage.getItem("opennotion-e2e-missing-studio-note") === "1";
           const note = {
             id: args.notePageId as string,
             title: "civil-law Notes",
@@ -72,8 +73,31 @@ test.beforeEach(async ({ page }) => {
             updated_at: args.importedAt as string,
           };
           save(documentsKey, [document]);
-          save(pagesKey, [note]);
+          if (!shouldSkipNote) save(pagesKey, [note]);
           return document;
+        }
+        if (cmd === "create_page") {
+          const page = {
+            id: args.id as string,
+            title: args.title as string,
+            parent_id: (args.parentId as string | null) ?? null,
+            content: null,
+            search_text: null,
+            icon: null,
+            cover_url: null,
+            is_deleted: 0,
+            is_favorite: 0,
+            is_template: 0,
+            is_database: 0,
+            database_schema: null,
+            properties: null,
+            sort_order: 0,
+            page_kind: "note",
+            created_at: args.createdAt as string,
+            updated_at: args.createdAt as string,
+          };
+          save(pagesKey, [page, ...load<any>(pagesKey).filter((item) => item.id !== page.id)]);
+          return page;
         }
         if (cmd === "get_page") {
           return load<any>(pagesKey).find((item) => item.id === args.id) ?? null;
@@ -106,6 +130,96 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
   await page.getByTitle("Swap PDF and notes").click();
   await expect(page.getByText("100%")).toBeVisible();
+});
+
+test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  await page.getByTitle("PDF view options").click();
+  await expect(page.getByRole("menuitemradio", { name: "Continuous scroll" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "Single page" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "Two pages" })).toBeVisible();
+
+  await page.getByRole("menuitemradio", { name: "Single page" }).click();
+  await expect(page.locator("[data-pdf-view-mode='single']")).toBeVisible();
+
+  await page.getByTitle("PDF view options").click();
+  await page.getByRole("menuitemradio", { name: "Two pages" }).click();
+  await expect(page.locator("[data-pdf-view-mode='two-page']")).toBeVisible();
+
+  await page.keyboard.press("Meta+1");
+  await expect(page.locator("[data-pdf-view-mode='continuous']")).toBeVisible();
+});
+
+test("creates a missing Studio note from the notes panel fallback", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("opennotion-e2e-missing-studio-note", "1");
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  await expect(page.getByText("Linked note missing.")).toBeVisible();
+  await page.getByRole("button", { name: "Create linked note" }).click();
+
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
+  await page.waitForFunction(() => {
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
+      page_kind: string;
+      title: string;
+    }>;
+    return pages.some((item) => item.page_kind === "studio_note" && item.title === "civil-law Notes");
+  });
+});
+
+test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("opennotion-theme", "dark");
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  const pageTotal = page.locator(".on-studio-page-total");
+  const zoomButton = page.getByTitle("Reset zoom");
+
+  await expect(pageTotal).toBeVisible();
+  await expect(zoomButton).toBeVisible();
+
+  const styles = await page.evaluate(() => {
+    const controls = document.querySelector(".on-studio-toolbar-controls");
+    const pageGroup = document.querySelector(".on-studio-page-controls");
+    const zoomGroup = document.querySelector(".on-studio-zoom-controls");
+    const pageTotal = document.querySelector(".on-studio-page-total");
+    const zoomButton = document.querySelector(".on-studio-zoom-button");
+    if (!controls || !pageGroup || !zoomGroup || !pageTotal || !zoomButton) return null;
+
+    const pageGroupStyle = getComputedStyle(pageGroup);
+    const zoomGroupStyle = getComputedStyle(zoomGroup);
+    const pageTotalStyle = getComputedStyle(pageTotal);
+    const zoomButtonStyle = getComputedStyle(zoomButton);
+    return {
+      controlsClass: controls.className,
+      pageGroupBackground: pageGroupStyle.backgroundColor,
+      zoomGroupBackground: zoomGroupStyle.backgroundColor,
+      pageTotalBackground: pageTotalStyle.backgroundColor,
+      pageTotalColor: pageTotalStyle.color,
+      zoomBackground: zoomButtonStyle.backgroundColor,
+      zoomColor: zoomButtonStyle.color,
+    };
+  });
+
+  expect(styles).not.toBeNull();
+  expect(styles!.controlsClass).toContain("on-studio-toolbar-controls-note-surface");
+  expect(styles!.pageGroupBackground).toContain("15, 20, 28");
+  expect(styles!.pageGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles!.zoomGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles!.pageTotalBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(styles!.zoomBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(styles!.pageTotalColor).toBe(styles!.zoomColor);
 });
 
 test("creates editable formula blocks in Studio notes", async ({ page }) => {

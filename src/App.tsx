@@ -22,6 +22,7 @@ export default function App() {
     studioDocuments,
     currentStudioDocumentId,
     updateStudioViewerAction,
+    createMissingStudioNoteAction,
   } = useAppStore();
 
   useEffect(() => {
@@ -86,6 +87,7 @@ export default function App() {
               note={currentStudioNote}
               pages={pages}
               onSelectPage={setCurrentPageId}
+              onCreateMissingNote={(documentId) => void createMissingStudioNoteAction(documentId)}
               onUpdateViewer={handleUpdateStudioViewer}
             />
           </ErrorBoundary>
