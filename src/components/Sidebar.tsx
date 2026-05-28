@@ -520,10 +520,15 @@ export function Sidebar() {
     workspaceMode,
     setWorkspaceMode,
     studioDocuments,
+    studioProjects,
     currentStudioDocumentId,
     fetchStudioDocuments,
     setCurrentStudioDocumentId,
     importStudioPdfAction,
+    createStudioProjectAction,
+    renameStudioProjectAction,
+    deleteStudioProjectAction,
+    updateStudioDocumentProjectAction,
     renameStudioDocumentAction,
     deleteStudioDocumentAction,
     sidebarWidth,
@@ -928,9 +933,14 @@ export function Sidebar() {
       {workspaceMode === 'studio' ? (
         <StudioSidebar
           documents={studioDocuments}
+          projects={studioProjects}
           currentDocumentId={currentStudioDocumentId}
           isLoading={isLoading}
           onImport={() => void importStudioPdfAction()}
+          onCreateProject={(name) => void createStudioProjectAction(name)}
+          onRenameProject={(id, name) => void renameStudioProjectAction(id, name)}
+          onDeleteProject={(id) => void deleteStudioProjectAction(id)}
+          onMoveDocument={(documentId, projectId) => void updateStudioDocumentProjectAction(documentId, projectId)}
           onSelectDocument={setCurrentStudioDocumentId}
           onRenameDocument={(id, title) => void renameStudioDocumentAction(id, title)}
           onDeleteDocument={(id) => void deleteStudioDocumentAction(id)}
