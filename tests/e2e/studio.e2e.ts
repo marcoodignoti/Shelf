@@ -125,6 +125,8 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
+  await expect(page.getByText("Projects")).toBeVisible();
+  await expect(page.getByText("Inbox")).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 

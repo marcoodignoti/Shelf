@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   allStudioDocuments,
+  groupStudioDocumentsByProject,
+  normalizePanelLayout,
+  ProjectableStudioDocument,
+  recentStudioDocuments,
   remainingStudioDocuments,
   studioDocumentMetadata,
-  normalizePanelLayout,
-  recentStudioDocuments,
 } from "./studioDocuments";
 import { StudioDocument } from "./studio";
 
@@ -21,6 +23,18 @@ function doc(id: string, lastOpenedAt: string): StudioDocument {
     panel_layout: "pdf-left",
     created_at: lastOpenedAt,
     updated_at: lastOpenedAt,
+  };
+}
+
+function projectDoc(
+  id: string,
+  title: string,
+  project: Partial<ProjectableStudioDocument> = {}
+): ProjectableStudioDocument {
+  return {
+    ...doc(id, "2026-05-29T00:00:00.000Z"),
+    title,
+    ...project,
   };
 }
 
@@ -56,6 +70,25 @@ describe("studio document helpers", () => {
     expect(studioDocumentMetadata(doc("Chapter One", "2026-05-27T10:15:00.000Z"))).toBe(
       "Chapter One.pdf · 27 mag 2026"
     );
+  });
+
+  it("groups assigned documents by project and leaves unassigned documents in Inbox", () => {
+    const groups = groupStudioDocumentsByProject([
+      projectDoc("physics-2", "Dynamics", { project_id: "physics", project_name: "Physics", project_sort_order: 2 }),
+      projectDoc("unfiled", "Alpha"),
+      projectDoc("math-1", "Calculus", { project_id: "math", project_name: "Math", project_sort_order: 1 }),
+      projectDoc("physics-1", "Beta", { project_id: "physics", project_name: "Physics", project_sort_order: 2 }),
+    ]);
+
+    expect(groups.map((group) => ({
+      id: group.project.id,
+      name: group.project.name,
+      titles: group.documents.map((document) => document.title),
+    }))).toEqual([
+      { id: "math", name: "Math", titles: ["Calculus"] },
+      { id: "physics", name: "Physics", titles: ["Beta", "Dynamics"] },
+      { id: "studio-inbox", name: "Inbox", titles: ["Alpha"] },
+    ]);
   });
 
   it("normalizes panel layout", () => {

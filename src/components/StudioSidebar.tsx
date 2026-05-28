@@ -1,11 +1,11 @@
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { MoreHorizontal, ExternalLink, FileText, FolderOpen, Loader2, Pencil, Trash2, Upload } from "lucide-react";
+import { MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudioDocument } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
-import { recentStudioDocuments, remainingStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
+import { groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
@@ -193,7 +193,7 @@ export function StudioSidebar({
   onDeleteDocument,
 }: StudioSidebarProps) {
   const recent = recentStudioDocuments(documents, 4);
-  const remaining = remainingStudioDocuments(documents, recent);
+  const projectGroups = groupStudioDocumentsByProject(documents);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -231,25 +231,29 @@ export function StudioSidebar({
             ))}
           </section>
         )}
-        {remaining.length > 0 && (
+        {projectGroups.length > 0 && (
           <section>
-            <div className="on-section-label mb-1">Tutti i documenti</div>
-            {remaining.map((document) => (
-              <StudioDocumentRow
-                key={`all-${document.id}`}
-                document={document}
-                active={document.id === currentDocumentId}
-                onSelect={() => onSelectDocument(document.id)}
-                onRename={(title) => onRenameDocument(document.id, title)}
-                onDelete={() => onDeleteDocument(document.id)}
-              />
+            <div className="on-section-label mb-1">Projects</div>
+            {projectGroups.map((group) => (
+              <div key={group.project.id} className="mb-3">
+                <div className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground">
+                  <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-foreground/80">{group.project.name}</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">{group.documents.length}</span>
+                </div>
+                {group.documents.map((document) => (
+                  <StudioDocumentRow
+                    key={`project-${group.project.id}-${document.id}`}
+                    document={document}
+                    active={document.id === currentDocumentId}
+                    onSelect={() => onSelectDocument(document.id)}
+                    onRename={(title) => onRenameDocument(document.id, title)}
+                    onDelete={() => onDeleteDocument(document.id)}
+                  />
+                ))}
+              </div>
             ))}
           </section>
-        )}
-        {!isLoading && documents.length > 0 && remaining.length === 0 && (
-          <div className="px-3 py-2 text-[11px] text-muted-foreground">
-            Tutti i documenti sono gia in Recenti.
-          </div>
         )}
       </div>
     </div>
