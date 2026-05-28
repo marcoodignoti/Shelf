@@ -8,10 +8,20 @@ export interface StudioDocument {
   original_filename: string;
   stored_file_path: string;
   note_page_id: string;
+  project_id: string | null;
   last_opened_at: string;
   viewer_zoom: number;
   viewer_page: number;
   panel_layout: StudioPanelLayout;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudioProject {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -25,6 +35,43 @@ export interface StudioViewerUpdates {
 
 export async function listStudioDocuments(): Promise<StudioDocument[]> {
   return await invoke<StudioDocument[]>("list_studio_documents");
+}
+
+export async function listStudioProjects(): Promise<StudioProject[]> {
+  return await invoke<StudioProject[]>("list_studio_projects");
+}
+
+export async function createStudioProject(name: string, parentId: string | null = null): Promise<StudioProject> {
+  const now = new Date().toISOString();
+  return await invoke<StudioProject>("create_studio_project", {
+    id: crypto.randomUUID(),
+    name,
+    parentId,
+    createdAt: now,
+  });
+}
+
+export async function renameStudioProject(id: string, name: string): Promise<void> {
+  await invoke("rename_studio_project", {
+    id,
+    name,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteStudioProject(id: string): Promise<void> {
+  await invoke("delete_studio_project", {
+    id,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateStudioDocumentProject(id: string, projectId: string | null): Promise<void> {
+  await invoke("update_studio_document_project", {
+    id,
+    projectId,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export async function importStudioDocument(sourcePath: string): Promise<StudioDocument> {

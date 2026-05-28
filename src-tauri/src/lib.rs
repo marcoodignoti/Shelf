@@ -99,10 +99,21 @@ struct StudioDocument {
     original_filename: String,
     stored_file_path: String,
     note_page_id: String,
+    project_id: Option<String>,
     last_opened_at: String,
     viewer_zoom: i64,
     viewer_page: i64,
     panel_layout: String,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+struct StudioProject {
+    id: String,
+    name: String,
+    parent_id: Option<String>,
+    sort_order: i64,
     created_at: String,
     updated_at: String,
 }
@@ -251,6 +262,7 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
             original_filename TEXT NOT NULL,
             stored_file_path TEXT NOT NULL,
             note_page_id TEXT NOT NULL UNIQUE,
+            project_id TEXT,
             last_opened_at TEXT NOT NULL,
             viewer_zoom INTEGER NOT NULL DEFAULT 100,
             viewer_page INTEGER NOT NULL DEFAULT 1,
@@ -262,9 +274,50 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(db)
     .await?;
 
+    let studio_document_columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('studio_documents')")
+            .fetch_all(db)
+            .await?;
+
+    if !studio_document_columns
+        .iter()
+        .any(|column| column == "project_id")
+    {
+        sqlx::query("ALTER TABLE studio_documents ADD COLUMN project_id TEXT")
+            .execute(db)
+            .await?;
+    }
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS studio_projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );",
+    )
+    .execute(db)
+    .await?;
+
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_studio_documents_last_opened
          ON studio_documents (last_opened_at DESC)",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_studio_documents_project
+         ON studio_documents (project_id, last_opened_at DESC)",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_studio_projects_parent_sort
+         ON studio_projects (parent_id, sort_order, name)",
     )
     .execute(db)
     .await?;
@@ -529,7 +582,7 @@ async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<
 
 async fn list_studio_document_records(db: &SqlitePool) -> Result<Vec<StudioDocument>, sqlx::Error> {
     sqlx::query_as::<_, StudioDocument>(
-        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
          FROM studio_documents
          ORDER BY last_opened_at DESC, created_at DESC",
     )
@@ -572,7 +625,7 @@ async fn import_studio_document_record(
     transaction.commit().await?;
 
     sqlx::query_as::<_, StudioDocument>(
-        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
          FROM studio_documents
          WHERE id = ?",
     )
@@ -588,7 +641,7 @@ async fn update_studio_document_viewer_state_record(
     updated_at: &str,
 ) -> Result<(), String> {
     let current = sqlx::query_as::<_, StudioDocument>(
-        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
          FROM studio_documents
          WHERE id = ?",
     )
@@ -636,7 +689,7 @@ async fn rename_studio_document_record(
     updated_at: &str,
 ) -> Result<(), String> {
     let current = sqlx::query_as::<_, StudioDocument>(
-        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
          FROM studio_documents
          WHERE id = ?",
     )
@@ -670,7 +723,7 @@ async fn rename_studio_document_record(
 
 async fn delete_studio_document_record(db: &SqlitePool, id: &str) -> Result<String, String> {
     let current = sqlx::query_as::<_, StudioDocument>(
-        "SELECT id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
          FROM studio_documents
          WHERE id = ?",
     )
@@ -697,6 +750,161 @@ async fn delete_studio_document_record(db: &SqlitePool, id: &str) -> Result<Stri
         .map_err(|error| error.to_string())?;
 
     Ok(stored_file_path)
+}
+
+async fn list_studio_project_records(db: &SqlitePool) -> Result<Vec<StudioProject>, sqlx::Error> {
+    sqlx::query_as::<_, StudioProject>(
+        "SELECT id, name, parent_id, sort_order, created_at, updated_at
+         FROM studio_projects
+         ORDER BY sort_order ASC, name ASC",
+    )
+    .fetch_all(db)
+    .await
+}
+
+async fn create_studio_project_record(
+    db: &SqlitePool,
+    id: &str,
+    name: &str,
+    parent_id: Option<&str>,
+    created_at: &str,
+) -> Result<StudioProject, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+
+    let sort_order: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1
+         FROM studio_projects
+         WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?",
+    )
+    .bind(parent_id)
+    .bind(parent_id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO studio_projects (id, name, parent_id, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(parent_id)
+    .bind(sort_order)
+    .bind(created_at)
+    .bind(created_at)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    sqlx::query_as::<_, StudioProject>(
+        "SELECT id, name, parent_id, sort_order, created_at, updated_at
+         FROM studio_projects
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())
+}
+
+async fn rename_studio_project_record(
+    db: &SqlitePool,
+    id: &str,
+    name: &str,
+    updated_at: &str,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+
+    let result = sqlx::query("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?")
+        .bind(name)
+        .bind(updated_at)
+        .bind(id)
+        .execute(db)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("project not found".to_string());
+    }
+
+    Ok(())
+}
+
+async fn delete_studio_project_record(
+    db: &SqlitePool,
+    id: &str,
+    updated_at: &str,
+) -> Result<(), String> {
+    let mut transaction = db.begin().await.map_err(|error| error.to_string())?;
+    sqlx::query(
+        "UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?",
+    )
+    .bind(updated_at)
+    .bind(id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query("UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+        .bind(updated_at)
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    let result = sqlx::query("DELETE FROM studio_projects WHERE id = ?")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| error.to_string())?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("project not found".to_string());
+    }
+
+    Ok(())
+}
+
+async fn update_studio_document_project_record(
+    db: &SqlitePool,
+    id: &str,
+    project_id: Option<&str>,
+    updated_at: &str,
+) -> Result<(), String> {
+    if let Some(project_id) = project_id {
+        let project_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+                .bind(project_id)
+                .fetch_one(db)
+                .await
+                .map_err(|error| error.to_string())?;
+        if project_exists == 0 {
+            return Err("project not found".to_string());
+        }
+    }
+
+    let result =
+        sqlx::query("UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ?")
+            .bind(project_id)
+            .bind(updated_at)
+            .bind(id)
+            .execute(db)
+            .await
+            .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("document not found".to_string());
+    }
+
+    Ok(())
 }
 
 fn remove_stored_studio_document_file(stored_file_path: &str) -> Result<(), String> {
@@ -1401,6 +1609,55 @@ async fn list_studio_documents(
 }
 
 #[tauri::command]
+async fn list_studio_projects(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<StudioProject>, String> {
+    list_studio_project_records(&state.db)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn create_studio_project(
+    id: String,
+    name: String,
+    parent_id: Option<String>,
+    created_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<StudioProject, String> {
+    create_studio_project_record(&state.db, &id, &name, parent_id.as_deref(), &created_at).await
+}
+
+#[tauri::command]
+async fn rename_studio_project(
+    id: String,
+    name: String,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    rename_studio_project_record(&state.db, &id, &name, &updated_at).await
+}
+
+#[tauri::command]
+async fn delete_studio_project(
+    id: String,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    delete_studio_project_record(&state.db, &id, &updated_at).await
+}
+
+#[tauri::command]
+async fn update_studio_document_project(
+    id: String,
+    project_id: Option<String>,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    update_studio_document_project_record(&state.db, &id, project_id.as_deref(), &updated_at).await
+}
+
+#[tauri::command]
 async fn import_studio_document<R: Runtime>(
     document_id: String,
     note_page_id: String,
@@ -1621,6 +1878,11 @@ pub fn run() {
             reorder_pages,
             import_pages,
             list_studio_documents,
+            list_studio_projects,
+            create_studio_project,
+            rename_studio_project,
+            delete_studio_project,
+            update_studio_document_project,
             import_studio_document,
             update_studio_document_viewer_state,
             rename_studio_document,
@@ -1716,6 +1978,17 @@ mod tests {
                     .expect("list studio document columns");
             assert!(studio_columns.contains(&"note_page_id".to_string()));
             assert!(studio_columns.contains(&"panel_layout".to_string()));
+            assert!(studio_columns.contains(&"project_id".to_string()));
+
+            let project_columns: Vec<String> =
+                sqlx::query_scalar("SELECT name FROM pragma_table_info('studio_projects')")
+                    .fetch_all(&db)
+                    .await
+                    .expect("list studio project columns");
+            assert!(project_columns.contains(&"id".to_string()));
+            assert!(project_columns.contains(&"name".to_string()));
+            assert!(project_columns.contains(&"parent_id".to_string()));
+            assert!(project_columns.contains(&"sort_order".to_string()));
         });
     }
 
@@ -1984,12 +2257,88 @@ mod tests {
             assert_eq!(document.viewer_zoom, 100);
             assert_eq!(document.viewer_page, 1);
             assert_eq!(document.panel_layout, "pdf-left");
+            assert_eq!(document.project_id, None);
 
             let note = get_page_record(&db, "note-1")
                 .await
                 .expect("load linked note")
                 .expect("note exists");
             assert_eq!(note.page_kind, "studio_note");
+        });
+    }
+
+    #[test]
+    fn studio_project_records_create_rename_assign_and_delete() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            let project = create_studio_project_record(
+                &db,
+                "project-1",
+                "Physics",
+                None,
+                "2026-05-29T00:00:00.000Z",
+            )
+            .await
+            .expect("create project");
+            assert_eq!(project.id, "project-1");
+            assert_eq!(project.name, "Physics");
+            assert_eq!(project.parent_id, None);
+
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "sample.pdf",
+                    stored_file_path: "/tmp/sample.pdf",
+                    imported_at: "2026-05-29T00:01:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            update_studio_document_project_record(
+                &db,
+                "doc-1",
+                Some("project-1"),
+                "2026-05-29T00:02:00.000Z",
+            )
+            .await
+            .expect("assign document");
+
+            let document = list_studio_document_records(&db)
+                .await
+                .expect("list documents")
+                .remove(0);
+            assert_eq!(document.project_id.as_deref(), Some("project-1"));
+
+            rename_studio_project_record(
+                &db,
+                "project-1",
+                "Electromagnetism",
+                "2026-05-29T00:03:00.000Z",
+            )
+            .await
+            .expect("rename project");
+            let renamed_project = list_studio_project_records(&db)
+                .await
+                .expect("list projects")
+                .remove(0);
+            assert_eq!(renamed_project.name, "Electromagnetism");
+
+            delete_studio_project_record(&db, "project-1", "2026-05-29T00:04:00.000Z")
+                .await
+                .expect("delete project");
+            assert!(list_studio_project_records(&db)
+                .await
+                .expect("list projects")
+                .is_empty());
+            let unassigned_document = list_studio_document_records(&db)
+                .await
+                .expect("list documents")
+                .remove(0);
+            assert_eq!(unassigned_document.project_id, None);
         });
     }
 

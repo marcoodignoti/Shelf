@@ -8,7 +8,7 @@ import {
   remainingStudioDocuments,
   studioDocumentMetadata,
 } from "./studioDocuments";
-import { StudioDocument } from "./studio";
+import { StudioDocument, StudioProject } from "./studio";
 
 function doc(id: string, lastOpenedAt: string): StudioDocument {
   return {
@@ -23,6 +23,7 @@ function doc(id: string, lastOpenedAt: string): StudioDocument {
     panel_layout: "pdf-left",
     created_at: lastOpenedAt,
     updated_at: lastOpenedAt,
+    project_id: null,
   };
 }
 
@@ -73,18 +74,45 @@ describe("studio document helpers", () => {
   });
 
   it("groups assigned documents by project and leaves unassigned documents in Inbox", () => {
+    const projects: StudioProject[] = [
+      {
+        id: "empty",
+        name: "Empty Project",
+        parent_id: null,
+        sort_order: 0,
+        created_at: "2026-05-29T00:00:00.000Z",
+        updated_at: "2026-05-29T00:00:00.000Z",
+      },
+      {
+        id: "math",
+        name: "Math",
+        parent_id: null,
+        sort_order: 1,
+        created_at: "2026-05-29T00:00:00.000Z",
+        updated_at: "2026-05-29T00:00:00.000Z",
+      },
+      {
+        id: "physics",
+        name: "Physics",
+        parent_id: null,
+        sort_order: 2,
+        created_at: "2026-05-29T00:00:00.000Z",
+        updated_at: "2026-05-29T00:00:00.000Z",
+      },
+    ];
     const groups = groupStudioDocumentsByProject([
-      projectDoc("physics-2", "Dynamics", { project_id: "physics", project_name: "Physics", project_sort_order: 2 }),
+      projectDoc("physics-2", "Dynamics", { project_id: "physics" }),
       projectDoc("unfiled", "Alpha"),
-      projectDoc("math-1", "Calculus", { project_id: "math", project_name: "Math", project_sort_order: 1 }),
-      projectDoc("physics-1", "Beta", { project_id: "physics", project_name: "Physics", project_sort_order: 2 }),
-    ]);
+      projectDoc("math-1", "Calculus", { project_id: "math" }),
+      projectDoc("physics-1", "Beta", { project_id: "physics" }),
+    ], projects);
 
     expect(groups.map((group) => ({
       id: group.project.id,
       name: group.project.name,
       titles: group.documents.map((document) => document.title),
     }))).toEqual([
+      { id: "empty", name: "Empty Project", titles: [] },
       { id: "math", name: "Math", titles: ["Calculus"] },
       { id: "physics", name: "Physics", titles: ["Beta", "Dynamics"] },
       { id: "studio-inbox", name: "Inbox", titles: ["Alpha"] },

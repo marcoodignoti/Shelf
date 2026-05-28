@@ -3,7 +3,21 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
-import { deleteStudioDocument, importStudioDocument, listStudioDocuments, renameStudioDocument, StudioDocument, StudioPanelLayout, updateStudioDocumentViewerState } from '../lib/studio';
+import {
+  createStudioProject,
+  deleteStudioDocument,
+  deleteStudioProject,
+  importStudioDocument,
+  listStudioDocuments,
+  listStudioProjects,
+  renameStudioDocument,
+  renameStudioProject,
+  StudioDocument,
+  StudioPanelLayout,
+  StudioProject,
+  updateStudioDocumentProject,
+  updateStudioDocumentViewerState
+} from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
 type WorkspaceMode = 'notes' | 'studio';
@@ -18,6 +32,7 @@ interface AppState {
   isCommandPaletteOpen: boolean;
   workspaceMode: WorkspaceMode;
   studioDocuments: StudioDocument[];
+  studioProjects: StudioProject[];
   currentStudioDocumentId: string | null;
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
@@ -26,6 +41,10 @@ interface AppState {
   setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: () => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
+  createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
+  renameStudioProjectAction: (id: string, name: string) => Promise<void>;
+  deleteStudioProjectAction: (id: string) => Promise<void>;
+  updateStudioDocumentProjectAction: (documentId: string, projectId: string | null) => Promise<void>;
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
@@ -97,6 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isCommandPaletteOpen: false,
   workspaceMode: getStoredWorkspaceMode(),
   studioDocuments: [],
+  studioProjects: [],
   currentStudioDocumentId: getStoredStudioDocumentId(),
   isSidebarOpen: true,
   sidebarWidth: getStoredSidebarWidth(),
@@ -116,7 +136,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   fetchStudioDocuments: async () => {
     try {
-      const studioDocuments = await listStudioDocuments();
+      const [studioDocuments, studioProjects] = await Promise.all([
+        listStudioDocuments(),
+        listStudioProjects(),
+      ]);
       const studioNotes = (await Promise.all(
         studioDocuments.map(async (document) => {
           const note = await getPage(document.note_page_id);
@@ -140,7 +163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           localStorage.removeItem('opennotion-current-studio-document-id');
         }
 
-        return { studioDocuments, currentStudioDocumentId, pages, error: null };
+        return { studioDocuments, studioProjects, currentStudioDocumentId, pages, error: null };
       });
     } catch (error: unknown) {
       const message = userMessageForError(error);
@@ -212,6 +235,82 @@ export const useAppStore = create<AppState>((set, get) => ({
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
       await get().fetchStudioDocuments();
+    }
+  },
+  createStudioProjectAction: async (name, parentId = null): Promise<StudioProject | null> => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    try {
+      const project = await createStudioProject(trimmedName, parentId);
+      set((state) => ({
+        studioProjects: [...state.studioProjects.filter((candidate) => candidate.id !== project.id), project]
+          .sort((first, second) => first.sort_order - second.sort_order || first.name.localeCompare(second.name)),
+        error: null,
+        notice: { kind: 'success', message: 'Studio project created.' }
+      }));
+      return project;
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      return null;
+    }
+  },
+  renameStudioProjectAction: async (id, name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const previousProjects = get().studioProjects;
+    const updated_at = new Date().toISOString();
+    set((state) => ({
+      studioProjects: state.studioProjects.map((project) =>
+        project.id === id ? { ...project, name: trimmedName, updated_at } : project
+      ),
+      error: null
+    }));
+
+    try {
+      await renameStudioProject(id, trimmedName);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });
+    }
+  },
+  deleteStudioProjectAction: async (id) => {
+    const previousProjects = get().studioProjects;
+    const previousDocuments = get().studioDocuments;
+
+    set((state) => ({
+      studioProjects: state.studioProjects.filter((project) => project.id !== id),
+      studioDocuments: state.studioDocuments.map((document) =>
+        document.project_id === id ? { ...document, project_id: null } : document
+      ),
+      error: null
+    }));
+
+    try {
+      await deleteStudioProject(id);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioProjects: previousProjects, studioDocuments: previousDocuments, error: message, notice: { kind: 'error', message } });
+    }
+  },
+  updateStudioDocumentProjectAction: async (documentId, projectId) => {
+    const previousDocuments = get().studioDocuments;
+    const updated_at = new Date().toISOString();
+
+    set((state) => ({
+      studioDocuments: state.studioDocuments.map((document) =>
+        document.id === documentId ? { ...document, project_id: projectId, updated_at } : document
+      ),
+      error: null
+    }));
+
+    try {
+      await updateStudioDocumentProject(documentId, projectId);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioDocuments: previousDocuments, error: message, notice: { kind: 'error', message } });
     }
   },
   createMissingStudioNoteAction: async (documentId): Promise<Page | null> => {

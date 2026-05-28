@@ -1,20 +1,10 @@
-import { StudioDocument, StudioPanelLayout } from "./studio";
+import { StudioDocument, StudioPanelLayout, StudioProject } from "./studio";
 
 export const DEFAULT_STUDIO_PROJECT_ID = "studio-inbox";
 export const DEFAULT_STUDIO_PROJECT_NAME = "Inbox";
 
 export type ProjectableStudioDocument = StudioDocument & {
   project_id?: string | null;
-  project_name?: string | null;
-  project_parent_id?: string | null;
-  project_sort_order?: number | null;
-};
-
-export type StudioProject = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  sort_order: number;
 };
 
 export type StudioProjectGroup = {
@@ -55,36 +45,44 @@ function cleanProjectValue(value: string | null | undefined): string | null {
   return cleaned ? cleaned : null;
 }
 
-function projectSortOrder(value: number | null | undefined): number {
-  return Number.isFinite(value) ? Number(value) : Number.MAX_SAFE_INTEGER;
-}
+const DEFAULT_STUDIO_PROJECT: StudioProject = {
+  id: DEFAULT_STUDIO_PROJECT_ID,
+  name: DEFAULT_STUDIO_PROJECT_NAME,
+  parent_id: null,
+  sort_order: Number.MAX_SAFE_INTEGER,
+  created_at: "",
+  updated_at: "",
+};
 
-export function studioProjectForDocument(document: ProjectableStudioDocument): StudioProject {
+export function studioProjectForDocument(
+  document: ProjectableStudioDocument,
+  projects: StudioProject[] = []
+): StudioProject {
   const projectId = cleanProjectValue(document.project_id);
-  const projectName = cleanProjectValue(document.project_name);
+  if (!projectId) return DEFAULT_STUDIO_PROJECT;
 
-  if (!projectId) {
-    return {
-      id: DEFAULT_STUDIO_PROJECT_ID,
-      name: DEFAULT_STUDIO_PROJECT_NAME,
-      parent_id: null,
-      sort_order: Number.MAX_SAFE_INTEGER,
-    };
-  }
-
-  return {
+  return projects.find((project) => project.id === projectId) ?? {
     id: projectId,
-    name: projectName ?? projectId,
-    parent_id: cleanProjectValue(document.project_parent_id),
-    sort_order: projectSortOrder(document.project_sort_order),
+    name: projectId,
+    parent_id: null,
+    sort_order: Number.MAX_SAFE_INTEGER - 1,
+    created_at: "",
+    updated_at: "",
   };
 }
 
-export function groupStudioDocumentsByProject(documents: ProjectableStudioDocument[]): StudioProjectGroup[] {
+export function groupStudioDocumentsByProject(
+  documents: ProjectableStudioDocument[],
+  projects: StudioProject[] = []
+): StudioProjectGroup[] {
   const groups = new Map<string, StudioProjectGroup>();
 
+  for (const project of projects) {
+    groups.set(project.id, { project, documents: [] });
+  }
+
   for (const document of documents) {
-    const project = studioProjectForDocument(document);
+    const project = studioProjectForDocument(document, projects);
     const existingGroup = groups.get(project.id);
 
     if (existingGroup) {

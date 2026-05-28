@@ -15,12 +15,14 @@ test.beforeEach(async ({ page }) => {
 
   await page.addInitScript(() => {
     const documentsKey = "opennotion-e2e-studio-documents";
+    const projectsKey = "opennotion-e2e-studio-projects";
     const pagesKey = "opennotion-e2e-pages";
     const load = <T,>(key: string): T[] => JSON.parse(window.localStorage.getItem(key) ?? "[]");
     const save = <T,>(key: string, value: T[]) => window.localStorage.setItem(key, JSON.stringify(value));
     let callbackCounter = 0;
 
     window.localStorage.removeItem(documentsKey);
+    window.localStorage.removeItem(projectsKey);
     window.localStorage.removeItem(pagesKey);
     window.localStorage.removeItem("opennotion-current-page-id");
     window.localStorage.removeItem("opennotion-current-studio-document-id");
@@ -37,6 +39,7 @@ test.beforeEach(async ({ page }) => {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         if (cmd === "list_pages") return load(pagesKey).filter((item: any) => item.page_kind === "note");
         if (cmd === "list_studio_documents") return load(documentsKey);
+        if (cmd === "list_studio_projects") return load(projectsKey);
         if (cmd === "plugin:dialog|open") return "/tmp/civil-law.pdf";
         if (cmd === "import_studio_document") {
           const document = {
@@ -45,6 +48,7 @@ test.beforeEach(async ({ page }) => {
             original_filename: "civil-law.pdf",
             stored_file_path: "/tmp/civil-law.pdf",
             note_page_id: args.notePageId as string,
+            project_id: null,
             last_opened_at: args.importedAt as string,
             viewer_zoom: 100,
             viewer_page: 1,
@@ -75,6 +79,37 @@ test.beforeEach(async ({ page }) => {
           save(documentsKey, [document]);
           if (!shouldSkipNote) save(pagesKey, [note]);
           return document;
+        }
+        if (cmd === "create_studio_project") {
+          const project = {
+            id: args.id as string,
+            name: args.name as string,
+            parent_id: (args.parentId as string | null) ?? null,
+            sort_order: load<any>(projectsKey).length,
+            created_at: args.createdAt as string,
+            updated_at: args.createdAt as string,
+          };
+          save(projectsKey, [...load<any>(projectsKey), project]);
+          return project;
+        }
+        if (cmd === "rename_studio_project") {
+          save(projectsKey, load<any>(projectsKey).map((project) =>
+            project.id === args.id ? { ...project, name: args.name, updated_at: args.updatedAt } : project
+          ));
+          return null;
+        }
+        if (cmd === "delete_studio_project") {
+          save(projectsKey, load<any>(projectsKey).filter((project) => project.id !== args.id));
+          save(documentsKey, load<any>(documentsKey).map((document) =>
+            document.project_id === args.id ? { ...document, project_id: null, updated_at: args.updatedAt } : document
+          ));
+          return null;
+        }
+        if (cmd === "update_studio_document_project") {
+          save(documentsKey, load<any>(documentsKey).map((document) =>
+            document.id === args.id ? { ...document, project_id: args.projectId ?? null, updated_at: args.updatedAt } : document
+          ));
+          return null;
         }
         if (cmd === "create_page") {
           const page = {
@@ -132,6 +167,39 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
   await page.getByTitle("Swap PDF and notes").click();
   await expect(page.getByText("100%")).toBeVisible();
+});
+
+test("organizes Studio documents into projects", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("New Studio project");
+    await dialog.accept("Physics");
+  });
+  await page.getByRole("button", { name: "New Studio project" }).click();
+
+  await expect(page.locator("[data-studio-project-id]").filter({ hasText: "Physics" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await page.locator("[data-studio-project-id='studio-inbox']").getByLabel("Actions for civil-law").click();
+  await page.getByRole("menuitem", { name: "Move to Physics" }).click();
+
+  await expect(
+    page.locator("[data-studio-project-id]").filter({ hasText: "Physics" }).locator("[role='button'][title='civil-law.pdf']")
+  ).toBeVisible();
+  await page.waitForFunction(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      title: string;
+      project_id: string | null;
+    }>;
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    const project = projects.find((item) => item.name === "Physics");
+    return Boolean(project && documents.some((document) => document.title === "civil-law" && document.project_id === project.id));
+  });
 });
 
 test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {

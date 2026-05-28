@@ -1,17 +1,22 @@
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Trash2, Upload } from "lucide-react";
+import { MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { StudioDocument } from "../lib/studio";
+import { StudioDocument, StudioProject } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
-import { groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
+import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
+  projects: StudioProject[];
   currentDocumentId: string | null;
   isLoading: boolean;
   onImport: () => void;
+  onCreateProject: (name: string) => void;
+  onRenameProject: (id: string, name: string) => void;
+  onDeleteProject: (id: string) => void;
+  onMoveDocument: (documentId: string, projectId: string | null) => void;
   onSelectDocument: (id: string) => void;
   onRenameDocument: (id: string, title: string) => void;
   onDeleteDocument: (id: string) => void;
@@ -19,6 +24,8 @@ type StudioSidebarProps = {
 
 const STUDIO_DOCUMENT_MENU_WIDTH = 220;
 const STUDIO_DOCUMENT_MENU_HEIGHT = 178;
+const STUDIO_PROJECT_MENU_WIDTH = 190;
+const STUDIO_PROJECT_MENU_HEIGHT = 92;
 
 function StudioDocumentRow({
   document,
@@ -26,12 +33,16 @@ function StudioDocumentRow({
   onSelect,
   onRename,
   onDelete,
+  projects,
+  onMove,
 }: {
   document: StudioDocument;
   active: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  projects: StudioProject[];
+  onMove: (projectId: string | null) => void;
 }) {
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -95,6 +106,11 @@ function StudioDocumentRow({
   const handleOpen = () => {
     setMenuPosition(null);
     void openPath(document.stored_file_path);
+  };
+
+  const handleMove = (projectId: string | null) => {
+    setMenuPosition(null);
+    onMove(projectId);
   };
 
   return (
@@ -171,7 +187,27 @@ function StudioDocumentRow({
               <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
               Open PDF
             </button>
-            <div className="my-1 border-t border-border/70" />
+	            <div className="my-1 border-t border-border/70" />
+	            <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+	              Move to project
+	            </div>
+	            <button type="button" role="menuitem" className="on-menu-item" onClick={() => handleMove(null)}>
+	              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+	              Move to Inbox
+	            </button>
+	            {projects.map((project) => (
+	              <button
+	                key={project.id}
+	                type="button"
+	                role="menuitem"
+	                className="on-menu-item"
+	                onClick={() => handleMove(project.id)}
+	              >
+	                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+	                Move to {project.name}
+	              </button>
+	            ))}
+	            <div className="my-1 border-t border-border/70" />
             <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete document
@@ -183,17 +219,139 @@ function StudioDocumentRow({
   );
 }
 
+function StudioProjectHeader({
+  project,
+  count,
+  onRename,
+  onDelete,
+}: {
+  project: StudioProject;
+  count: number;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}) {
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const isInbox = project.id === DEFAULT_STUDIO_PROJECT_ID;
+
+  useEffect(() => {
+    if (!menuPosition) return;
+
+    const closeMenu = () => setMenuPosition(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("contextmenu", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("contextmenu", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+    };
+  }, [menuPosition]);
+
+  const openMenu = (clientX: number, clientY: number) => {
+    closeOpenOverlays();
+    setMenuPosition(
+      clampContextMenuPosition(
+        clientX,
+        clientY,
+        window.innerWidth,
+        window.innerHeight,
+        STUDIO_PROJECT_MENU_WIDTH,
+        STUDIO_PROJECT_MENU_HEIGHT
+      )
+    );
+  };
+
+  const handleRename = () => {
+    setMenuPosition(null);
+    const nextName = window.prompt("Rename Studio project", project.name)?.trim();
+    if (nextName) onRename(nextName);
+  };
+
+  const handleDelete = () => {
+    setMenuPosition(null);
+    if (window.confirm(`Delete "${project.name}"? Documents move back to Inbox.`)) {
+      onDelete();
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground">
+        <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-foreground/80">{project.name}</span>
+        <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span>
+        {!isInbox && (
+          <button
+            type="button"
+            aria-label={`Actions for project ${project.name}`}
+            className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              openMenu(event.clientX, event.clientY);
+            }}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {menuPosition &&
+        createPortal(
+          <div
+            className="fixed z-[220] on-popover p-1"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              width: STUDIO_PROJECT_MENU_WIDTH,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="on-menu-item" onClick={handleRename}>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              Rename project
+            </button>
+            <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete project
+            </button>
+          </div>,
+          globalThis.document.body
+        )}
+    </>
+  );
+}
+
 export function StudioSidebar({
   documents,
+  projects,
   currentDocumentId,
   isLoading,
   onImport,
+  onCreateProject,
+  onRenameProject,
+  onDeleteProject,
+  onMoveDocument,
   onSelectDocument,
   onRenameDocument,
   onDeleteDocument,
 }: StudioSidebarProps) {
   const recent = recentStudioDocuments(documents, 4);
-  const projectGroups = groupStudioDocumentsByProject(documents);
+  const projectGroups = groupStudioDocumentsByProject(documents, projects);
+
+  const handleCreateProject = () => {
+    const name = window.prompt("New Studio project")?.trim();
+    if (name) onCreateProject(name);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -227,20 +385,33 @@ export function StudioSidebar({
                 onSelect={() => onSelectDocument(document.id)}
                 onRename={(title) => onRenameDocument(document.id, title)}
                 onDelete={() => onDeleteDocument(document.id)}
+                projects={projects}
+                onMove={(projectId) => onMoveDocument(document.id, projectId)}
               />
             ))}
           </section>
         )}
-        {projectGroups.length > 0 && (
+        {!isLoading && (
           <section>
-            <div className="on-section-label mb-1">Projects</div>
+            <div className="mb-1 flex items-center justify-between">
+              <div className="on-section-label">Projects</div>
+              <button
+                type="button"
+                aria-label="New Studio project"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={handleCreateProject}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {projectGroups.map((group) => (
-              <div key={group.project.id} className="mb-3">
-                <div className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground">
-                  <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-foreground/80">{group.project.name}</span>
-                  <span className="text-[11px] tabular-nums text-muted-foreground">{group.documents.length}</span>
-                </div>
+              <div key={group.project.id} className="mb-3" data-studio-project-id={group.project.id}>
+                <StudioProjectHeader
+                  project={group.project}
+                  count={group.documents.length}
+                  onRename={(name) => onRenameProject(group.project.id, name)}
+                  onDelete={() => onDeleteProject(group.project.id)}
+                />
                 {group.documents.map((document) => (
                   <StudioDocumentRow
                     key={`project-${group.project.id}-${document.id}`}
@@ -249,6 +420,8 @@ export function StudioSidebar({
                     onSelect={() => onSelectDocument(document.id)}
                     onRename={(title) => onRenameDocument(document.id, title)}
                     onDelete={() => onDeleteDocument(document.id)}
+                    projects={projects}
+                    onMove={(projectId) => onMoveDocument(document.id, projectId)}
                   />
                 ))}
               </div>
