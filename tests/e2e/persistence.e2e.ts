@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 type MockPage = {
   id: string;
@@ -20,9 +20,41 @@ type MockPage = {
   updated_at: string;
 };
 
+type StoredEditorBlock = {
+  type: string;
+  content?: Array<{ text?: string }>;
+  children?: StoredEditorBlock[];
+};
+
 const bodyText = "Persistence smoke body survives reload";
 const pageTitle = "Persistence Smoke";
 const storageKey = "opennotion-e2e-pages";
+
+async function createPageAndFocusEditor(page: Page, title: string) {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  const titleInput = page.locator("textarea[placeholder='Untitled']");
+  await expect(titleInput).toBeVisible();
+
+  await titleInput.fill(title);
+  await titleInput.press("Enter");
+
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toBeFocused();
+  return editor;
+}
+
+async function storedEditorBlocks(page: Page, title: string): Promise<StoredEditorBlock[]> {
+  return page.evaluate(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "[]";
+      return JSON.parse(content) as StoredEditorBlock[];
+    },
+    { key: storageKey, title }
+  );
+}
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -291,6 +323,60 @@ test("supports multiline page titles with alt enter and enter moves to body", as
     },
     { key: storageKey }
   );
+});
+
+test("focuses the empty editor with a visible slash placeholder after title enter", async ({ page }) => {
+  await createPageAndFocusEditor(page, "Placeholder Smoke");
+
+  await expect.poll(async () =>
+    page.locator(".bn-block-content").first().evaluate((element) => getComputedStyle(element, "::after").content)
+  ).toBe("\"Enter text or type '/' for commands\"");
+});
+
+test("supports arrow navigation, indentation, and keyboard slash insertion", async ({ page }) => {
+  const title = "Editor Keyboard Smoke";
+  await createPageAndFocusEditor(page, title);
+
+  await page.keyboard.type("First block");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Second block");
+
+  await page.keyboard.press("ArrowUp");
+  await expect.poll(async () => page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? "")).toContain("First block");
+
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? "")).toContain("Second block");
+
+  await page.keyboard.press("Tab");
+  await expect.poll(async () => {
+    const blocks = await storedEditorBlocks(page, title);
+    return blocks[0]?.children?.[0]?.content?.[0]?.text;
+  }).toBe("Second block");
+
+  await page.keyboard.press("Shift+Tab");
+  await expect.poll(async () => {
+    const blocks = await storedEditorBlocks(page, title);
+    return blocks.length;
+  }).toBe(2);
+
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/code");
+  await expect(page.locator(".bn-suggestion-menu")).toContainText("Code Block");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("const value = 1;");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.type("After code");
+
+  await expect.poll(async () => {
+    const blocks = await storedEditorBlocks(page, title);
+    return {
+      types: blocks.map((block) => block.type),
+      lastText: blocks.at(-1)?.content?.[0]?.text,
+    };
+  }).toEqual({
+    types: ["paragraph", "paragraph", "codeBlock", "paragraph"],
+    lastText: "After code",
+  });
 });
 
 test("selects all editor blocks with command a", async ({ page }) => {

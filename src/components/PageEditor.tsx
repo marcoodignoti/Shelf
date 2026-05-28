@@ -725,6 +725,7 @@ export function Editor({
       BlockNoteEditor.create({
         schema: openNotionEditorSchema,
         initialContent,
+        tabBehavior: "prefer-indent",
         uploadFile: async (file) => {
           const importedPath = await importEditorImage(file, page.id);
           return coverImageSrc(importedPath);
