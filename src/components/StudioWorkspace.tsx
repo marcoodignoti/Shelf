@@ -156,7 +156,7 @@ export function StudioWorkspace({
   };
 
   const pdfPanel = (
-    <section className="on-studio-panel min-w-0 bg-muted/20">
+    <section className="on-studio-panel min-w-0 bg-muted/20" aria-label="PDF panel">
       {pdfLoadFailed ? (
         <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
           <div>
@@ -180,7 +180,7 @@ export function StudioWorkspace({
     </section>
   );
   const notePanel = (
-    <section className="on-studio-panel min-w-0 overflow-hidden">
+    <section className="on-studio-panel min-w-0 overflow-hidden" aria-label="Notes panel">
       {note ? (
         <Editor page={note} pages={pages} onSelectPage={onSelectPage} variant="studio" />
       ) : (

@@ -56,7 +56,6 @@ export const MathInlineContent = createReactInlineContentSpec(
   {
     render: ({ inlineContent, updateInlineContent, editor, contentRef }) => {
       const formula = inlineContent.props.formula;
-      const [originalFormula, setOriginalFormula] = useState(formula);
       const [isEditing, setIsEditing] = useState(false);
       const triggerRef = useRef<HTMLButtonElement>(null);
       const inputRef = useRef<HTMLInputElement>(null);
@@ -79,12 +78,6 @@ export const MathInlineContent = createReactInlineContentSpec(
         focusEditor();
       };
 
-      const rollbackAndClose = () => {
-        updateInlineContent({ type: "math", props: { formula: originalFormula } });
-        setIsEditing(false);
-        focusEditor();
-      };
-
       return (
         <span ref={contentRef} className="on-inline-math-shell">
           <button
@@ -100,7 +93,6 @@ export const MathInlineContent = createReactInlineContentSpec(
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              setOriginalFormula(formula);
               setIsEditing(true);
             }}
           >
@@ -138,7 +130,7 @@ export const MathInlineContent = createReactInlineContentSpec(
                     closeEditor();
                   } else if (event.key === "Escape") {
                     event.preventDefault();
-                    rollbackAndClose();
+                    closeEditor();
                   }
                 }}
                 onChange={(event) => {

@@ -463,6 +463,18 @@ function OpenNotionBlockTypeSelect() {
     [selectItems]
   );
 
+  const openMenuAt = useCallback(
+    (index: number) => {
+      const lastIndex = selectItems.length - 1;
+      const clampedIndex = Math.max(0, Math.min(index, lastIndex));
+
+      activeIndexRef.current = clampedIndex;
+      setActiveIndex(clampedIndex);
+      setIsOpen(true);
+    },
+    [selectItems.length]
+  );
+
   const moveActiveItem = useCallback(
     (nextIndex: number) => {
       const lastIndex = selectItems.length - 1;
@@ -516,14 +528,29 @@ function OpenNotionBlockTypeSelect() {
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={(event) => {
+          event.currentTarget.focus();
+          setIsOpen((open) => !open);
+        }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (event.key === "ArrowDown") {
             event.preventDefault();
-            const nextIndex = event.key === "ArrowDown" ? selectedIndex : selectItems.length - 1;
-            activeIndexRef.current = nextIndex;
-            setActiveIndex(nextIndex);
-            setIsOpen(true);
+            openMenuAt(isOpen ? activeIndexRef.current + 1 : selectedIndex);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openMenuAt(isOpen ? activeIndexRef.current - 1 : selectItems.length - 1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            openMenuAt(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            openMenuAt(selectItems.length - 1);
+          } else if (isOpen && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            chooseItem(activeIndexRef.current);
+          } else if (isOpen && event.key === "Escape") {
+            event.preventDefault();
+            setIsOpen(false);
           }
         }}
       >

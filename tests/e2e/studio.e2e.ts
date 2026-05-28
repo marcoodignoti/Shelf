@@ -104,7 +104,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
-  await page.getByTitle("Swap panels").click();
+  await page.getByTitle("Swap PDF and notes").click();
   await expect(page.getByText("100%")).toBeVisible();
 });
 
@@ -159,12 +159,12 @@ test("stacks Studio panels when resized below usable split width", async ({ page
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("textarea[placeholder='Untitled']").boundingBox();
+  const pdfBox = await page.getByLabel("PDF panel").boundingBox();
+  const noteBox = await page.getByLabel("Notes panel").boundingBox();
 
   expect(pdfBox).not.toBeNull();
-  expect(noteTitleBox).not.toBeNull();
-  expect(noteTitleBox!.y).toBeGreaterThan(pdfBox!.y + pdfBox!.height);
+  expect(noteBox).not.toBeNull();
+  expect(noteBox!.y).toBeGreaterThanOrEqual(pdfBox!.y + pdfBox!.height);
 });
 
 test("keeps Studio panels side by side at ordinary desktop widths", async ({ page }) => {
@@ -173,11 +173,11 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const pdfBox = await page.locator("canvas[aria-label='civil-law']").boundingBox();
-  const noteTitleBox = await page.locator("textarea[placeholder='Untitled']").boundingBox();
+  const pdfBox = await page.getByLabel("PDF panel").boundingBox();
+  const noteBox = await page.getByLabel("Notes panel").boundingBox();
 
   expect(pdfBox).not.toBeNull();
-  expect(noteTitleBox).not.toBeNull();
-  expect(Math.abs(noteTitleBox!.y - pdfBox!.y)).toBeLessThan(120);
-  expect(noteTitleBox!.x).toBeGreaterThan(pdfBox!.x + pdfBox!.width);
+  expect(noteBox).not.toBeNull();
+  expect(Math.abs(noteBox!.y - pdfBox!.y)).toBeLessThan(120);
+  expect(noteBox!.x).toBeGreaterThan(pdfBox!.x + pdfBox!.width);
 });
