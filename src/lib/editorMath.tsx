@@ -276,7 +276,7 @@ export function formulaSlashMenuItem(editor: BlockNoteEditor<any, any, any>): De
     title: "Formula",
     subtext: "LaTeX equation block",
     aliases: ["formula", "latex", "math", "equation"],
-    group: "Basic blocks",
+    group: "Math",
     onItemClick: () => {
       insertFormulaBlock(editor);
     },

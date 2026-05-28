@@ -932,7 +932,10 @@ export function Sidebar() {
         <button
           ref={newPageButtonRef}
           className="on-shell-row"
-        onClick={toggleNewPageMenu}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleNewPageMenu();
+          }}
         >
           <PlusCircle className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>New page</span>
