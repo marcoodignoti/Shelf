@@ -572,7 +572,8 @@ test("can convert a selected paragraph into a formula block from the block type 
   await page.locator("textarea[placeholder='Untitled']").fill("Formula Menu Smoke");
   await page.getByRole("textbox").last().click();
   await page.keyboard.type("E = mc^2");
-  await page.keyboard.press("Meta+A");
+  const paragraph = page.getByText("E = mc^2", { exact: true });
+  await paragraph.dblclick();
 
   await page.getByRole("button", { name: "Paragraph" }).click();
   await page.keyboard.press("End");

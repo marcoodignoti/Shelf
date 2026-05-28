@@ -26,6 +26,7 @@ interface AppState {
   setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: () => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
+  createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
@@ -87,7 +88,7 @@ function getStoredSidebarWidth(): number {
   return Number.isFinite(storedWidth) ? clampSidebarWidth(storedWidth) : SIDEBAR_DEFAULT_WIDTH;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   pages: [],
   currentPageId: getStoredPageId(),
   isLoading: true,
@@ -210,15 +211,35 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
-      await useAppStore.getState().fetchStudioDocuments();
+      await get().fetchStudioDocuments();
+    }
+  },
+  createMissingStudioNoteAction: async (documentId): Promise<Page | null> => {
+    const document = get().studioDocuments.find((candidate) => candidate.id === documentId);
+    if (!document) return null;
+
+    try {
+      const existingNote = await getPage(document.note_page_id);
+      const note = existingNote ?? await createStudioNotePage(document.note_page_id, `${document.title} Notes`);
+      set((state) => ({
+        pages: [note, ...state.pages.filter((page) => page.id !== note.id)],
+        error: null,
+        notice: { kind: 'success', message: 'Linked note created.' }
+      }));
+      return note;
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      await get().fetchStudioDocuments();
+      return null;
     }
   },
   renameStudioDocumentAction: async (id, title) => {
     const nextTitle = title.trim();
     if (!nextTitle) return;
 
-    const previousDocuments = useAppStore.getState().studioDocuments;
-    const previousPages = useAppStore.getState().pages;
+    const previousDocuments = get().studioDocuments;
+    const previousPages = get().pages;
     const document = previousDocuments.find((candidate) => candidate.id === id);
     const updated_at = new Date().toISOString();
 
@@ -242,7 +263,7 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
   deleteStudioDocumentAction: async (id) => {
-    const document = useAppStore.getState().studioDocuments.find((candidate) => candidate.id === id);
+    const document = get().studioDocuments.find((candidate) => candidate.id === id);
     if (!document) return;
 
     try {
@@ -270,7 +291,7 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
-      await useAppStore.getState().fetchStudioDocuments();
+      await get().fetchStudioDocuments();
     }
   },
   addPage: async (title = 'Untitled', parentId = null, options = {}) => {
@@ -296,7 +317,7 @@ export const useAppStore = create<AppState>((set) => ({
     pages: state.pages.map(p => p.id === id ? { ...p, ...updates } : p)
   })),
   renamePageAction: async (id, title) => {
-    const previousPages = useAppStore.getState().pages;
+    const previousPages = get().pages;
     try {
       set((state) => ({
         pages: state.pages.map(p => p.id === id ? { ...p, title } : p),
@@ -317,7 +338,7 @@ export const useAppStore = create<AppState>((set) => ({
         pages,
         currentPageId: resolveCurrentPageId(pages, state.currentPageId)
       }));
-      const current = useAppStore.getState().currentPageId;
+      const current = get().currentPageId;
       localStorage.setItem('opennotion-current-page-id', current || HOME_PAGE_ID);
     } catch (error: unknown) {
       console.error(error);
@@ -336,11 +357,11 @@ export const useAppStore = create<AppState>((set) => ({
       console.error(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
-      await useAppStore.getState().fetchPages();
+      await get().fetchPages();
     }
   },
   reorderPagesAction: async (parentId, orderedIds) => {
-    const previousPages = useAppStore.getState().pages;
+    const previousPages = get().pages;
     try {
       set((state) => ({
         pages: state.pages.map((page) => {
