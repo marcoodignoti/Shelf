@@ -54,6 +54,19 @@ export async function createPage(title: string = 'Untitled', parentId: string | 
   });
 }
 
+export async function createStudioNotePage(id: string, title: string): Promise<Page> {
+  const now = new Date().toISOString();
+  const page = await invoke<Page>('create_page', {
+    id,
+    title,
+    parentId: null,
+    createdAt: now
+  });
+
+  await updatePage(id, { page_kind: 'studio_note' });
+  return { ...page, page_kind: 'studio_note' };
+}
+
 export async function updatePage(id: string, updates: Partial<Page>): Promise<void> {
   const now = new Date().toISOString();
   const allowedColumns = new Set<keyof Page>([

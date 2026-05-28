@@ -1,15 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { useAppStore } from '../store/useAppStore';
 import { getAllPages, importPages } from '../lib/db';
 import { buildBackup, parseBackup, prepareImportedPages } from '../lib/backup';
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
 import { Moon, Sun, Monitor, Download, Upload, X } from 'lucide-react';
 
 export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const { theme, setTheme, fetchPages, showSuccess, showError } = useAppStore();
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    closeOpenOverlays();
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, onClose);
+    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, onClose);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -57,72 +66,77 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
   };
 
   return createPortal(
-    <div className="on-modal-overlay items-center justify-center p-4">
-      <div className="on-modal-panel flex w-full max-w-lg flex-col">
-        <div className="on-modal-header">
-          <h2 className="text-lg font-semibold">Settings</h2>
-          <button onClick={onClose} className="on-icon-button">
-            <X className="w-5 h-5" />
+    <div className="on-modal-overlay on-settings-overlay items-center justify-center p-4" onMouseDown={onClose}>
+      <div className="on-modal-panel on-settings-panel flex w-full max-w-xl flex-col" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="on-settings-header">
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">Settings</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Preferences and workspace backup.</p>
+          </div>
+          <button onClick={onClose} className="on-settings-close" aria-label="Close settings">
+            <X className="h-4 w-4" strokeWidth={2} />
           </button>
         </div>
         
-        <div className="on-modal-body space-y-8">
+        <div className="on-settings-body">
           
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium mb-1">Appearance</h3>
-              <p className="text-xs text-muted-foreground">Customize how OpenNotion looks on your device.</p>
+          <div className="on-settings-section">
+            <div className="on-settings-section-copy">
+              <h3>Appearance</h3>
+              <p>Choose how OpenNotion adapts to your device.</p>
             </div>
             
-            <div className="flex gap-3">
+            <div className="on-settings-theme-grid">
               <button 
                 className={`on-selectable-tile ${theme === 'light' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('light')}
               >
-                <Sun className="w-6 h-6" />
-                <span className="text-sm font-medium">Light</span>
+                <Sun className="h-5 w-5" strokeWidth={1.9} />
+                <span>Light</span>
               </button>
               
               <button 
                 className={`on-selectable-tile ${theme === 'dark' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('dark')}
               >
-                <Moon className="w-6 h-6" />
-                <span className="text-sm font-medium">Dark</span>
+                <Moon className="h-5 w-5" strokeWidth={1.9} />
+                <span>Dark</span>
               </button>
               
               <button 
                 className={`on-selectable-tile ${theme === 'system' ? 'on-selectable-tile-active' : ''}`}
                 onClick={() => setTheme('system')}
               >
-                <Monitor className="w-6 h-6" />
-                <span className="text-sm font-medium">System</span>
+                <Monitor className="h-5 w-5" strokeWidth={1.9} />
+                <span>System</span>
               </button>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium mb-1">Data & Privacy</h3>
-              <p className="text-xs text-muted-foreground">Export or import a versioned JSON workspace backup.</p>
+          <div className="on-settings-section">
+            <div className="on-settings-section-copy">
+              <h3>Data & Privacy</h3>
+              <p>Export or import a versioned JSON workspace backup.</p>
             </div>
             
-            <button 
-              onClick={handleExport}
-              className="on-button-secondary w-full gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Export Database Backup
-            </button>
-            <button
-              onClick={() => void handleImport()}
-              className="on-button-secondary w-full gap-2"
-            >
-              <Upload className="w-4 h-4" />
-              Import Backup as Duplicates
-            </button>
+            <div className="on-settings-actions">
+              <button 
+                onClick={handleExport}
+                className="on-button-secondary w-full gap-2"
+              >
+                <Download className="h-4 w-4" strokeWidth={1.9} />
+                Export backup
+              </button>
+              <button
+                onClick={() => void handleImport()}
+                className="on-button-secondary w-full gap-2"
+              >
+                <Upload className="h-4 w-4" strokeWidth={1.9} />
+                Import as duplicates
+              </button>
+            </div>
             {backupStatus && (
-              <div className="text-xs text-muted-foreground">
+              <div className="on-settings-status">
                 {backupStatus}
               </div>
             )}

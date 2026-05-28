@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
 import { Editor } from "./components/PageEditor";
@@ -68,6 +68,9 @@ export default function App() {
   const currentStudioNote = currentStudioDocument
     ? pages.find((page) => page.id === currentStudioDocument.note_page_id) ?? null
     : null;
+  const handleUpdateStudioViewer = useCallback((id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }) => {
+    void updateStudioViewerAction(id, updates);
+  }, [updateStudioViewerAction]);
 
   return (
     <Layout>
@@ -83,7 +86,7 @@ export default function App() {
               note={currentStudioNote}
               pages={pages}
               onSelectPage={setCurrentPageId}
-              onUpdateViewer={(id, updates) => void updateStudioViewerAction(id, updates)}
+              onUpdateViewer={handleUpdateStudioViewer}
             />
           </ErrorBoundary>
         ) : (

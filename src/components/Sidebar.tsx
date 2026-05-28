@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
@@ -9,6 +10,7 @@ import { HOME_PAGE_ID } from '../lib/navigation';
 import { normalizePageTitle } from '../lib/pageTitle';
 import { clampContextMenuPosition } from '../lib/contextMenu';
 import { computeFloatingPosition } from '../lib/floatingPosition';
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
 import { dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId } from '../lib/pageOrder';
 import type { DropPosition } from '../lib/pageOrder';
 import { SidebarModeSwitch } from './SidebarModeSwitch';
@@ -30,6 +32,16 @@ type DragSession = {
   startY: number;
   active: boolean;
 };
+
+function sidebarPopoverStyle(left: number, top: number): CSSProperties {
+  return {
+    left,
+    top,
+    maxHeight: Math.max(96, window.innerHeight - top - 12),
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+  };
+}
 
 function storedExpandedState(pageId: string): boolean {
   return localStorage.getItem(`opennotion-page-expanded-${pageId}`) !== 'false';
@@ -154,11 +166,13 @@ function PageItem({
     window.addEventListener('click', closeMenu);
     window.addEventListener('scroll', closeMenu, true);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener('click', closeMenu);
       window.removeEventListener('scroll', closeMenu, true);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
   }, [contextMenuPosition]);
 
@@ -176,11 +190,13 @@ function PageItem({
     window.addEventListener('click', closeMenu);
     window.addEventListener('scroll', closeMenu, true);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener('click', closeMenu);
       window.removeEventListener('scroll', closeMenu, true);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
   }, [isMoveOpen]);
 
@@ -248,6 +264,7 @@ function PageItem({
   };
 
   const openMoveMenuAt = (left: number, top: number) => {
+    closeOpenOverlays();
     setMoveMenuPosition(clampContextMenuPosition(left, top, window.innerWidth, window.innerHeight, 224, 280));
     setMoveQuery('');
     setIsMoveOpen(true);
@@ -256,6 +273,7 @@ function PageItem({
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
+    closeOpenOverlays();
     setCurrentPageId(page.id);
     setIsMoveOpen(false);
     setMoveMenuPosition(null);
@@ -335,17 +353,12 @@ function PageItem({
       {isMoveOpen && moveMenuPosition && createPortal(
         <div
           className="fixed z-[130] w-56 on-popover"
-          style={{
-            top: moveMenuPosition.top,
-            left: moveMenuPosition.left,
-            maxHeight: Math.max(120, window.innerHeight - moveMenuPosition.top - 12),
-            overflowY: 'auto',
-          }}
+          style={sidebarPopoverStyle(moveMenuPosition.left, moveMenuPosition.top)}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="border-b border-border p-2">
+          <div className="on-popover-search">
             <input
-              className="w-full rounded-md bg-muted px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground"
+              className="w-full rounded-full bg-background/60 px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
               placeholder="Move to..."
               value={moveQuery}
               onChange={(event) => setMoveQuery(event.target.value)}
@@ -380,13 +393,8 @@ function PageItem({
 
       {contextMenuPosition && createPortal(
         <div
-          className="fixed z-[180] w-44 on-popover"
-          style={{
-            left: contextMenuPosition.left,
-            top: contextMenuPosition.top,
-            maxHeight: Math.max(120, window.innerHeight - contextMenuPosition.top - 12),
-            overflowY: 'auto',
-          }}
+          className="fixed z-[180] w-56 on-popover on-page-action-popover"
+          style={sidebarPopoverStyle(contextMenuPosition.left, contextMenuPosition.top)}
           onClick={(event) => event.stopPropagation()}
         >
           <button
@@ -405,7 +413,7 @@ function PageItem({
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
             Duplicate
           </button>
-          <div className="my-1 h-px bg-border" />
+          <div className="on-menu-separator" />
           <button
             className="on-menu-item"
             onClick={(event) => void handleToggleFavorite(event)}
@@ -440,7 +448,7 @@ function PageItem({
             <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
             Move
           </button>
-          <div className="my-1 h-px bg-border" />
+          <div className="on-menu-separator" />
           <button
             className="on-menu-item on-menu-item-danger"
             onClick={(event) => {
@@ -540,6 +548,36 @@ export function Sidebar() {
   const templatePages = sortedPages.filter(p => p.is_template === 1);
   const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
 
+  useEffect(() => {
+    if (!newPageMenuPosition) return;
+
+    const closeMenu = () => setNewPageMenuPosition(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+    };
+  }, [newPageMenuPosition]);
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+
+    closeOpenOverlays();
+    const closeDialog = () => setPendingDelete(null);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+  }, [pendingDelete]);
+
   const handleAddPage = async () => {
     await addPage();
     setNewPageMenuPosition(null);
@@ -553,6 +591,7 @@ export function Sidebar() {
 
     const rect = newPageButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
+    closeOpenOverlays();
     const position = computeFloatingPosition(rect, { width: 224, height: 220 }, { width: window.innerWidth, height: window.innerHeight });
 
     setNewPageMenuPosition({
@@ -796,7 +835,8 @@ export function Sidebar() {
     document.body.style.userSelect = 'none';
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(moveEvent.clientX);
+      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+      setSidebarWidth(moveEvent.clientX - sidebarLeft);
     };
 
     const handlePointerUp = () => {
@@ -817,10 +857,10 @@ export function Sidebar() {
     ? `Delete "${deleteTitle}" and its subpages permanently? This cannot be undone.`
     : `Delete "${deleteTitle}" permanently? This cannot be undone.`;
   const deleteDialog = pendingDelete ? createPortal(
-    <div className="on-modal-overlay z-[180] items-center justify-center p-4">
-      <div className="on-modal-panel w-[420px] max-w-[calc(100vw-2rem)]">
-        <div className="flex items-start gap-3 border-b border-border p-4">
-          <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
+    <div className="on-modal-overlay z-[180] items-center justify-center p-4" onMouseDown={() => setPendingDelete(null)}>
+      <div className="on-modal-panel on-delete-dialog w-[420px] max-w-[calc(100vw-2rem)]" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="on-delete-dialog-content">
+          <div className="on-delete-dialog-icon">
             <AlertTriangle className="h-4 w-4" />
           </div>
           <div>
@@ -828,7 +868,7 @@ export function Sidebar() {
             <div className="mt-1 text-sm text-muted-foreground">{deleteMessage}</div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 p-3">
+        <div className="on-delete-dialog-actions">
           <button
             className="on-button-secondary"
             onClick={() => setPendingDelete(null)}
@@ -851,7 +891,7 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="on-glass-sidebar relative flex h-full flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="on-glass-sidebar relative m-3 flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
       style={{ width: sidebarWidth }}
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
@@ -863,9 +903,9 @@ export function Sidebar() {
         aria-label="Resize sidebar"
         onPointerDown={handleResizePointerDown}
       />
-      <div className="h-11 flex-shrink-0" data-tauri-drag-region />
+      <div className="on-sidebar-header-spacer flex-shrink-0" data-tauri-drag-region />
 
-      <div className="px-2 pb-3">
+      <div className="on-sidebar-mode-row">
         <SidebarModeSwitch mode={workspaceMode} onChange={setWorkspaceMode} />
       </div>
 
@@ -881,31 +921,27 @@ export function Sidebar() {
         />
       ) : (
         <>
-      <div className="px-1 mb-0 space-y-[0px]">
+      <div className="on-sidebar-nav px-1">
         <button
           className={`on-shell-row ${currentPageId === HOME_PAGE_ID ? 'on-shell-row-active' : ''}`}
           onClick={() => setCurrentPageId(HOME_PAGE_ID)}
         >
-          <Home className="w-4 h-4 mr-2.5 opacity-60" />
+          <Home className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>Home</span>
         </button>
         <button
           ref={newPageButtonRef}
           className="on-shell-row"
-          onClick={toggleNewPageMenu}
+        onClick={toggleNewPageMenu}
         >
-          <PlusCircle className="w-4 h-4 mr-2.5 opacity-60" />
+          <PlusCircle className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>New page</span>
         </button>
         {newPageMenuPosition && createPortal(
           <div
             className="fixed z-[180] w-56 on-popover"
-            style={{
-              left: newPageMenuPosition.left,
-              top: newPageMenuPosition.top,
-              maxHeight: Math.max(120, window.innerHeight - newPageMenuPosition.top - 12),
-              overflowY: 'auto',
-            }}
+            style={sidebarPopoverStyle(newPageMenuPosition.left, newPageMenuPosition.top)}
+            onClick={(event) => event.stopPropagation()}
           >
             <button
               className="on-menu-item"
@@ -936,11 +972,11 @@ export function Sidebar() {
           className="on-shell-row"
           onClick={openCommandPalette}
         >
-          <Search className="w-4 h-4 mr-2.5 opacity-60" />
+          <Search className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>Search</span>
         </button>
       </div>
-      <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto mt-4">
+      <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto pt-3">
         {isLoading && (
           <div className="px-5 py-4 text-xs text-muted-foreground">Loading pages...</div>
         )}
@@ -997,7 +1033,7 @@ export function Sidebar() {
           </div>
         )}
 
-        <div className="px-2 pb-20 min-h-[100px]">
+        <div className="px-2 pb-24 min-h-[100px]">
           <div className="on-section-label mb-1 mt-4">Private</div>
           {!isLoading && rootPages.length === 0 && (
             <div className="mx-3 mt-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
@@ -1030,15 +1066,19 @@ export function Sidebar() {
         </>
       )}
       {deleteDialog}
-      <div className="flex-shrink-0 border-t border-border/60 px-1 py-2">
-        <button
-          className="on-shell-row"
-          onClick={() => setIsSettingsOpen(true)}
-        >
-          <Settings className="w-4 h-4 mr-2.5 opacity-60" />
-          <span>Settings</span>
-        </button>
-      </div>
+      <div className="on-sidebar-settings-fade" aria-hidden="true" />
+      <button
+        type="button"
+        className="on-sidebar-settings-button"
+        aria-label="Settings"
+        title="Settings"
+        onClick={() => {
+          closeOpenOverlays();
+          setIsSettingsOpen(true);
+        }}
+      >
+        <Settings className="h-4 w-4" strokeWidth={1.9} />
+      </button>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );

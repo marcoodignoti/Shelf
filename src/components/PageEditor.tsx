@@ -14,7 +14,6 @@ import {
   SideMenu,
   SideMenuController,
   SuggestionMenuController,
-  useComponentsContext,
   useBlockNoteEditor,
   useEditorState,
   useExtensionState,
@@ -35,6 +34,7 @@ import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -157,13 +157,12 @@ function PageHeadingRail({
                 className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 aria-label={`Go to ${item.title}`}
                 aria-current={isActive ? "true" : undefined}
-                title={item.title}
                 onClick={() => onSelect(item.id)}
               >
                 <span
                   className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
                 />
-                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 max-w-64 -translate-y-1/2 truncate rounded-lg px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 transition-all duration-150 group-hover/rail:-translate-x-1 group-hover/rail:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:-translate-x-1 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
+                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 z-10 max-w-80 -translate-y-1/2 translate-x-1 truncate px-4 py-2 text-sm font-semibold leading-tight text-popover-foreground opacity-0 transition-all duration-150 group-hover/railitem:pointer-events-auto group-hover/railitem:translate-x-0 group-hover/railitem:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:pointer-events-auto group-focus-visible/railitem:translate-x-0 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
                   {item.title}
                 </span>
               </button>
@@ -355,8 +354,12 @@ function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
 }
 
 function OpenNotionBlockTypeSelect() {
-  const Components = useComponentsContext()!;
   const editor = useBlockNoteEditor<any, any, any>();
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedBlocks = useEditorState({
     editor,
     selector: ({ editor }) => editor.getSelection()?.blocks || [editor.getTextCursorPosition().block],
@@ -433,13 +436,138 @@ function OpenNotionBlockTypeSelect() {
     [editor, filteredItems, firstSelectedBlock.props, firstSelectedBlock.type, selectedBlocks]
   );
 
-  const shouldShow = selectItems.some((item) => item.isSelected);
+  const selectedItem = selectItems.find((item) => item.isSelected) ?? null;
+  const selectedIndex = Math.max(0, selectItems.findIndex((item) => item.isSelected));
 
-  if (!shouldShow || !editor.isEditable) {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    activeIndexRef.current = selectedIndex;
+    setActiveIndex(selectedIndex);
+    const frame = window.requestAnimationFrame(() => {
+      menuItemRefs.current[selectedIndex]?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isOpen, selectedIndex]);
+
+  const chooseItem = useCallback(
+    (index: number) => {
+      const item = selectItems[index];
+      if (!item) return;
+
+      item.onClick();
+      setIsOpen(false);
+      buttonRef.current?.focus();
+    },
+    [selectItems]
+  );
+
+  const moveActiveItem = useCallback(
+    (nextIndex: number) => {
+      const lastIndex = selectItems.length - 1;
+      const clampedIndex = Math.max(0, Math.min(nextIndex, lastIndex));
+
+      activeIndexRef.current = clampedIndex;
+      setActiveIndex(clampedIndex);
+      menuItemRefs.current[clampedIndex]?.focus();
+    },
+    [selectItems.length]
+  );
+
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        const currentIndex = activeIndexRef.current;
+        moveActiveItem(currentIndex >= selectItems.length - 1 ? 0 : currentIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        const currentIndex = activeIndexRef.current;
+        moveActiveItem(currentIndex <= 0 ? selectItems.length - 1 : currentIndex - 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        moveActiveItem(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        moveActiveItem(selectItems.length - 1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        chooseItem(activeIndexRef.current);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        setIsOpen(false);
+        buttonRef.current?.focus();
+      }
+    },
+    [chooseItem, moveActiveItem, selectItems.length]
+  );
+
+  if (!selectedItem || !editor.isEditable) {
     return null;
   }
 
-  return <Components.FormattingToolbar.Select className="bn-select" items={selectItems} />;
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="opennotion-block-type-select"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const nextIndex = event.key === "ArrowDown" ? selectedIndex : selectItems.length - 1;
+            activeIndexRef.current = nextIndex;
+            setActiveIndex(nextIndex);
+            setIsOpen(true);
+          }
+        }}
+      >
+        {selectedItem.icon}
+        <span className="truncate">{selectedItem.text}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+      <FloatingPopover
+        anchorElement={buttonRef.current}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        placement="bottom-start"
+        width={230}
+        zIndex={240}
+        className="on-popover opennotion-block-type-menu"
+      >
+        <div role="menu" aria-label="Block type" className="grid gap-0.5" onKeyDown={handleMenuKeyDown}>
+          {selectItems.map((item, index) => (
+            <button
+              key={`${item.text}-${item.isSelected ? "selected" : "available"}`}
+              ref={(element) => {
+                menuItemRefs.current[index] = element;
+              }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={item.isSelected}
+              tabIndex={index === activeIndex ? 0 : -1}
+              className="opennotion-block-type-menu-item"
+              data-active={index === activeIndex ? "true" : undefined}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => {
+                chooseItem(index);
+              }}
+            >
+              {item.icon}
+              <span className="min-w-0 flex-1 truncate text-left">{item.text}</span>
+              {item.isSelected && <Check className="h-3.5 w-3.5 text-foreground" />}
+            </button>
+          ))}
+        </div>
+      </FloatingPopover>
+    </>
+  );
 }
 
 function OpenNotionFormattingToolbar() {
@@ -665,6 +793,15 @@ export function Editor({
       iconInputRef.current?.focus();
     });
   }, [isIconMenuOpen]);
+
+  useEffect(() => {
+    if (!isDeleteConfirmOpen) return;
+
+    closeOpenOverlays();
+    const closeDialog = () => setIsDeleteConfirmOpen(false);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
+  }, [isDeleteConfirmOpen]);
 
   const saveNow = useCallback(async () => {
     if (isSavingRef.current) return;
@@ -1018,7 +1155,7 @@ export function Editor({
       <div ref={scrollContainerRef} className="on-scroll-fade flex-1 w-full overflow-y-auto">
         <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
         {!isStudioVariant && (
-        <div className="mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
+        <div className="on-page-breadcrumb-sticky mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
           {breadcrumbs.map((breadcrumb, index) => {
             const isCurrent = breadcrumb.id === page.id;
             return (
@@ -1135,11 +1272,11 @@ export function Editor({
               width={224}
               placement="bottom-end"
               onOpenChange={setPageMenuOpen}
-              className="on-popover"
+              className="on-popover on-page-action-popover"
             >
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleDuplicatePage()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1147,16 +1284,16 @@ export function Editor({
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={handleOpenMoveMenu}
               >
                 <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
                 Move to...
               </button>
-              <div className="my-1 h-px bg-border" />
+              <div className="on-menu-separator" />
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleToggleFavorite()}
               >
                 <Star className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? "fill-current" : ""}`} />
@@ -1164,7 +1301,7 @@ export function Editor({
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                className="on-menu-item"
                 onClick={() => void handleToggleTemplate()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1173,17 +1310,17 @@ export function Editor({
               {page.is_database !== 1 && (
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  className="on-menu-item"
                   onClick={handleTurnIntoDatabase}
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                   Turn into Database
                 </button>
               )}
-              <div className="my-1 h-px bg-border" />
+              <div className="on-menu-separator" />
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+                className="on-menu-item on-menu-item-danger"
                 onClick={handleRequestDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -1198,9 +1335,9 @@ export function Editor({
               onOpenChange={setMoveMenuOpen}
               className="on-popover"
             >
-              <div className="border-b border-border p-2">
+              <div className="on-popover-search">
                 <input
-                  className="w-full rounded-md bg-muted px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground"
+                  className="w-full rounded-full bg-background/60 px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
                   placeholder="Move to..."
                   value={moveQuery}
                   onChange={(event) => setMoveQuery(event.target.value)}
@@ -1210,7 +1347,7 @@ export function Editor({
               <div className="max-h-64 overflow-y-auto p-1">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  className="on-menu-item justify-between"
                   onClick={() => void handleMovePage(null)}
                 >
                   <span className="truncate text-muted-foreground">Root</span>
@@ -1220,7 +1357,7 @@ export function Editor({
                   <button
                     type="button"
                     key={target.id}
-                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                    className="on-menu-item justify-between"
                     onClick={() => void handleMovePage(target.id)}
                   >
                     <span className="truncate">
@@ -1441,10 +1578,10 @@ export function Editor({
       </div>
       </div>
       {isDeleteConfirmOpen && (
-        <div className="on-modal-overlay z-[150] items-center justify-center">
-          <div className="on-modal-panel w-[420px]">
-            <div className="flex items-start gap-3 border-b border-border p-4">
-              <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
+        <div className="on-modal-overlay z-[150] items-center justify-center" onMouseDown={() => setIsDeleteConfirmOpen(false)}>
+          <div className="on-modal-panel on-delete-dialog w-[420px]" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="on-delete-dialog-content">
+              <div className="on-delete-dialog-icon">
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
@@ -1456,7 +1593,7 @@ export function Editor({
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 p-3">
+            <div className="on-delete-dialog-actions">
               <button
                 type="button"
                 className="on-button-secondary"

@@ -225,14 +225,24 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
 
   const rail = page.getByRole("navigation", { name: "Page sections" });
   await expect(rail).toBeVisible();
-  await rail.hover();
-  await expect.poll(async () =>
-    page.locator(".on-heading-rail-preview").first().evaluate((element) => Number(getComputedStyle(element).opacity))
-  ).toBeGreaterThan(0.9);
+
+  const visiblePreviewTexts = async () =>
+    page.locator(".on-heading-rail-preview").evaluateAll((elements) =>
+      elements
+        .filter((element) => Number(getComputedStyle(element).opacity) > 0.9)
+        .map((element) => element.textContent?.trim())
+        .filter(Boolean)
+    );
+
+  const firstSectionButton = page.getByRole("button", { name: "Go to First section" });
+  await firstSectionButton.hover();
+  await expect.poll(visiblePreviewTexts).toEqual(["First section"]);
 
   const secondSectionButton = page.getByRole("button", { name: "Go to Second section" });
   await expect(secondSectionButton).toBeVisible();
-  await secondSectionButton.click();
+  await secondSectionButton.hover();
+  await expect.poll(visiblePreviewTexts).toEqual(["Second section"]);
+  await secondSectionButton.locator(".on-heading-rail-preview").click();
 
   await expect(secondSectionButton).toHaveAttribute("aria-current", "true");
   await expect.poll(async () =>
@@ -429,7 +439,8 @@ test("can convert a selected paragraph into a formula block from the block type 
   await page.keyboard.press("Meta+A");
 
   await page.getByRole("button", { name: "Paragraph" }).click();
-  await page.getByText("Formula", { exact: true }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
 
   await expect(page.getByLabel("Formula input")).toBeHidden();
   await page.getByLabel("Formula preview: E = mc^2").click();

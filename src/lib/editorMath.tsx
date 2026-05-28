@@ -2,7 +2,8 @@ import { Block, BlockNoteEditor, BlockNoteSchema, PartialBlock, defaultBlockSpec
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, createReactInlineContentSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import katex from "katex";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { FloatingPopover } from "../components/FloatingPopover";
 
 const DEFAULT_FORMULA = "\\nabla \\cdot \\vec{E}";
 
@@ -21,6 +22,27 @@ type InlineMath = {
 
 type InlineContent = string | InlineText | InlineMath | Record<string, unknown>;
 
+type KatexRendererProps = {
+  formula: string;
+  displayMode?: boolean;
+  className?: string;
+};
+
+export const KatexRenderer = memo(function KatexRenderer({
+  formula,
+  displayMode = false,
+  className,
+}: KatexRendererProps) {
+  const html = useMemo(() => renderFormulaHtml(formula, displayMode), [formula, displayMode]);
+
+  return (
+    <span
+      className={className ?? (displayMode ? "katex-block-wrapper" : "katex-inline-wrapper")}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 export const MathInlineContent = createReactInlineContentSpec(
   {
     type: "math",
@@ -32,10 +54,11 @@ export const MathInlineContent = createReactInlineContentSpec(
     },
   },
   {
-    render: ({ inlineContent, updateInlineContent, contentRef }) => {
+    render: ({ inlineContent, updateInlineContent, editor, contentRef }) => {
       const formula = inlineContent.props.formula;
-      const html = renderFormulaHtml(formula);
+      const [originalFormula, setOriginalFormula] = useState(formula);
       const [isEditing, setIsEditing] = useState(false);
+      const triggerRef = useRef<HTMLButtonElement>(null);
       const inputRef = useRef<HTMLInputElement>(null);
 
       useEffect(() => {
@@ -45,35 +68,85 @@ export const MathInlineContent = createReactInlineContentSpec(
         }
       }, [isEditing]);
 
+      const focusEditor = () => {
+        window.requestAnimationFrame(() => {
+          editor.focus();
+        });
+      };
+
+      const closeEditor = () => {
+        setIsEditing(false);
+        focusEditor();
+      };
+
+      const rollbackAndClose = () => {
+        updateInlineContent({ type: "math", props: { formula: originalFormula } });
+        setIsEditing(false);
+        focusEditor();
+      };
+
       return (
         <span ref={contentRef} className="on-inline-math-shell">
-          {isEditing ? (
-            <input
-              ref={inputRef}
-              className="on-inline-math-input"
-              value={formula}
-              aria-label="Inline formula input"
-              spellCheck={false}
-              onBlur={() => setIsEditing(false)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" || event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-              }}
-              onChange={(event) => {
-                updateInlineContent({ type: "math", props: { formula: event.currentTarget.value } });
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="on-inline-math"
-              title={formula}
-              aria-label={`Formula: ${formula}`}
-              dangerouslySetInnerHTML={{ __html: html }}
-              onClick={() => setIsEditing(true)}
-            />
-          )}
+          <button
+            ref={triggerRef}
+            type="button"
+            className="on-inline-math"
+            title={formula}
+            aria-label={`Formula: ${formula}`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setOriginalFormula(formula);
+              setIsEditing(true);
+            }}
+          >
+            <KatexRenderer formula={formula} />
+          </button>
+          <FloatingPopover
+            anchorElement={triggerRef.current}
+            open={isEditing}
+            width={320}
+            zIndex={220}
+            onOpenChange={(open) => {
+              if (open) {
+                setIsEditing(true);
+              } else {
+                closeEditor();
+              }
+            }}
+            className="on-inline-math-popover"
+          >
+            <div
+              className="on-inline-math-popover-panel"
+              onMouseDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <input
+                ref={inputRef}
+                className="on-inline-math-input"
+                value={formula}
+                aria-label="Inline formula input"
+                spellCheck={false}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    closeEditor();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    rollbackAndClose();
+                  }
+                }}
+                onChange={(event) => {
+                  updateInlineContent({ type: "math", props: { formula: event.currentTarget.value } });
+                }}
+              />
+            </div>
+          </FloatingPopover>
         </span>
       );
     },
@@ -85,8 +158,9 @@ export const MathInlineContent = createReactInlineContentSpec(
           ref={contentRef}
           className="on-inline-math"
           data-latex={formula}
-          dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula) }}
-        />
+        >
+          <KatexRenderer formula={formula} />
+        </span>
       );
     },
     parse: (element) => {
@@ -148,7 +222,6 @@ function FormulaBlockContent({
         aria-label={`Formula preview: ${formula}`}
         contentEditable={false}
         data-latex={formula}
-        dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula) }}
         onMouseDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -159,7 +232,9 @@ function FormulaBlockContent({
           event.stopPropagation();
           setIsEditing(true);
         }}
-      />
+      >
+        <KatexRenderer formula={formula} displayMode />
+      </button>
     </div>
   );
 }
@@ -183,8 +258,9 @@ export const FormulaBlock = createReactBlockSpec(
         <figure className="on-formula-block" data-latex={formula}>
           <div
             className="on-formula-preview"
-            dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula) }}
-          />
+          >
+            <KatexRenderer formula={formula} displayMode />
+          </div>
         </figure>
       );
     },
@@ -744,10 +820,11 @@ function isMathInlineContent(item: InlineContent): item is InlineMath {
   return typeof item === "object" && item !== null && !Array.isArray(item) && item.type === "math";
 }
 
-function renderFormulaHtml(formula: string): string {
+export function renderFormulaHtml(formula: string, displayMode = false): string {
   return katex.renderToString(formula || "\\?", {
     throwOnError: false,
     strict: false,
     output: "html",
+    displayMode,
   });
 }

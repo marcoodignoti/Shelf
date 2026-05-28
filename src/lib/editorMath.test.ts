@@ -6,6 +6,7 @@ import {
   normalizeMathInlineContent,
   normalizeMathInlineContentInEditor,
   openNotionEditorSchema,
+  renderFormulaHtml,
 } from "./editorMath";
 
 describe("normalizeMathInlineContent", () => {
@@ -117,6 +118,12 @@ describe("openNotionEditorSchema", () => {
       type: "formula",
       content: "none",
     });
+  });
+});
+
+describe("renderFormulaHtml", () => {
+  it("renders display math with KaTeX display markup", () => {
+    expect(renderFormulaHtml("\\int_0^1 x dx", true)).toContain("katex-display");
   });
 });
 

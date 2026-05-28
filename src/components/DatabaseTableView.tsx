@@ -27,6 +27,7 @@ import { clampContextMenuPosition } from "../lib/contextMenu";
 import { Page, updatePage } from "../lib/db";
 import { normalizePageTitle } from "../lib/pageTitle";
 import { appendedSiblingId, dropPositionFromOffset, reorderedSiblingIds } from "../lib/pageOrder";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -103,11 +104,13 @@ export function DatabaseTableView({
     window.addEventListener("click", closeMenu);
     window.addEventListener("scroll", closeMenu, true);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
 
     return () => {
       window.removeEventListener("click", closeMenu);
       window.removeEventListener("scroll", closeMenu, true);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
     };
   }, [rowContextMenu]);
 
@@ -309,6 +312,7 @@ export function DatabaseTableView({
 
     event.preventDefault();
     event.stopPropagation();
+    closeOpenOverlays();
     setOpenPropertyId(null);
     setTemplateMenuOpen(false);
     setRowContextMenu({

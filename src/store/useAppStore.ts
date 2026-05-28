@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
-import { Page, getPage, getPages, createPage, createPageFromTemplate, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
+import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
 import { deleteStudioDocument, importStudioDocument, listStudioDocuments, renameStudioDocument, StudioDocument, StudioPanelLayout, updateStudioDocumentViewerState } from '../lib/studio';
 
@@ -117,7 +117,11 @@ export const useAppStore = create<AppState>((set) => ({
     try {
       const studioDocuments = await listStudioDocuments();
       const studioNotes = (await Promise.all(
-        studioDocuments.map((document) => getPage(document.note_page_id))
+        studioDocuments.map(async (document) => {
+          const note = await getPage(document.note_page_id);
+          if (note) return note;
+          return await createStudioNotePage(document.note_page_id, `${document.title} Notes`);
+        })
       )).filter((page): page is Page => Boolean(page));
       set((state) => {
         const currentStudioDocumentId = studioDocuments.some((document) => document.id === state.currentStudioDocumentId)

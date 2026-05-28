@@ -1,6 +1,7 @@
 import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { computeFloatingPosition, FloatingPlacement } from "../lib/floatingPosition";
+import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 
 type FloatingPopoverProps = {
   anchorElement: HTMLElement | null;
@@ -104,6 +105,8 @@ export function FloatingPopover({
   useEffect(() => {
     if (!open || !anchorElement || !onOpenChange) return;
 
+    closeOpenOverlays();
+
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
@@ -118,13 +121,16 @@ export function FloatingPopover({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onOpenChange(false);
     };
+    const handleCloseOverlays = () => onOpenChange(false);
 
     document.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, handleCloseOverlays);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, handleCloseOverlays);
     };
   }, [anchorElement, onOpenChange, open]);
 
