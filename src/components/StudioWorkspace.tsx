@@ -27,6 +27,7 @@ type StudioWorkspaceProps = {
   pages: Page[];
   onSelectPage: (id: string) => void;
   onCreateMissingNote: (documentId: string) => void;
+  onReplacePdfFile: (documentId: string) => void;
   onUpdateViewer: (
     id: string,
     updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }
@@ -51,6 +52,7 @@ export function StudioWorkspace({
   pages,
   onSelectPage,
   onCreateMissingNote,
+  onReplacePdfFile,
   onUpdateViewer,
 }: StudioWorkspaceProps) {
   const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
@@ -69,6 +71,7 @@ export function StudioWorkspace({
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const zoomPersistTimeoutRef = useRef<number | null>(null);
+  const attemptedNoteRecoveryRef = useRef<string | null>(null);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
   const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
   const effectiveViewMode: StudioViewMode = viewMode === "note" && !note ? "pdf" : viewMode;
@@ -79,7 +82,7 @@ export function StudioWorkspace({
   useEffect(() => {
     setPageDraft(String(currentPage));
     setPdfLoadFailed(false);
-  }, [currentPage, pdfSrc]);
+  }, [currentPage, pdfSrc, document.updated_at]);
 
   useEffect(() => {
     setPdfPanelRatio(getStoredPanelRatio(document.id));
@@ -91,6 +94,17 @@ export function StudioWorkspace({
   useEffect(() => {
     setLocalZoom(persistedZoom);
   }, [document.id, persistedZoom]);
+
+  useEffect(() => {
+    if (note) {
+      attemptedNoteRecoveryRef.current = null;
+      return;
+    }
+    if (attemptedNoteRecoveryRef.current === document.id) return;
+
+    attemptedNoteRecoveryRef.current = document.id;
+    onCreateMissingNote(document.id);
+  }, [document.id, note, onCreateMissingNote]);
 
   useEffect(() => {
     return () => {
@@ -117,6 +131,11 @@ export function StudioWorkspace({
   const handlePdfError = useCallback(() => {
     setPdfLoadFailed(true);
   }, []);
+
+  const handleReplacePdfFile = useCallback(() => {
+    setPdfLoadFailed(false);
+    onReplacePdfFile(document.id);
+  }, [document.id, onReplacePdfFile]);
 
   const commitPageDraft = () => {
     updatePage(Number(pageDraft));
@@ -199,15 +218,23 @@ export function StudioWorkspace({
     <section className="on-studio-panel min-w-0 bg-muted/20" aria-label="PDF panel">
       {pdfLoadFailed ? (
         <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
-          <div>
+          <div className="max-w-sm">
             <div className="font-medium text-foreground">PDF preview unavailable</div>
-            <div className="mt-2 max-w-sm">
-              The document was imported, but the built-in preview could not render it.
+            <div className="mt-2">
+              The imported PDF file is missing or cannot be rendered.
             </div>
+            <button
+              className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              onClick={handleReplacePdfFile}
+            >
+              <FilePlus className="h-4 w-4" />
+              Reimport PDF
+            </button>
           </div>
         </div>
       ) : (
         <StudioPdfViewer
+          key={`${document.id}-${document.updated_at}-${document.stored_file_path}`}
           src={pdfSrc}
           title={document.title}
           page={currentPage}

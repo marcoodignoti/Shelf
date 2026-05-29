@@ -12,11 +12,13 @@ import {
   listStudioProjects,
   renameStudioDocument,
   renameStudioProject,
+  replaceStudioDocumentFile,
   StudioDocument,
   StudioPanelLayout,
   StudioProject,
   updateStudioDocumentProject,
-  updateStudioDocumentViewerState
+  updateStudioDocumentViewerState,
+  updateStudioProjectParent
 } from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -39,10 +41,12 @@ interface AppState {
   setCurrentPageId: (id: string | null) => void;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
   setCurrentStudioDocumentId: (id: string | null) => void;
-  importStudioPdfAction: () => Promise<StudioDocument | null>;
+  importStudioPdfAction: (projectId?: string | null) => Promise<StudioDocument | null>;
+  replaceStudioPdfAction: (documentId: string) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
   renameStudioProjectAction: (id: string, name: string) => Promise<void>;
+  updateStudioProjectParentAction: (id: string, parentId: string | null) => Promise<void>;
   deleteStudioProjectAction: (id: string) => Promise<void>;
   updateStudioDocumentProjectAction: (documentId: string, projectId: string | null) => Promise<void>;
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
@@ -196,7 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
-  importStudioPdfAction: async () => {
+  importStudioPdfAction: async (projectId = null) => {
     try {
       const path = await open({
         multiple: false,
@@ -205,16 +209,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!path || Array.isArray(path)) return null;
 
       const document = await importStudioDocument(path);
+      const importedDocument = projectId
+        ? { ...document, project_id: projectId, updated_at: new Date().toISOString() }
+        : document;
+      if (projectId) {
+        await updateStudioDocumentProject(document.id, projectId);
+      }
       const note = await getPage(document.note_page_id);
       localStorage.setItem('opennotion-workspace-mode', 'studio');
       localStorage.setItem('opennotion-current-studio-document-id', document.id);
       set((state) => ({
-        studioDocuments: [document, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
+        studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
         currentStudioDocumentId: document.id,
         workspaceMode: 'studio',
         error: null
       }));
+      return importedDocument;
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      return null;
+    }
+  },
+  replaceStudioPdfAction: async (documentId) => {
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!path || Array.isArray(path)) return null;
+
+      const document = await replaceStudioDocumentFile(documentId, path);
+      set((state) => ({
+        studioDocuments: state.studioDocuments.map((candidate) =>
+          candidate.id === document.id ? document : candidate
+        ),
+        currentStudioDocumentId: document.id,
+        error: null,
+        notice: { kind: 'success', message: 'Studio PDF reimported.' }
+      }));
+      localStorage.setItem('opennotion-current-studio-document-id', document.id);
       return document;
     } catch (error: unknown) {
       const message = userMessageForError(error);
@@ -271,6 +306,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       await renameStudioProject(id, trimmedName);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });
+    }
+  },
+  updateStudioProjectParentAction: async (id, parentId) => {
+    if (id === parentId) return;
+
+    const previousProjects = get().studioProjects;
+    const updated_at = new Date().toISOString();
+    set((state) => ({
+      studioProjects: state.studioProjects.map((project) =>
+        project.id === id ? { ...project, parent_id: parentId, updated_at } : project
+      ),
+      error: null
+    }));
+
+    try {
+      await updateStudioProjectParent(id, parentId);
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });

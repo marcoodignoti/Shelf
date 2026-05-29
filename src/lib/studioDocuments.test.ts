@@ -123,6 +123,20 @@ describe("studio document helpers", () => {
     expect(studioProjectDepth(project("orphan", "Orphan", 3, "missing"), projects)).toBe(0);
   });
 
+  it("orders nested projects directly after their parent", () => {
+    const projects: StudioProject[] = [
+      project("child", "Mechanics", 0, "root"),
+      project("sibling", "Biology", 1),
+      project("root", "Physics", 2),
+    ];
+
+    expect(groupStudioDocumentsByProject([], projects).map((group) => group.project.id)).toEqual([
+      "sibling",
+      "root",
+      "child",
+    ]);
+  });
+
   it("normalizes panel layout", () => {
     expect(normalizePanelLayout("note-left")).toBe("note-left");
     expect(normalizePanelLayout("bad")).toBe("pdf-left");

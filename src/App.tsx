@@ -23,6 +23,7 @@ export default function App() {
     currentStudioDocumentId,
     updateStudioViewerAction,
     createMissingStudioNoteAction,
+    replaceStudioPdfAction,
   } = useAppStore();
 
   useEffect(() => {
@@ -72,6 +73,12 @@ export default function App() {
   const handleUpdateStudioViewer = useCallback((id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }) => {
     void updateStudioViewerAction(id, updates);
   }, [updateStudioViewerAction]);
+  const handleCreateMissingStudioNote = useCallback((documentId: string) => {
+    void createMissingStudioNoteAction(documentId);
+  }, [createMissingStudioNoteAction]);
+  const handleReplaceStudioPdf = useCallback((documentId: string) => {
+    void replaceStudioPdfAction(documentId);
+  }, [replaceStudioPdfAction]);
 
   return (
     <Layout>
@@ -87,7 +94,8 @@ export default function App() {
               note={currentStudioNote}
               pages={pages}
               onSelectPage={setCurrentPageId}
-              onCreateMissingNote={(documentId) => void createMissingStudioNoteAction(documentId)}
+              onCreateMissingNote={handleCreateMissingStudioNote}
+              onReplacePdfFile={handleReplaceStudioPdf}
               onUpdateViewer={handleUpdateStudioViewer}
             />
           </ErrorBoundary>

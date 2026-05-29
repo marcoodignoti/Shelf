@@ -634,6 +634,41 @@ async fn import_studio_document_record(
     .await
 }
 
+async fn replace_studio_document_file_record(
+    db: &SqlitePool,
+    id: &str,
+    original_filename: &str,
+    stored_file_path: &str,
+    updated_at: &str,
+) -> Result<StudioDocument, String> {
+    let result = sqlx::query(
+        "UPDATE studio_documents
+         SET original_filename = ?, stored_file_path = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(original_filename)
+    .bind(stored_file_path)
+    .bind(updated_at)
+    .bind(id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("document not found".to_string());
+    }
+
+    sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())
+}
+
 async fn update_studio_document_viewer_state_record(
     db: &SqlitePool,
     id: &str,
@@ -774,6 +809,19 @@ async fn create_studio_project_record(
         return Err("project name cannot be empty".to_string());
     }
 
+    if let Some(parent_id) = parent_id {
+        let parent_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+                .bind(parent_id)
+                .fetch_one(db)
+                .await
+                .map_err(|error| error.to_string())?;
+
+        if parent_exists == 0 {
+            return Err("parent project not found".to_string());
+        }
+    }
+
     let sort_order: i64 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(sort_order), -1) + 1
          FROM studio_projects
@@ -828,6 +876,95 @@ async fn rename_studio_project_record(
         .execute(db)
         .await
         .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("project not found".to_string());
+    }
+
+    Ok(())
+}
+
+async fn update_studio_project_parent_record(
+    db: &SqlitePool,
+    id: &str,
+    parent_id: Option<&str>,
+    updated_at: &str,
+) -> Result<(), String> {
+    if parent_id == Some(id) {
+        return Err("project cannot be its own parent".to_string());
+    }
+
+    if let Some(parent_id) = parent_id {
+        let parent_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+                .bind(parent_id)
+                .fetch_one(db)
+                .await
+                .map_err(|error| error.to_string())?;
+
+        if parent_exists == 0 {
+            return Err("parent project not found".to_string());
+        }
+
+        let would_cycle: i64 = sqlx::query_scalar(
+            "WITH RECURSIVE ancestors(id, parent_id) AS (
+                SELECT id, parent_id
+                FROM studio_projects
+                WHERE id = ?
+                UNION ALL
+                SELECT studio_projects.id, studio_projects.parent_id
+                FROM studio_projects
+                INNER JOIN ancestors ON studio_projects.id = ancestors.parent_id
+             )
+             SELECT COUNT(*)
+             FROM ancestors
+             WHERE id = ?",
+        )
+        .bind(parent_id)
+        .bind(id)
+        .fetch_one(db)
+        .await
+        .map_err(|error| error.to_string())?;
+
+        if would_cycle > 0 {
+            return Err("project cycle not allowed".to_string());
+        }
+    }
+
+    let project_exists: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .map_err(|error| error.to_string())?;
+
+    if project_exists == 0 {
+        return Err("project not found".to_string());
+    }
+
+    let sort_order: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1
+         FROM studio_projects
+         WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?",
+    )
+    .bind(parent_id)
+    .bind(parent_id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let result = sqlx::query(
+        "UPDATE studio_projects
+         SET parent_id = ?, sort_order = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(parent_id)
+    .bind(sort_order)
+    .bind(updated_at)
+    .bind(id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
 
     if result.rows_affected() == 0 {
         return Err("project not found".to_string());
@@ -1639,6 +1776,16 @@ async fn rename_studio_project(
 }
 
 #[tauri::command]
+async fn update_studio_project_parent(
+    id: String,
+    parent_id: Option<String>,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    update_studio_project_parent_record(&state.db, &id, parent_id.as_deref(), &updated_at).await
+}
+
+#[tauri::command]
 async fn delete_studio_project(
     id: String,
     updated_at: String,
@@ -1702,6 +1849,43 @@ async fn import_studio_document<R: Runtime>(
             Err(error.to_string())
         }
     }
+}
+
+#[tauri::command]
+async fn replace_studio_document_file<R: Runtime>(
+    id: String,
+    source_path: String,
+    updated_at: String,
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<StudioDocument, String> {
+    let source = Path::new(&source_path);
+    validated_pdf_file(source)?;
+    let source = source.canonicalize().map_err(|error| error.to_string())?;
+    let original_filename = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "PDF file name is invalid".to_string())?
+        .to_string();
+    let destination = studio_pdf_destination(&app, &id)?;
+    let should_copy = destination
+        .canonicalize()
+        .map(|destination| destination != source)
+        .unwrap_or(true);
+
+    if should_copy {
+        copy(&source, &destination).map_err(|error| error.to_string())?;
+    }
+
+    let stored_file_path = destination.to_string_lossy().to_string();
+    replace_studio_document_file_record(
+        &state.db,
+        &id,
+        &original_filename,
+        &stored_file_path,
+        &updated_at,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1881,9 +2065,11 @@ pub fn run() {
             list_studio_projects,
             create_studio_project,
             rename_studio_project,
+            update_studio_project_parent,
             delete_studio_project,
             update_studio_document_project,
             import_studio_document,
+            replace_studio_document_file,
             update_studio_document_viewer_state,
             rename_studio_document,
             delete_studio_document,
@@ -2268,6 +2454,49 @@ mod tests {
     }
 
     #[test]
+    fn replace_studio_document_file_updates_pdf_metadata() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "missing.pdf",
+                    stored_file_path: "/tmp/missing.pdf",
+                    imported_at: "2026-05-29T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            let document = replace_studio_document_file_record(
+                &db,
+                "doc-1",
+                "fixed.pdf",
+                "/tmp/opennotion-studio/doc-1/source.pdf",
+                "2026-05-29T00:10:00.000Z",
+            )
+            .await
+            .expect("replace document file");
+
+            assert_eq!(document.original_filename, "fixed.pdf");
+            assert_eq!(
+                document.stored_file_path,
+                "/tmp/opennotion-studio/doc-1/source.pdf"
+            );
+            assert_eq!(document.updated_at, "2026-05-29T00:10:00.000Z");
+
+            let note = get_page_record(&db, "note-1")
+                .await
+                .expect("load linked note")
+                .expect("note still exists");
+            assert_eq!(note.title, "Sample Notes");
+        });
+    }
+
+    #[test]
     fn studio_project_records_create_rename_assign_and_delete() {
         tauri::async_runtime::block_on(async {
             let db = test_db().await;
@@ -2339,6 +2568,88 @@ mod tests {
                 .expect("list documents")
                 .remove(0);
             assert_eq!(unassigned_document.project_id, None);
+        });
+    }
+
+    #[test]
+    fn studio_project_parent_records_reparent_and_reject_cycles() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_studio_project_record(&db, "root", "Physics", None, "2026-05-29T00:00:00.000Z")
+                .await
+                .expect("create root project");
+            create_studio_project_record(
+                &db,
+                "child",
+                "Mechanics",
+                Some("root"),
+                "2026-05-29T00:01:00.000Z",
+            )
+            .await
+            .expect("create child project");
+            create_studio_project_record(
+                &db,
+                "sibling",
+                "Electromagnetism",
+                None,
+                "2026-05-29T00:02:00.000Z",
+            )
+            .await
+            .expect("create sibling project");
+
+            update_studio_project_parent_record(
+                &db,
+                "sibling",
+                Some("child"),
+                "2026-05-29T00:03:00.000Z",
+            )
+            .await
+            .expect("move sibling under child");
+
+            let projects = list_studio_project_records(&db)
+                .await
+                .expect("list projects");
+            let moved = projects
+                .iter()
+                .find(|project| project.id == "sibling")
+                .expect("moved project exists");
+            assert_eq!(moved.parent_id.as_deref(), Some("child"));
+
+            let self_parent_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("root"),
+                "2026-05-29T00:04:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                self_parent_result.expect_err("reject self parent"),
+                "project cannot be its own parent"
+            );
+
+            let cycle_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("sibling"),
+                "2026-05-29T00:05:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                cycle_result.expect_err("reject cycle"),
+                "project cycle not allowed"
+            );
+
+            let missing_parent_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("missing"),
+                "2026-05-29T00:06:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                missing_parent_result.expect_err("reject missing parent"),
+                "parent project not found"
+            );
         });
     }
 

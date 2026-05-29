@@ -6,6 +6,9 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
 
 const DEFAULT_FORMULA = "\\nabla \\cdot \\vec{E}";
+const KATEX_MACROS = {
+  "\\zigzag": "\\mathrel{\\diagup\\!\\diagdown\\!\\diagup\\!\\diagdown}",
+};
 
 type InlineText = {
   type: "text";
@@ -298,6 +301,11 @@ export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, 
   let changed = normalizeBracketedMathBlocks(editor);
 
   const visit = (block: Block<any, any, any>) => {
+    if (block.type === "codeBlock") {
+      block.children.forEach(visit);
+      return;
+    }
+
     const blockFormula = formulaFromBlockContent(block.content);
     if (blockFormula && block.type !== "formula") {
       changed = true;
@@ -352,10 +360,7 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
   let formulaLines: string[] | null = null;
 
   const flushParagraph = () => {
-    for (const line of paragraphLines.splice(0)) {
-      if (!line.trim()) continue;
-      blocks.push({ type: "paragraph", content: line });
-    }
+    blocks.push(...blocksFromMarkdownLikeLines(paragraphLines.splice(0)));
   };
 
   const flushFormula = () => {
@@ -495,10 +500,12 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
   }
 
   pushText(items, text.slice(cursor), styles);
-  return {
-    changed,
-    content: changed ? items : [{ type: "text", text, styles }],
-  };
+  if (changed) return { changed: true, content: items };
+
+  const undelimited = splitUndelimitedLatexExpressions(text, styles);
+  if (undelimited) return undelimited;
+
+  return { changed: false, content: [{ type: "text", text, styles }] };
 }
 
 function formulaFromText(text: string): string | null {
@@ -519,6 +526,9 @@ function formulaFromText(text: string): string | null {
     const innerFormula = formula.slice(1, -1).trim();
     return isLikelyLatexFormula(innerFormula) ? innerFormula : null;
   }
+
+  const undelimitedFormula = undelimitedLatexFormulaFromText(formula);
+  if (undelimitedFormula) return undelimitedFormula;
 
   return standaloneLatexFormula(formula);
 }
@@ -581,7 +591,7 @@ function findUnescapedDelimiter(text: string, delimiter: "$$" | "$" | "]" | ")" 
 
 function isInlineFormula(formula: string, delimiter: "$$" | "$" | "[" | "(" | "\\[" | "\\("): boolean {
   if (!formula || formula.includes("\n")) return false;
-  return delimiter === "$" || delimiter === "$$" || isLikelyLatexFormula(formula);
+  return delimiter === "$" || delimiter === "$$" || delimiter === "\\[" || delimiter === "\\(" || isLikelyLatexFormula(formula);
 }
 
 function latexPrefixBeforeProse(text: string): { start: number; end: number; formula: string } | null {
@@ -620,57 +630,389 @@ function stripUnclosedMathPrefix(value: string): string {
 }
 
 function isLikelyLatexFormula(value: string): boolean {
-  return /\\(?:oint|int|nabla|vec|cdot|frac|partial|Sigma|Gamma|Delta|Phi|varepsilon|mathcal|mu|rho|pm|mp|times|div|sqrt|hat|left|right|text)\b/.test(value) ||
+  return /\\(?:oint|int|nabla|vec|overrightarrow|cdot|frac|partial|Sigma|sigma|Gamma|gamma|Delta|delta|Phi|phi|Omega|omega|theta|ell|varepsilon|mathcal|mu|rho|pi|pm|mp|times|div|sqrt|hat|dot|ddot|boxed|left|right|text|sin|cos|tan|qquad|quad|forall|leq|geq|approx)\b/.test(value) ||
     /[_^][{\\\w]/.test(value) ||
     /\\[a-zA-Z]+\{/.test(value);
+}
+
+function blocksFromMarkdownLikeLines(lines: string[]): PartialBlock[] {
+  const blocks: PartialBlock[] = [];
+  let codeFence: { language: string; lines: string[] } | null = null;
+
+  const flushCodeFence = () => {
+    if (!codeFence) return;
+    blocks.push({
+      type: "codeBlock",
+      props: { language: codeFence.language },
+      content: codeFence.lines.join("\n"),
+    } as unknown as PartialBlock);
+    codeFence = null;
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (codeFence) {
+      if (trimmed === "```") {
+        flushCodeFence();
+      } else {
+        codeFence.lines.push(line);
+      }
+      continue;
+    }
+
+    if (!trimmed) continue;
+
+    const codeFenceMatch = trimmed.match(/^```([A-Za-z0-9_-]+)?$/);
+    if (codeFenceMatch) {
+      codeFence = { language: codeFenceMatch[1] ?? "", lines: [] };
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({
+        type: "heading",
+        props: { level: headingMatch[1].length },
+        content: contentFromMarkdownLikeLine(headingMatch[2]),
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    const checklistMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+    if (checklistMatch) {
+      blocks.push({
+        type: "checkListItem",
+        props: { checked: checklistMatch[1].toLowerCase() === "x" },
+        content: contentFromMarkdownLikeLine(checklistMatch[2]),
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      blocks.push({
+        type: "bulletListItem",
+        content: contentFromMarkdownLikeLine(bulletMatch[1]),
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    const numberedMatch = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (numberedMatch) {
+      blocks.push({
+        type: "numberedListItem",
+        content: contentFromMarkdownLikeLine(numberedMatch[1]),
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    const quoteMatch = trimmed.match(/^>\s+(.+)$/);
+    blocks.push({
+      type: "paragraph",
+      content: contentFromMarkdownLikeLine(quoteMatch?.[1] ?? line),
+    } as unknown as PartialBlock);
+  }
+
+  flushCodeFence();
+  return blocks;
+}
+
+function contentFromMarkdownLikeLine(line: string): string | InlineContent[] {
+  const normalized = normalizeMathInlineContent([{ type: "text", text: line, styles: {} }]);
+  return normalized.changed ? normalized.content : line;
+}
+
+function splitUndelimitedLatexExpressions(text: string, styles: Record<string, unknown>): {
+  changed: boolean;
+  content: InlineContent[];
+} | null {
+  const items: InlineContent[] = [];
+  let cursor = 0;
+  let changed = false;
+
+  while (cursor < text.length) {
+    const expression = findNextUndelimitedLatexExpression(text, cursor);
+    if (!expression) break;
+
+    pushText(items, text.slice(cursor, expression.start), styles);
+    items.push({ type: "math", props: { formula: expression.formula } });
+    changed = true;
+    cursor = expression.end;
+  }
+
+  if (!changed) return null;
+
+  pushText(items, text.slice(cursor), styles);
+  return { changed: true, content: items };
+}
+
+function undelimitedLatexFormulaFromText(text: string): string | null {
+  const expression = readUndelimitedLatexExpression(text.trim(), 0);
+  if (!expression || expression.end !== text.trim().length) return null;
+  return expression.formula;
+}
+
+function findNextUndelimitedLatexExpression(text: string, startIndex: number): {
+  start: number;
+  end: number;
+  formula: string;
+} | null {
+  for (let index = startIndex; index < text.length; index += 1) {
+    if (!isFormulaStartBoundary(text, index)) continue;
+    if (text[index] !== "\\" && !/[A-Za-z]/.test(text[index])) continue;
+
+    const expression = readUndelimitedLatexExpression(text, index);
+    if (expression) return { start: index, ...expression };
+  }
+
+  return null;
+}
+
+function readUndelimitedLatexExpression(text: string, startIndex: number): {
+  end: number;
+  formula: string;
+} | null {
+  const firstAtom = readMathAtom(text, startIndex);
+  if (!firstAtom) return null;
+
+  let cursor = skipSpaces(text, firstAtom.end);
+  const relation = readMathRelation(text, cursor);
+  if (!relation) return null;
+
+  cursor = skipSpaces(text, relation.end);
+  let sawLatexSyntax = firstAtom.hasLatexSyntax || relation.hasLatexSyntax;
+  let lastGoodEnd = sawLatexSyntax ? cursor : -1;
+  let tokenCount = 0;
+
+  while (cursor < text.length) {
+    const spacedCursor = skipSpaces(text, cursor);
+    if (spacedCursor > cursor && /^[A-Za-z]\s+[A-Za-zÀ-ÿ]{2,}\b/.test(text.slice(spacedCursor))) {
+      break;
+    }
+
+    cursor = spacedCursor;
+    if (cursor >= text.length || /[:;,.]/.test(text[cursor])) break;
+
+    const operator = readMathOperator(text, cursor);
+    if (operator) {
+      sawLatexSyntax ||= operator.hasLatexSyntax;
+      cursor = skipSpaces(text, operator.end);
+      continue;
+    }
+
+    const atom = readMathAtom(text, cursor);
+    if (!atom) break;
+
+    sawLatexSyntax ||= atom.hasLatexSyntax;
+    tokenCount += 1;
+    cursor = atom.end;
+
+    if (sawLatexSyntax && tokenCount > 0) {
+      lastGoodEnd = cursor;
+    }
+  }
+
+  if (lastGoodEnd === -1) return null;
+
+  const formula = text.slice(startIndex, lastGoodEnd).trim();
+  if (!isLikelyLatexFormula(formula) || containsProseText(formula)) return null;
+
+  return {
+    end: lastGoodEnd,
+    formula,
+  };
+}
+
+function skipSpaces(text: string, startIndex: number): number {
+  let cursor = startIndex;
+  while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+  return cursor;
+}
+
+function isFormulaStartBoundary(text: string, index: number): boolean {
+  if (index === 0) return true;
+  return !/[A-Za-z0-9_\\]/.test(text[index - 1]);
+}
+
+function readMathRelation(text: string, startIndex: number): { end: number; hasLatexSyntax: boolean } | null {
+  for (const relation of ["\\leq", "\\geq", "\\approx"]) {
+    if (text.startsWith(relation, startIndex)) {
+      return { end: startIndex + relation.length, hasLatexSyntax: true };
+    }
+  }
+
+  if (/[=<>]/.test(text[startIndex])) {
+    return { end: startIndex + 1, hasLatexSyntax: false };
+  }
+
+  return null;
+}
+
+function readMathOperator(text: string, startIndex: number): { end: number; hasLatexSyntax: boolean } | null {
+  for (const operator of ["\\cdot", "\\times", "\\div", "\\pm", "\\mp", "\\qquad", "\\quad", "\\forall"]) {
+    if (text.startsWith(operator, startIndex)) {
+      return { end: startIndex + operator.length, hasLatexSyntax: true };
+    }
+  }
+
+  if (/[-+*/=<>()[\]]/.test(text[startIndex])) {
+    return { end: startIndex + 1, hasLatexSyntax: false };
+  }
+
+  return null;
+}
+
+function readMathAtom(text: string, startIndex: number): { end: number; hasLatexSyntax: boolean } | null {
+  if (text.startsWith("\\ ", startIndex)) {
+    return { end: startIndex + 2, hasLatexSyntax: true };
+  }
+
+  const commandMatch = text.slice(startIndex).match(/^\\[a-zA-Z]+/);
+  if (commandMatch) {
+    let cursor = startIndex + commandMatch[0].length;
+    cursor = consumeOptionalBracedGroups(text, cursor);
+    cursor = consumeMathSuffixes(text, cursor);
+    return { end: cursor, hasLatexSyntax: true };
+  }
+
+  const numberMatch = text.slice(startIndex).match(/^\d+(?:[.,]\d+)?/);
+  if (numberMatch) {
+    let cursor = startIndex + numberMatch[0].length;
+    cursor = consumeMathSuffixes(text, cursor);
+    return { end: cursor, hasLatexSyntax: cursor > startIndex + numberMatch[0].length };
+  }
+
+  const wordMatch = text.slice(startIndex).match(/^[A-Za-z]+/);
+  if (wordMatch) {
+    let cursor = startIndex + wordMatch[0].length;
+    cursor = consumeMathSuffixes(text, cursor);
+    const hasSuffix = cursor > startIndex + wordMatch[0].length;
+    if (wordMatch[0].length > 1 && !hasSuffix) return null;
+    return { end: cursor, hasLatexSyntax: hasSuffix };
+  }
+
+  return null;
+}
+
+function consumeOptionalBracedGroups(text: string, startIndex: number): number {
+  let cursor = startIndex;
+
+  while (text[cursor] === "{") {
+    const end = findMatchingBrace(text, cursor);
+    if (end === -1) break;
+    cursor = end + 1;
+  }
+
+  return cursor;
+}
+
+function consumeMathSuffixes(text: string, startIndex: number): number {
+  let cursor = startIndex;
+
+  while (text[cursor] === "_" || text[cursor] === "^") {
+    cursor += 1;
+    if (text[cursor] === "{") {
+      const end = findMatchingBrace(text, cursor);
+      if (end === -1) return cursor;
+      cursor = end + 1;
+    } else if (text[cursor] === "\\") {
+      const commandMatch = text.slice(cursor).match(/^\\[a-zA-Z]+/);
+      if (!commandMatch) return cursor;
+      cursor += commandMatch[0].length;
+    } else {
+      const valueMatch = text.slice(cursor).match(/^-?\d+|^[A-Za-z0-9]+/);
+      if (!valueMatch) return cursor;
+      cursor += valueMatch[0].length;
+    }
+  }
+
+  return cursor;
+}
+
+function findMatchingBrace(text: string, startIndex: number): number {
+  let depth = 0;
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    if (text[index] === "{") depth += 1;
+    if (text[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+
+  return -1;
 }
 
 function normalizeBracketedMathBlocks(editor: BlockNoteEditor<any, any, any>): boolean {
   let changed = false;
 
-  const visitSiblings = (blocks: Block<any, any, any>[]) => {
-    for (let index = 0; index < blocks.length - 2; index += 1) {
-      const openBlock = blocks[index];
-      const openText = textFromBlockContent(openBlock.content).trim();
-      if (!isOpenMathFence(openText)) continue;
+  while (normalizeFirstBracketedMathGroup(editor, editor.document)) {
+    changed = true;
+  }
 
-      const closeIndex = blocks.findIndex((block, candidateIndex) => (
-        candidateIndex > index + 1 && hasClosingMathFence(textFromMathBlock(block).trim())
-      ));
-      if (closeIndex === -1) continue;
-
-      const formulaBlocks = blocks.slice(index + 1, closeIndex + 1);
-      const formulaParts = formulaBlocks.map((block) => stripClosingMathFence(textFromMathBlock(block).trim())).filter(Boolean);
-      if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
-
-      const formula = formulaParts.join(" ");
-      editor.updateBlock(formulaBlocks[0], {
-        type: "formula",
-        props: { formula },
-        content: undefined,
-      } as never);
-
-      const blocksToRemove = [openBlock, ...formulaBlocks.slice(1)];
-      if (blocksToRemove.length > 0) {
-        editor.removeBlocks(blocksToRemove);
-        changed = true;
-        index = closeIndex;
-      }
-    }
-
-    blocks.forEach((block) => {
-      if (block.children.length > 0) {
-        visitSiblings(block.children);
-      }
-    });
-  };
-
-  visitSiblings(editor.document);
   return changed;
+}
+
+function normalizeFirstBracketedMathGroup(
+  editor: BlockNoteEditor<any, any, any>,
+  blocks: Block<any, any, any>[]
+): boolean {
+  for (let index = 0; index < blocks.length - 2; index += 1) {
+    const openBlock = blocks[index];
+    const openText = textFromBlockContent(openBlock.content).trim();
+    const openFence = openingMathFence(openText);
+    if (!openFence) continue;
+
+    const closeIndex = blocks.findIndex((block, candidateIndex) => (
+      candidateIndex > index + 1 && hasClosingMathFence(textFromMathBlock(block).trim())
+    ));
+    if (closeIndex === -1) continue;
+
+    const formulaBlocks = blocks.slice(openFence.hasFormulaContent ? index : index + 1, closeIndex + 1);
+    const formulaParts = formulaBlocks.map((block) => {
+      const text = textFromMathBlock(block).trim();
+      const withoutOpeningFence = block === openBlock ? stripOpeningMathFence(text) : text;
+      return stripClosingMathFence(withoutOpeningFence.trim()).replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+    if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
+
+    const formula = formulaParts.join(" ");
+    const targetBlock = openFence.hasFormulaContent ? openBlock : formulaBlocks[0];
+    const blocksToRemove = openFence.hasFormulaContent ? formulaBlocks.slice(1) : [openBlock, ...formulaBlocks.slice(1)];
+    editor.removeBlocks(blocksToRemove);
+    editor.updateBlock(targetBlock, {
+      type: "formula",
+      props: { formula },
+      content: undefined,
+    } as never);
+    return true;
+  }
+
+  for (const block of blocks) {
+    if (block.children.length > 0 && normalizeFirstBracketedMathGroup(editor, block.children)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function openingMathFence(text: string): { hasFormulaContent: boolean } | null {
+  if (isOpenMathFence(text)) return { hasFormulaContent: false };
+  const stripped = stripOpeningMathFence(text);
+  return stripped !== text && stripped.trim().length > 0 ? { hasFormulaContent: true } : null;
 }
 
 function isOpenMathFence(text: string): boolean {
   return text === "[" || text === "\\[" || text === "$$";
+}
+
+function stripOpeningMathFence(text: string): string {
+  const value = text.trim();
+  if (value.startsWith("$$")) return value.slice(2).trim();
+  if (value.startsWith("\\[")) return value.slice(2).trim();
+  return value;
 }
 
 function isCloseMathFence(text: string): boolean {
@@ -690,12 +1032,43 @@ function stripClosingMathFence(text: string): string {
 
 function isLikelyLatexFormulaLine(value: string): boolean {
   if (!value) return false;
+  if (/^[A-Za-z]$/.test(value)) return true;
   if (isLikelyLatexFormula(value)) return true;
   if (/^\\[a-zA-Z]+\s*[()]?$/.test(value)) return true;
   if (/^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}\\]+)+$/.test(value)) return true;
   if (/^[=+\-*/^_{}\\\s\d.,()[\]]+$/.test(value)) return true;
+  if (isCompactMathFenceLine(value)) return true;
 
   return !containsProseText(value) && /[=+\-*/^_\\]/.test(value);
+}
+
+function isCompactMathFenceLine(value: string): boolean {
+  if (!/^[A-Za-z0-9_{}\\^=+\-*/.,()[\]\s<>|!,]+$/.test(value)) return false;
+  if (!/[A-Za-z\\=+\-*/^_{}]/.test(value)) return false;
+
+  const words = value
+    .replace(/\\[,;! ]/g, " ")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .match(/[A-Za-zÀ-ÿ]+/g) ?? [];
+
+  return words.every(isCompactMathWord);
+}
+
+function isCompactMathWord(word: string): boolean {
+  if (word.length <= 3) return true;
+
+  const allowedMathWords = new Set([
+    "alpha",
+    "beta",
+    "delta",
+    "gamma",
+    "omega",
+    "phi",
+    "sigma",
+    "theta",
+  ]);
+
+  return allowedMathWords.has(word.toLowerCase());
 }
 
 function containsProseText(value: string): boolean {
@@ -706,6 +1079,7 @@ function containsProseText(value: string): boolean {
     "dz",
     "dl",
     "ds",
+    "eq",
     "sigma",
     "gamma",
     "delta",
@@ -813,10 +1187,44 @@ function isMathInlineContent(item: InlineContent): item is InlineMath {
 }
 
 export function renderFormulaHtml(formula: string, displayMode = false): string {
-  return katex.renderToString(formula || "\\?", {
+  return katex.renderToString(normalizeFormulaForKatex(formula || "\\?"), {
     throwOnError: false,
     strict: false,
     output: "html",
     displayMode,
+    macros: KATEX_MACROS,
   });
+}
+
+function normalizeFormulaForKatex(formula: string): string {
+  const strippedFormula = stripFormulaDelimiters(formula);
+
+  return strippedFormula
+    .replace(/\\(sin|cos|tan)(theta|phi|alpha|beta|gamma|omega)\b/g, (_match, fn, variable) => `\\${fn}\\${variable}`)
+    .replace(/!!(?=\s*\\zigzag\b)/g, "\\!")
+    .replace(/(\\zigzag\b\s*)!!/g, "$1\\!");
+}
+
+function stripFormulaDelimiters(formula: string): string {
+  let value = formula.trim();
+
+  if (value.startsWith("$$")) {
+    value = value.slice(2).trim();
+    if (value.endsWith("$$")) value = value.slice(0, -2).trim();
+    return value;
+  }
+
+  if (value.startsWith("\\[")) {
+    value = value.slice(2).trim();
+    if (value.endsWith("\\]")) value = value.slice(0, -2).trim();
+    return value;
+  }
+
+  if (value.startsWith("$")) {
+    value = value.slice(1).trim();
+    if (value.endsWith("$")) value = value.slice(0, -1).trim();
+    return value;
+  }
+
+  return value;
 }

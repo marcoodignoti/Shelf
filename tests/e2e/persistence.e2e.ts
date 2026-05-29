@@ -563,6 +563,234 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
   await expect(page.getByLabel("Formula preview: q = \\pm Ne")).toBeVisible();
 });
 
+test("preserves ChatGPT-style markdown while normalizing pasted formulas", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("ChatGPT Paste Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "## Regole rapide",
+        "",
+        "- Corrente maggiore dove \\(R\\) è minore.",
+        "- Equivalente: \\(R_{eq} < R_i\\).",
+        "",
+        "```text",
+        "R = 2 \\cdot 10^{-4}\\ \\Omega",
+        "```",
+        "",
+        "$$",
+        "P",
+        "=",
+        "R_1 i_1^2",
+        "+",
+        "R_2 i_2^2",
+        "$$",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByRole("heading", { name: "Regole rapide" })).toBeVisible();
+  await expect(page.getByText("Corrente maggiore dove", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: R", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: R_{eq} < R_i", exact: true })).toBeVisible();
+  await expect(page.getByText("R = 2 \\cdot 10^{-4}\\ \\Omega", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Formula preview: P = R_1 i_1^2 + R_2 i_2^2")).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "ChatGPT Paste Smoke")?.content ?? "";
+
+      return (
+        content.includes('"type":"heading"') &&
+        content.includes('"type":"bulletListItem"') &&
+        content.includes('"type":"codeBlock"') &&
+        content.includes('"type":"formula"') &&
+        content.includes('"type":"math"')
+      );
+    },
+    { key: storageKey }
+  );
+});
+
+test("renders compact ChatGPT physics formulas pasted from display math fences", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("Physics Formula Paste Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "In modulo:",
+        "$$",
+        "F",
+        "=",
+        "qvB\\sintheta",
+        "=",
+        "qv_nB",
+        "$$",
+        "",
+        "quindi:",
+        "$$",
+        "\\boxed{",
+        "v_p T",
+        "=",
+        "\\frac{2\\pi m v \\cos\\theta}",
+        "{qB}",
+        "}",
+        "$$",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByText("In modulo:", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Formula preview: F = qvB\\sintheta = qv_nB")).toBeVisible();
+  await expect(
+    page.getByLabel("Formula preview: \\boxed{ v_p T = \\frac{2\\pi m v \\cos\\theta} {qB} }")
+  ).toBeVisible();
+  await expect(page.getByText("$$", { exact: true })).toHaveCount(0);
+  await expect.poll(async () =>
+    page.locator(".katex").evaluateAll((elements) =>
+      elements.some((element) => element.innerHTML.includes("color:#cc0000"))
+    )
+  ).toBe(false);
+});
+
+test("repairs every previously split display math fence group on page load", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(({ key }) => {
+    const now = new Date().toISOString();
+    const content = JSON.stringify([
+      { id: "open-first", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "force", type: "paragraph", content: [{ type: "text", text: "F", styles: {} }], children: [] },
+      { id: "equals-first", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "lorentz", type: "paragraph", content: [{ type: "text", text: "qvB\\sintheta", styles: {} }], children: [] },
+      { id: "close-first", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "between", type: "paragraph", content: [{ type: "text", text: "quindi:", styles: {} }], children: [] },
+      { id: "open-second", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "moment", type: "paragraph", content: [{ type: "text", text: "M", styles: {} }], children: [] },
+      { id: "equals-second", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "work", type: "paragraph", content: [{ type: "text", text: "ia b B\\sin\\theta", styles: {} }], children: [] },
+      { id: "close-second", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+    ]);
+    const savedPage: MockPage = {
+      id: "split-formulas-page",
+      title: "Split Formula Repair Smoke",
+      parent_id: null,
+      content,
+      search_text: "",
+      icon: null,
+      cover_url: null,
+      is_deleted: 0,
+      is_favorite: 0,
+      is_template: 0,
+      is_database: 0,
+      database_schema: null,
+      properties: null,
+      sort_order: 0,
+      page_kind: "note",
+      created_at: now,
+      updated_at: now,
+    };
+
+    window.localStorage.setItem(key, JSON.stringify([savedPage]));
+    window.localStorage.setItem("opennotion-current-page-id", savedPage.id);
+  }, { key: storageKey });
+  await page.reload();
+
+  await expect(page.getByLabel("Formula preview: F = qvB\\sintheta")).toBeVisible();
+  await expect(page.getByLabel("Formula preview: M = ia b B\\sin\\theta")).toBeVisible();
+  await expect(page.getByText("$$", { exact: true })).toHaveCount(0);
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "Split Formula Repair Smoke")?.content ?? "";
+      return (
+        !content.includes("$$") &&
+        content.match(/"type":"formula"/g)?.length === 2 &&
+        content.includes("F = qvB\\\\sintheta") &&
+        content.includes("M = ia b B\\\\sin\\\\theta")
+      );
+    },
+    { key: storageKey }
+  );
+});
+
+test("repairs pre-existing display math fences attached to formula lines", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(({ key }) => {
+    const now = new Date().toISOString();
+    const content = JSON.stringify([
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "si ottiene:", styles: {} }], children: [] },
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "$$\n\\boxed{", styles: {} }], children: [] },
+      { id: "force", type: "heading", content: [{ type: "text", text: "d\\vec{F}", styles: {} }], children: [] },
+      {
+        id: "body",
+        type: "paragraph",
+        content: [{ type: "text", text: "i,d\\vec{s}\\times\\vec{B}\n}\n$$", styles: {} }],
+        children: [],
+      },
+      { id: "between", type: "paragraph", content: [{ type: "text", text: "con:", styles: {} }], children: [] },
+      { id: "open-second", type: "paragraph", content: [{ type: "text", text: "$$\n\\boxed{\n\\ddot{\\theta}\n+", styles: {} }], children: [] },
+      { id: "omega", type: "formula", props: { formula: "\\omega^2\\theta" }, content: undefined, children: [] },
+      { id: "close-second", type: "paragraph", content: [{ type: "text", text: "0\n}\n$$", styles: {} }], children: [] },
+    ]);
+    const savedPage: MockPage = {
+      id: "attached-split-formulas-page",
+      title: "Attached Split Formula Repair Smoke",
+      parent_id: null,
+      content,
+      search_text: "",
+      icon: null,
+      cover_url: null,
+      is_deleted: 0,
+      is_favorite: 0,
+      is_template: 0,
+      is_database: 0,
+      database_schema: null,
+      properties: null,
+      sort_order: 0,
+      page_kind: "note",
+      created_at: now,
+      updated_at: now,
+    };
+
+    window.localStorage.setItem(key, JSON.stringify([savedPage]));
+    window.localStorage.setItem("opennotion-current-page-id", savedPage.id);
+  }, { key: storageKey });
+  await page.reload();
+
+  await expect(page.getByLabel("Formula preview: \\boxed{ d\\vec{F} i,d\\vec{s}\\times\\vec{B} }")).toBeVisible();
+  await expect(page.getByLabel("Formula preview: \\boxed{ \\ddot{\\theta} + \\omega^2\\theta 0 }")).toBeVisible();
+  await expect(page.getByText("$$", { exact: true })).toHaveCount(0);
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "Attached Split Formula Repair Smoke")?.content ?? "";
+      return (
+        !content.includes("$$") &&
+        content.match(/"type":"formula"/g)?.length === 2 &&
+        content.includes("\\\\boxed{ d\\\\vec{F} i,d\\\\vec{s}\\\\times\\\\vec{B} }") &&
+        content.includes("\\\\boxed{ \\\\ddot{\\\\theta} + \\\\omega^2\\\\theta 0 }")
+      );
+    },
+    { key: storageKey }
+  );
+});
+
 test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
   await page.goto("/");
 

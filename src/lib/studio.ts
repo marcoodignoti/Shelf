@@ -59,6 +59,14 @@ export async function renameStudioProject(id: string, name: string): Promise<voi
   });
 }
 
+export async function updateStudioProjectParent(id: string, parentId: string | null): Promise<void> {
+  await invoke("update_studio_project_parent", {
+    id,
+    parentId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function deleteStudioProject(id: string): Promise<void> {
   await invoke("delete_studio_project", {
     id,
@@ -80,6 +88,14 @@ export async function importStudioDocument(sourcePath: string): Promise<StudioDo
     notePageId: crypto.randomUUID(),
     sourcePath,
     importedAt: new Date().toISOString(),
+  });
+}
+
+export async function replaceStudioDocumentFile(id: string, sourcePath: string): Promise<StudioDocument> {
+  return await invoke<StudioDocument>("replace_studio_document_file", {
+    id,
+    sourcePath,
+    updatedAt: new Date().toISOString(),
   });
 }
 
