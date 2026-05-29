@@ -22,6 +22,30 @@ describe("normalizeMathInlineContent", () => {
     ]);
   });
 
+  it("keeps dollar delimiters ahead of raw latex expression detection", () => {
+    expect(
+      normalizeMathInlineContent([
+        { type: "text", text: "Valore: $d = 1 \\text{ mm}$ ok", styles: {} },
+      ]).content
+    ).toEqual([
+      { type: "text", text: "Valore: ", styles: {} },
+      { type: "math", props: { formula: "d = 1 \\text{ mm}" } },
+      { type: "text", text: " ok", styles: {} },
+    ]);
+  });
+
+  it("converts explicit ChatGPT inline latex delimiters with simple variables", () => {
+    expect(
+      normalizeMathInlineContent([
+        { type: "text", text: "Corrente maggiore dove \\(R\\) è minore.", styles: {} },
+      ]).content
+    ).toEqual([
+      { type: "text", text: "Corrente maggiore dove ", styles: {} },
+      { type: "math", props: { formula: "R" } },
+      { type: "text", text: " è minore.", styles: {} },
+    ]);
+  });
+
   it("leaves incomplete formulas as text", () => {
     const content = [{ type: "text", text: "Price is $5", styles: {} }];
     expect(normalizeMathInlineContent(content).content).toEqual(content);
@@ -83,6 +107,24 @@ describe("normalizeMathInlineContent", () => {
     const content = [{ type: "text", text: "Read [chapter one] first", styles: {} }];
     expect(normalizeMathInlineContent(content).content).toEqual(content);
   });
+
+  it("converts latex expressions embedded in prose without dollar delimiters", () => {
+    expect(
+      normalizeMathInlineContent([
+        {
+          type: "text",
+          text: "N.B. filo di rame di diametro d = 1 \\text{ mm} e lunghezza \\ell = 1 \\text{ cm}:",
+          styles: {},
+        },
+      ]).content
+    ).toEqual([
+      { type: "text", text: "N.B. filo di rame di diametro ", styles: {} },
+      { type: "math", props: { formula: "d = 1 \\text{ mm}" } },
+      { type: "text", text: " e lunghezza ", styles: {} },
+      { type: "math", props: { formula: "\\ell = 1 \\text{ cm}" } },
+      { type: "text", text: ":", styles: {} },
+    ]);
+  });
 });
 
 describe("blocksFromPastedMathText", () => {
@@ -102,11 +144,75 @@ describe("blocksFromPastedMathText", () => {
     ]);
   });
 
+  it("keeps variable-only lines inside display math fences", () => {
+    expect(
+      blocksFromPastedMathText(
+        "Potenza spesa:\n$$\nP\n=\nR_1 i_1^2\n+\nR_2 i_2^2\n=\n\\Delta V_{AB}^2\n\\left(\n\\frac{1}{R_1}\n+\n\\frac{1}{R_2}\n\\right)\n=\n\\frac{\\Delta V_{AB}^2}{R_{eq}}\n$$"
+      )
+    ).toEqual([
+      { type: "paragraph", content: "Potenza spesa:" },
+      {
+        type: "formula",
+        props: {
+          formula: "P = R_1 i_1^2 + R_2 i_2^2 = \\Delta V_{AB}^2 \\left( \\frac{1}{R_1} + \\frac{1}{R_2} \\right) = \\frac{\\Delta V_{AB}^2}{R_{eq}}",
+        },
+      },
+    ]);
+  });
+
   it("turns one-line display math fences into a formula block", () => {
     expect(blocksFromPastedMathText("$$q = \\pm Ne$$")).toEqual([
       {
         type: "formula",
         props: { formula: "q = \\pm Ne" },
+      },
+    ]);
+  });
+
+  it("preserves ChatGPT-style markdown blocks around display math fences", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "## Regole rapide",
+          "",
+          "- Corrente maggiore dove \\(R\\) è minore.",
+          "- Equivalente: \\(R_{eq} < R_i\\).",
+          "",
+          "```text",
+          "R = 2 \\cdot 10^{-4}\\ \\Omega",
+          "```",
+          "",
+          "$$",
+          "P",
+          "=",
+          "R_1 i_1^2",
+          "+",
+          "R_2 i_2^2",
+          "$$",
+        ].join("\n")
+      )
+    ).toEqual([
+      { type: "heading", props: { level: 2 }, content: "Regole rapide" },
+      {
+        type: "bulletListItem",
+        content: [
+          { type: "text", text: "Corrente maggiore dove ", styles: {} },
+          { type: "math", props: { formula: "R" } },
+          { type: "text", text: " è minore.", styles: {} },
+        ],
+      },
+      {
+        type: "bulletListItem",
+        content: [
+          { type: "text", text: "Equivalente: ", styles: {} },
+          { type: "math", props: { formula: "R_{eq} < R_i" } },
+          { type: "text", text: ".", styles: {} },
+        ],
+      },
+      { type: "codeBlock", props: { language: "text" }, content: "R = 2 \\cdot 10^{-4}\\ \\Omega" },
+      {
+        type: "formula",
+        props: { formula: "P = R_1 i_1^2 + R_2 i_2^2" },
       },
     ]);
   });
@@ -124,6 +230,23 @@ describe("openNotionEditorSchema", () => {
 describe("renderFormulaHtml", () => {
   it("renders display math with KaTeX display markup", () => {
     expect(renderFormulaHtml("\\int_0^1 x dx", true)).toContain("katex-display");
+  });
+
+  it("renders pasted resistor zigzag macros without showing raw latex errors", () => {
+    const html = renderFormulaHtml("\\text{---}!!\\zigzag!!\\text{---}", true);
+
+    expect(html).not.toContain("\\zigzag");
+    expect(html).not.toContain("!!");
+    expect(html).not.toContain("color:#cc0000");
+  });
+
+  it("renders formula blocks even when pasted with display math delimiters", () => {
+    const html = renderFormulaHtml("$$R_{eq} < R_i\\qquad \\forall i", true);
+
+    expect(html).not.toContain("$$");
+    expect(html).not.toContain("\\qquad");
+    expect(html).not.toContain("\\forall");
+    expect(html).not.toContain("color:#cc0000");
   });
 });
 
@@ -175,6 +298,18 @@ describe("formulaFromBlockContent", () => {
         },
       ])
     ).toBe("q = \\pm Ne");
+  });
+
+  it("extracts standalone formulas that start with a variable", () => {
+    expect(
+      formulaFromBlockContent([
+        {
+          type: "text",
+          text: "R = 2 \\cdot 10^{-4}\\ \\Omega",
+          styles: {},
+        },
+      ])
+    ).toBe("R = 2 \\cdot 10^{-4}\\ \\Omega");
   });
 });
 
@@ -361,6 +496,54 @@ describe("normalizeMathInlineContentInEditor", () => {
         type: "formula",
         props: {
           formula: "\\vec{F} q_2 \\left( \\frac{1}{4\\pi\\varepsilon_0} \\frac{q_1}{r^2} \\hat{r} \\right)",
+        },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes display math fences with variable-only lines on page load", () => {
+    const document = [
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "Potenza spesa:", styles: {} }], children: [] },
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "power", type: "paragraph", content: [{ type: "text", text: "P", styles: {} }], children: [] },
+      { id: "equals-start", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "first", type: "paragraph", content: [{ type: "text", text: "R_1 i_1^2", styles: {} }], children: [] },
+      { id: "plus-first", type: "paragraph", content: [{ type: "text", text: "+", styles: {} }], children: [] },
+      { id: "second", type: "paragraph", content: [{ type: "text", text: "R_2 i_2^2", styles: {} }], children: [] },
+      { id: "equals-mid", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "delta", type: "paragraph", content: [{ type: "text", text: "\\Delta V_{AB}^2", styles: {} }], children: [] },
+      { id: "left", type: "paragraph", content: [{ type: "text", text: "\\left(", styles: {} }], children: [] },
+      { id: "conductance-one", type: "paragraph", content: [{ type: "text", text: "\\frac{1}{R_1}", styles: {} }], children: [] },
+      { id: "plus-second", type: "paragraph", content: [{ type: "text", text: "+", styles: {} }], children: [] },
+      { id: "conductance-two", type: "paragraph", content: [{ type: "text", text: "\\frac{1}{R_2}", styles: {} }], children: [] },
+      { id: "right", type: "paragraph", content: [{ type: "text", text: "\\right)", styles: {} }], children: [] },
+      { id: "equals-end", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "equivalent", type: "paragraph", content: [{ type: "text", text: "\\frac{\\Delta V_{AB}^2}{R_{eq}}", styles: {} }], children: [] },
+      { id: "close", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "Potenza spesa:", styles: {} }], children: [] },
+      {
+        id: "power",
+        type: "formula",
+        props: {
+          formula: "P = R_1 i_1^2 + R_2 i_2^2 = \\Delta V_{AB}^2 \\left( \\frac{1}{R_1} + \\frac{1}{R_2} \\right) = \\frac{\\Delta V_{AB}^2}{R_{eq}}",
         },
         content: undefined,
         children: [],

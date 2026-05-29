@@ -563,6 +563,63 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
   await expect(page.getByLabel("Formula preview: q = \\pm Ne")).toBeVisible();
 });
 
+test("preserves ChatGPT-style markdown while normalizing pasted formulas", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("ChatGPT Paste Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "## Regole rapide",
+        "",
+        "- Corrente maggiore dove \\(R\\) è minore.",
+        "- Equivalente: \\(R_{eq} < R_i\\).",
+        "",
+        "```text",
+        "R = 2 \\cdot 10^{-4}\\ \\Omega",
+        "```",
+        "",
+        "$$",
+        "P",
+        "=",
+        "R_1 i_1^2",
+        "+",
+        "R_2 i_2^2",
+        "$$",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByRole("heading", { name: "Regole rapide" })).toBeVisible();
+  await expect(page.getByText("Corrente maggiore dove", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: R", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: R_{eq} < R_i", exact: true })).toBeVisible();
+  await expect(page.getByText("R = 2 \\cdot 10^{-4}\\ \\Omega", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Formula preview: P = R_1 i_1^2 + R_2 i_2^2")).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "ChatGPT Paste Smoke")?.content ?? "";
+
+      return (
+        content.includes('"type":"heading"') &&
+        content.includes('"type":"bulletListItem"') &&
+        content.includes('"type":"codeBlock"') &&
+        content.includes('"type":"formula"') &&
+        content.includes('"type":"math"')
+      );
+    },
+    { key: storageKey }
+  );
+});
+
 test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
   await page.goto("/");
 
