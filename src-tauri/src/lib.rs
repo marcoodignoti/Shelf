@@ -1577,12 +1577,18 @@ async fn update_page(
     updated_at: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    // Apply every provided field in a single transaction so a multi-field save
+    // is all-or-nothing. Without this, a failure on field N leaves fields 1..N-1
+    // committed while the command returns Err, silently diverging the DB from the
+    // frontend's whole-object optimistic rollback.
+    let mut tx = state.db.begin().await.map_err(|error| error.to_string())?;
+
     if let Some(title) = updates.title {
         sqlx::query("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
             .bind(title)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1592,14 +1598,19 @@ async fn update_page(
             .bind(parent_id)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
 
     if let Some(content) = updates.content {
         let search_text = updates.search_text.unwrap_or_else(|| content.clone());
-        update_page_content(&state.db, &id, &content, &search_text, &updated_at)
+        sqlx::query("UPDATE pages SET content = ?, search_text = ?, updated_at = ? WHERE id = ?")
+            .bind(content)
+            .bind(search_text)
+            .bind(&updated_at)
+            .bind(&id)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1609,7 +1620,7 @@ async fn update_page(
             .bind(icon)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1619,7 +1630,7 @@ async fn update_page(
             .bind(cover_url)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1629,7 +1640,7 @@ async fn update_page(
             .bind(is_deleted)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1639,7 +1650,7 @@ async fn update_page(
             .bind(is_favorite)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1649,7 +1660,7 @@ async fn update_page(
             .bind(is_template)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1659,7 +1670,7 @@ async fn update_page(
             .bind(is_database)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1669,7 +1680,7 @@ async fn update_page(
             .bind(database_schema)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1679,7 +1690,7 @@ async fn update_page(
             .bind(properties)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
@@ -1689,10 +1700,12 @@ async fn update_page(
             .bind(page_kind)
             .bind(&updated_at)
             .bind(&id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|error| error.to_string())?;
     }
+
+    tx.commit().await.map_err(|error| error.to_string())?;
 
     Ok(())
 }

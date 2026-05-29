@@ -31,6 +31,27 @@ import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
+// Optimistically apply a page field update, persist it, and roll back the
+// in-memory value (plus surface an error) if the command fails — so the table
+// UI never diverges silently from the database on a failed write.
+async function persistPageFieldUpdate(
+  deps: {
+    updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
+    showError: (error: unknown) => void;
+  },
+  id: string,
+  next: Partial<Page>,
+  previous: Partial<Page>,
+): Promise<void> {
+  deps.updatePageOptimistically(id, next);
+  try {
+    await updatePage(id, next);
+  } catch (error) {
+    deps.updatePageOptimistically(id, previous);
+    deps.showError(error);
+  }
+}
+
 const PROPERTY_TYPES: DatabasePropertyType[] = ["text", "checkbox", "select", "date"];
 type TableDropTarget = { rowId: string; position: "before" | "after" };
 type TableDragSession = {
@@ -54,6 +75,7 @@ export function DatabaseTableView({
   onSelectPage: (id: string) => void;
 }) {
   const addPage = useAppStore((state) => state.addPage);
+  const showError = useAppStore((state) => state.showError);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
   const duplicatePageAction = useAppStore((state) => state.duplicatePageAction);
   const renamePageAction = useAppStore((state) => state.renamePageAction);
@@ -123,8 +145,12 @@ export function DatabaseTableView({
 
   const persistSchema = async (nextSchema: DatabaseSchema) => {
     const database_schema = JSON.stringify(nextSchema);
-    updatePageOptimistically(databasePage.id, { database_schema });
-    await updatePage(databasePage.id, { database_schema });
+    await persistPageFieldUpdate(
+      { updatePageOptimistically, showError },
+      databasePage.id,
+      { database_schema },
+      { database_schema: databasePage.database_schema },
+    );
   };
 
   const handleAddRow = async () => {
@@ -144,8 +170,12 @@ export function DatabaseTableView({
 
   const handlePropertyChange = async (row: Page, propertyId: string, value: string | boolean) => {
     const properties = updateDatabaseProperty(row.properties, propertyId, value);
-    updatePageOptimistically(row.id, { properties });
-    await updatePage(row.id, { properties });
+    await persistPageFieldUpdate(
+      { updatePageOptimistically, showError },
+      row.id,
+      { properties },
+      { properties: row.properties },
+    );
   };
 
   const handleAddProperty = async () => {
@@ -191,8 +221,12 @@ export function DatabaseTableView({
     const row = await addPage("Untitled", databasePage.id, { select: false });
     if (row && boardProperty) {
       const properties = updateDatabaseProperty(row.properties, boardProperty.id, option);
-      updatePageOptimistically(row.id, { properties });
-      await updatePage(row.id, { properties });
+      await persistPageFieldUpdate(
+        { updatePageOptimistically, showError },
+        row.id,
+        { properties },
+        { properties: row.properties },
+      );
       await reorderPagesAction(databasePage.id, appendedSiblingId(dataRows.map((dataRow) => dataRow.id), row.id));
     }
   };
@@ -762,14 +796,19 @@ export function DatabaseRowPropertiesPanel({
   rowPage: Page;
 }) {
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
+  const showError = useAppStore((state) => state.showError);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
   const schema = parseDatabaseSchema(databasePage.database_schema ?? JSON.stringify(defaultDatabaseSchema()));
   const properties = parseDatabaseProperties(rowPage.properties);
 
   const handlePropertyChange = async (propertyId: string, value: string | boolean) => {
     const nextProperties = updateDatabaseProperty(rowPage.properties, propertyId, value);
-    updatePageOptimistically(rowPage.id, { properties: nextProperties });
-    await updatePage(rowPage.id, { properties: nextProperties });
+    await persistPageFieldUpdate(
+      { updatePageOptimistically, showError },
+      rowPage.id,
+      { properties: nextProperties },
+      { properties: rowPage.properties },
+    );
   };
 
   const handleToggleTemplate = async () => {

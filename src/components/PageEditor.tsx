@@ -829,6 +829,14 @@ export function Editor({
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
+      // Flush pending edits before the editor unmounts or re-keys to another
+      // page. This cleanup closure still holds the previous page.id, so a
+      // debounced edit made <300ms before navigation is persisted, not lost.
+      const pending = pendingUpdatesRef.current;
+      if (Object.keys(pending).length > 0) {
+        pendingUpdatesRef.current = {};
+        void updatePage(page.id, pending);
+      }
     };
   }, [page.id]);
 
