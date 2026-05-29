@@ -71,6 +71,23 @@ export function studioProjectForDocument(
   };
 }
 
+export function studioProjectDepth(project: StudioProject, projects: StudioProject[]): number {
+  let depth = 0;
+  let parentId = cleanProjectValue(project.parent_id);
+  const seen = new Set<string>([project.id]);
+
+  while (parentId) {
+    if (seen.has(parentId)) return depth;
+    const parent = projects.find((candidate) => candidate.id === parentId);
+    if (!parent) return depth;
+    seen.add(parent.id);
+    depth += 1;
+    parentId = cleanProjectValue(parent.parent_id);
+  }
+
+  return depth;
+}
+
 export function groupStudioDocumentsByProject(
   documents: ProjectableStudioDocument[],
   projects: StudioProject[] = []

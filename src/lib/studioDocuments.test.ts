@@ -7,6 +7,7 @@ import {
   recentStudioDocuments,
   remainingStudioDocuments,
   studioDocumentMetadata,
+  studioProjectDepth,
 } from "./studioDocuments";
 import { StudioDocument, StudioProject } from "./studio";
 
@@ -36,6 +37,17 @@ function projectDoc(
     ...doc(id, "2026-05-29T00:00:00.000Z"),
     title,
     ...project,
+  };
+}
+
+function project(id: string, name: string, sortOrder: number, parentId: string | null = null): StudioProject {
+  return {
+    id,
+    name,
+    parent_id: parentId,
+    sort_order: sortOrder,
+    created_at: "2026-05-29T00:00:00.000Z",
+    updated_at: "2026-05-29T00:00:00.000Z",
   };
 }
 
@@ -75,30 +87,9 @@ describe("studio document helpers", () => {
 
   it("groups assigned documents by project and leaves unassigned documents in Inbox", () => {
     const projects: StudioProject[] = [
-      {
-        id: "empty",
-        name: "Empty Project",
-        parent_id: null,
-        sort_order: 0,
-        created_at: "2026-05-29T00:00:00.000Z",
-        updated_at: "2026-05-29T00:00:00.000Z",
-      },
-      {
-        id: "math",
-        name: "Math",
-        parent_id: null,
-        sort_order: 1,
-        created_at: "2026-05-29T00:00:00.000Z",
-        updated_at: "2026-05-29T00:00:00.000Z",
-      },
-      {
-        id: "physics",
-        name: "Physics",
-        parent_id: null,
-        sort_order: 2,
-        created_at: "2026-05-29T00:00:00.000Z",
-        updated_at: "2026-05-29T00:00:00.000Z",
-      },
+      project("empty", "Empty Project", 0),
+      project("math", "Math", 1),
+      project("physics", "Physics", 2),
     ];
     const groups = groupStudioDocumentsByProject([
       projectDoc("physics-2", "Dynamics", { project_id: "physics" }),
@@ -117,6 +108,19 @@ describe("studio document helpers", () => {
       { id: "physics", name: "Physics", titles: ["Beta", "Dynamics"] },
       { id: "studio-inbox", name: "Inbox", titles: ["Alpha"] },
     ]);
+  });
+
+  it("computes project nesting depth for future Studio folders", () => {
+    const projects: StudioProject[] = [
+      project("root", "Root", 0),
+      project("child", "Child", 1, "root"),
+      project("grandchild", "Grandchild", 2, "child"),
+    ];
+
+    expect(studioProjectDepth(projects[0], projects)).toBe(0);
+    expect(studioProjectDepth(projects[1], projects)).toBe(1);
+    expect(studioProjectDepth(projects[2], projects)).toBe(2);
+    expect(studioProjectDepth(project("orphan", "Orphan", 3, "missing"), projects)).toBe(0);
   });
 
   it("normalizes panel layout", () => {

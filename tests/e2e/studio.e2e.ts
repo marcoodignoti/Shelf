@@ -169,7 +169,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await expect(page.getByText("100%")).toBeVisible();
 });
 
-test("organizes Studio documents into projects", async ({ page }) => {
+test("organizes Studio documents into projects with inline rename and drag drop", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();
 
@@ -179,14 +179,35 @@ test("organizes Studio documents into projects", async ({ page }) => {
   });
   await page.getByRole("button", { name: "New Studio project" }).click();
 
-  await expect(page.locator("[data-studio-project-id]").filter({ hasText: "Physics" })).toBeVisible();
+  const physicsProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Physics")?.id;
+  });
+  expect(physicsProjectId).toBeTruthy();
+
+  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
+  await expect(physicsProject).toBeVisible();
+  await expect(physicsProject.getByText("Drop PDFs here")).toBeVisible();
+
+  await physicsProject.getByLabel("Actions for project Physics").click();
+  await page.getByRole("menuitem", { name: "Rename project" }).click();
+  await physicsProject.getByLabel("Project name").fill("Mechanics");
+  await physicsProject.getByLabel("Project name").press("Enter");
+
+  const mechanicsProject = page.locator("[data-studio-project-id]").filter({ hasText: "Mechanics" });
+  await expect(mechanicsProject).toBeVisible();
 
   await page.getByRole("button", { name: "Import PDF" }).click();
-  await page.locator("[data-studio-project-id='studio-inbox']").getByLabel("Actions for civil-law").click();
-  await page.getByRole("menuitem", { name: "Move to Physics" }).click();
+  await page
+    .locator("[data-studio-project-id='studio-inbox'] [data-studio-document-id]")
+    .filter({ hasText: "civil-law" })
+    .dragTo(mechanicsProject);
 
   await expect(
-    page.locator("[data-studio-project-id]").filter({ hasText: "Physics" }).locator("[role='button'][title='civil-law.pdf']")
+    page.locator("[data-studio-project-id]").filter({ hasText: "Mechanics" }).locator("[role='button'][title='civil-law.pdf']")
   ).toBeVisible();
   await page.waitForFunction(() => {
     const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
@@ -197,7 +218,7 @@ test("organizes Studio documents into projects", async ({ page }) => {
       id: string;
       name: string;
     }>;
-    const project = projects.find((item) => item.name === "Physics");
+    const project = projects.find((item) => item.name === "Mechanics");
     return Boolean(project && documents.some((document) => document.title === "civil-law" && document.project_id === project.id));
   });
 });
