@@ -91,6 +91,14 @@ export async function importStudioDocument(sourcePath: string): Promise<StudioDo
   });
 }
 
+export async function replaceStudioDocumentFile(id: string, sourcePath: string): Promise<StudioDocument> {
+  return await invoke<StudioDocument>("replace_studio_document_file", {
+    id,
+    sourcePath,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function updateStudioDocumentViewerState(
   id: string,
   updates: StudioViewerUpdates

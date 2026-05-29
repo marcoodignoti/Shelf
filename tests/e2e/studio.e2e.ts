@@ -6,7 +6,7 @@ const tinyPdfFixture = Buffer.from(
 );
 
 test.beforeEach(async ({ page }) => {
-  await page.route("**/civil-law.pdf", async (route) => {
+  await page.route("**/civil-law.pdf*", async (route) => {
     await route.fulfill({
       body: tinyPdfFixture,
       contentType: "application/pdf",
@@ -79,6 +79,23 @@ test.beforeEach(async ({ page }) => {
           save(documentsKey, [document]);
           if (!shouldSkipNote) save(pagesKey, [note]);
           return document;
+        }
+        if (cmd === "replace_studio_document_file") {
+          const documents = load<any>(documentsKey);
+          const sourcePath = args.sourcePath as string;
+          const originalFilename = sourcePath.split("/").pop() ?? "document.pdf";
+          const document = documents.find((candidate) => candidate.id === args.id);
+          if (!document) throw new Error("document not found");
+          const updatedDocument = {
+            ...document,
+            original_filename: originalFilename,
+            stored_file_path: sourcePath,
+            updated_at: args.updatedAt as string,
+          };
+          save(documentsKey, documents.map((candidate) =>
+            candidate.id === args.id ? updatedDocument : candidate
+          ));
+          return updatedDocument;
         }
         if (cmd === "create_studio_project") {
           const project = {
@@ -382,7 +399,7 @@ test("switches Studio PDF view mode between continuous, single page, and two pag
   await expect(page.locator("[data-pdf-view-mode='continuous']")).toBeVisible();
 });
 
-test("creates a missing Studio note from the notes panel fallback", async ({ page }) => {
+test("auto-creates a missing Studio note from the notes panel fallback", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("opennotion-e2e-missing-studio-note", "1");
   });
@@ -391,16 +408,75 @@ test("creates a missing Studio note from the notes panel fallback", async ({ pag
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  await expect(page.getByText("Linked note missing.")).toBeVisible();
-  await page.getByRole("button", { name: "Create linked note" }).click();
-
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
+  await expect(page.getByText("Linked note missing.")).toBeHidden();
   await page.waitForFunction(() => {
     const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
       page_kind: string;
       title: string;
     }>;
     return pages.some((item) => item.page_kind === "studio_note" && item.title === "civil-law Notes");
+  });
+});
+
+test("reimports a Studio PDF when the stored copy is missing", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = "2026-05-29T08:00:00.000Z";
+    window.localStorage.setItem("opennotion-workspace-mode", "studio");
+    window.localStorage.setItem("opennotion-current-studio-document-id", "missing-doc");
+    window.localStorage.setItem("opennotion-e2e-studio-documents", JSON.stringify([{
+      id: "missing-doc",
+      title: "Missing Source",
+      original_filename: "missing.pdf",
+      stored_file_path: "/tmp/missing.pdf",
+      note_page_id: "missing-note",
+      project_id: null,
+      last_opened_at: now,
+      viewer_zoom: 100,
+      viewer_page: 1,
+      panel_layout: "pdf-left",
+      created_at: now,
+      updated_at: now,
+    }]));
+    window.localStorage.setItem("opennotion-e2e-pages", JSON.stringify([{
+      id: "missing-note",
+      title: "Missing Source Notes",
+      parent_id: null,
+      content: null,
+      search_text: null,
+      icon: null,
+      cover_url: null,
+      is_deleted: 0,
+      is_favorite: 0,
+      is_template: 0,
+      is_database: 0,
+      database_schema: null,
+      properties: null,
+      sort_order: 0,
+      page_kind: "studio_note",
+      created_at: now,
+      updated_at: now,
+    }]));
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("PDF preview unavailable")).toBeVisible();
+  await page.getByRole("button", { name: "Reimport PDF" }).click();
+
+  await expect(page.locator("canvas[aria-label='Missing Source']")).toBeVisible();
+  await expect(page.getByText("civil-law.pdf").first()).toBeVisible();
+  await page.waitForFunction(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      id: string;
+      original_filename: string;
+      stored_file_path: string;
+    }>;
+    return documents.some((document) =>
+      document.id === "missing-doc" &&
+      document.original_filename === "civil-law.pdf" &&
+      document.stored_file_path === "/tmp/civil-law.pdf"
+    );
   });
 });
 

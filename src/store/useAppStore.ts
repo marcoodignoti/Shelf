@@ -12,6 +12,7 @@ import {
   listStudioProjects,
   renameStudioDocument,
   renameStudioProject,
+  replaceStudioDocumentFile,
   StudioDocument,
   StudioPanelLayout,
   StudioProject,
@@ -41,6 +42,7 @@ interface AppState {
   setWorkspaceMode: (mode: WorkspaceMode) => void;
   setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: (projectId?: string | null) => Promise<StudioDocument | null>;
+  replaceStudioPdfAction: (documentId: string) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
   renameStudioProjectAction: (id: string, name: string) => Promise<void>;
@@ -224,6 +226,31 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: null
       }));
       return importedDocument;
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ error: message, notice: { kind: 'error', message } });
+      return null;
+    }
+  },
+  replaceStudioPdfAction: async (documentId) => {
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!path || Array.isArray(path)) return null;
+
+      const document = await replaceStudioDocumentFile(documentId, path);
+      set((state) => ({
+        studioDocuments: state.studioDocuments.map((candidate) =>
+          candidate.id === document.id ? document : candidate
+        ),
+        currentStudioDocumentId: document.id,
+        error: null,
+        notice: { kind: 'success', message: 'Studio PDF reimported.' }
+      }));
+      localStorage.setItem('opennotion-current-studio-document-id', document.id);
+      return document;
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });

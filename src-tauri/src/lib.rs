@@ -634,6 +634,41 @@ async fn import_studio_document_record(
     .await
 }
 
+async fn replace_studio_document_file_record(
+    db: &SqlitePool,
+    id: &str,
+    original_filename: &str,
+    stored_file_path: &str,
+    updated_at: &str,
+) -> Result<StudioDocument, String> {
+    let result = sqlx::query(
+        "UPDATE studio_documents
+         SET original_filename = ?, stored_file_path = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(original_filename)
+    .bind(stored_file_path)
+    .bind(updated_at)
+    .bind(id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("document not found".to_string());
+    }
+
+    sqlx::query_as::<_, StudioDocument>(
+        "SELECT id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at
+         FROM studio_documents
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())
+}
+
 async fn update_studio_document_viewer_state_record(
     db: &SqlitePool,
     id: &str,
@@ -1817,6 +1852,43 @@ async fn import_studio_document<R: Runtime>(
 }
 
 #[tauri::command]
+async fn replace_studio_document_file<R: Runtime>(
+    id: String,
+    source_path: String,
+    updated_at: String,
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<StudioDocument, String> {
+    let source = Path::new(&source_path);
+    validated_pdf_file(source)?;
+    let source = source.canonicalize().map_err(|error| error.to_string())?;
+    let original_filename = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "PDF file name is invalid".to_string())?
+        .to_string();
+    let destination = studio_pdf_destination(&app, &id)?;
+    let should_copy = destination
+        .canonicalize()
+        .map(|destination| destination != source)
+        .unwrap_or(true);
+
+    if should_copy {
+        copy(&source, &destination).map_err(|error| error.to_string())?;
+    }
+
+    let stored_file_path = destination.to_string_lossy().to_string();
+    replace_studio_document_file_record(
+        &state.db,
+        &id,
+        &original_filename,
+        &stored_file_path,
+        &updated_at,
+    )
+    .await
+}
+
+#[tauri::command]
 async fn update_studio_document_viewer_state(
     id: String,
     updates: StudioViewerUpdates,
@@ -1997,6 +2069,7 @@ pub fn run() {
             delete_studio_project,
             update_studio_document_project,
             import_studio_document,
+            replace_studio_document_file,
             update_studio_document_viewer_state,
             rename_studio_document,
             delete_studio_document,
@@ -2377,6 +2450,49 @@ mod tests {
                 .expect("load linked note")
                 .expect("note exists");
             assert_eq!(note.page_kind, "studio_note");
+        });
+    }
+
+    #[test]
+    fn replace_studio_document_file_updates_pdf_metadata() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            import_studio_document_record(
+                &db,
+                ImportStudioDocumentRecord {
+                    document_id: "doc-1",
+                    note_page_id: "note-1",
+                    title: "Sample",
+                    original_filename: "missing.pdf",
+                    stored_file_path: "/tmp/missing.pdf",
+                    imported_at: "2026-05-29T00:00:00.000Z",
+                },
+            )
+            .await
+            .expect("create document");
+
+            let document = replace_studio_document_file_record(
+                &db,
+                "doc-1",
+                "fixed.pdf",
+                "/tmp/opennotion-studio/doc-1/source.pdf",
+                "2026-05-29T00:10:00.000Z",
+            )
+            .await
+            .expect("replace document file");
+
+            assert_eq!(document.original_filename, "fixed.pdf");
+            assert_eq!(
+                document.stored_file_path,
+                "/tmp/opennotion-studio/doc-1/source.pdf"
+            );
+            assert_eq!(document.updated_at, "2026-05-29T00:10:00.000Z");
+
+            let note = get_page_record(&db, "note-1")
+                .await
+                .expect("load linked note")
+                .expect("note still exists");
+            assert_eq!(note.title, "Sample Notes");
         });
     }
 
