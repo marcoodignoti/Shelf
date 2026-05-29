@@ -630,7 +630,7 @@ function stripUnclosedMathPrefix(value: string): string {
 }
 
 function isLikelyLatexFormula(value: string): boolean {
-  return /\\(?:oint|int|nabla|vec|cdot|frac|partial|Sigma|Gamma|Delta|Phi|Omega|ell|varepsilon|mathcal|mu|rho|pm|mp|times|div|sqrt|hat|left|right|text|qquad|quad|forall|leq|geq|approx)\b/.test(value) ||
+  return /\\(?:oint|int|nabla|vec|overrightarrow|cdot|frac|partial|Sigma|sigma|Gamma|gamma|Delta|delta|Phi|phi|Omega|omega|theta|ell|varepsilon|mathcal|mu|rho|pi|pm|mp|times|div|sqrt|hat|dot|ddot|boxed|left|right|text|sin|cos|tan|qquad|quad|forall|leq|geq|approx)\b/.test(value) ||
     /[_^][{\\\w]/.test(value) ||
     /\\[a-zA-Z]+\{/.test(value);
 }
@@ -947,49 +947,72 @@ function findMatchingBrace(text: string, startIndex: number): number {
 function normalizeBracketedMathBlocks(editor: BlockNoteEditor<any, any, any>): boolean {
   let changed = false;
 
-  const visitSiblings = (blocks: Block<any, any, any>[]) => {
-    for (let index = 0; index < blocks.length - 2; index += 1) {
-      const openBlock = blocks[index];
-      const openText = textFromBlockContent(openBlock.content).trim();
-      if (!isOpenMathFence(openText)) continue;
+  while (normalizeFirstBracketedMathGroup(editor, editor.document)) {
+    changed = true;
+  }
 
-      const closeIndex = blocks.findIndex((block, candidateIndex) => (
-        candidateIndex > index + 1 && hasClosingMathFence(textFromMathBlock(block).trim())
-      ));
-      if (closeIndex === -1) continue;
-
-      const formulaBlocks = blocks.slice(index + 1, closeIndex + 1);
-      const formulaParts = formulaBlocks.map((block) => stripClosingMathFence(textFromMathBlock(block).trim())).filter(Boolean);
-      if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
-
-      const formula = formulaParts.join(" ");
-      editor.updateBlock(formulaBlocks[0], {
-        type: "formula",
-        props: { formula },
-        content: undefined,
-      } as never);
-
-      const blocksToRemove = [openBlock, ...formulaBlocks.slice(1)];
-      if (blocksToRemove.length > 0) {
-        editor.removeBlocks(blocksToRemove);
-        changed = true;
-        index = closeIndex;
-      }
-    }
-
-    blocks.forEach((block) => {
-      if (block.children.length > 0) {
-        visitSiblings(block.children);
-      }
-    });
-  };
-
-  visitSiblings(editor.document);
   return changed;
+}
+
+function normalizeFirstBracketedMathGroup(
+  editor: BlockNoteEditor<any, any, any>,
+  blocks: Block<any, any, any>[]
+): boolean {
+  for (let index = 0; index < blocks.length - 2; index += 1) {
+    const openBlock = blocks[index];
+    const openText = textFromBlockContent(openBlock.content).trim();
+    const openFence = openingMathFence(openText);
+    if (!openFence) continue;
+
+    const closeIndex = blocks.findIndex((block, candidateIndex) => (
+      candidateIndex > index + 1 && hasClosingMathFence(textFromMathBlock(block).trim())
+    ));
+    if (closeIndex === -1) continue;
+
+    const formulaBlocks = blocks.slice(openFence.hasFormulaContent ? index : index + 1, closeIndex + 1);
+    const formulaParts = formulaBlocks.map((block) => {
+      const text = textFromMathBlock(block).trim();
+      const withoutOpeningFence = block === openBlock ? stripOpeningMathFence(text) : text;
+      return stripClosingMathFence(withoutOpeningFence.trim()).replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+    if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
+
+    const formula = formulaParts.join(" ");
+    const targetBlock = openFence.hasFormulaContent ? openBlock : formulaBlocks[0];
+    const blocksToRemove = openFence.hasFormulaContent ? formulaBlocks.slice(1) : [openBlock, ...formulaBlocks.slice(1)];
+    editor.removeBlocks(blocksToRemove);
+    editor.updateBlock(targetBlock, {
+      type: "formula",
+      props: { formula },
+      content: undefined,
+    } as never);
+    return true;
+  }
+
+  for (const block of blocks) {
+    if (block.children.length > 0 && normalizeFirstBracketedMathGroup(editor, block.children)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function openingMathFence(text: string): { hasFormulaContent: boolean } | null {
+  if (isOpenMathFence(text)) return { hasFormulaContent: false };
+  const stripped = stripOpeningMathFence(text);
+  return stripped !== text && stripped.trim().length > 0 ? { hasFormulaContent: true } : null;
 }
 
 function isOpenMathFence(text: string): boolean {
   return text === "[" || text === "\\[" || text === "$$";
+}
+
+function stripOpeningMathFence(text: string): string {
+  const value = text.trim();
+  if (value.startsWith("$$")) return value.slice(2).trim();
+  if (value.startsWith("\\[")) return value.slice(2).trim();
+  return value;
 }
 
 function isCloseMathFence(text: string): boolean {
@@ -1014,8 +1037,38 @@ function isLikelyLatexFormulaLine(value: string): boolean {
   if (/^\\[a-zA-Z]+\s*[()]?$/.test(value)) return true;
   if (/^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}\\]+)+$/.test(value)) return true;
   if (/^[=+\-*/^_{}\\\s\d.,()[\]]+$/.test(value)) return true;
+  if (isCompactMathFenceLine(value)) return true;
 
   return !containsProseText(value) && /[=+\-*/^_\\]/.test(value);
+}
+
+function isCompactMathFenceLine(value: string): boolean {
+  if (!/^[A-Za-z0-9_{}\\^=+\-*/.,()[\]\s<>|!,]+$/.test(value)) return false;
+  if (!/[A-Za-z\\=+\-*/^_{}]/.test(value)) return false;
+
+  const words = value
+    .replace(/\\[,;! ]/g, " ")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .match(/[A-Za-zÀ-ÿ]+/g) ?? [];
+
+  return words.every(isCompactMathWord);
+}
+
+function isCompactMathWord(word: string): boolean {
+  if (word.length <= 3) return true;
+
+  const allowedMathWords = new Set([
+    "alpha",
+    "beta",
+    "delta",
+    "gamma",
+    "omega",
+    "phi",
+    "sigma",
+    "theta",
+  ]);
+
+  return allowedMathWords.has(word.toLowerCase());
 }
 
 function containsProseText(value: string): boolean {
@@ -1147,6 +1200,7 @@ function normalizeFormulaForKatex(formula: string): string {
   const strippedFormula = stripFormulaDelimiters(formula);
 
   return strippedFormula
+    .replace(/\\(sin|cos|tan)(theta|phi|alpha|beta|gamma|omega)\b/g, (_match, fn, variable) => `\\${fn}\\${variable}`)
     .replace(/!!(?=\s*\\zigzag\b)/g, "\\!")
     .replace(/(\\zigzag\b\s*)!!/g, "$1\\!");
 }

@@ -216,6 +216,84 @@ describe("blocksFromPastedMathText", () => {
       },
     ]);
   });
+
+  it("keeps compact product symbols inside display math fences", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "In modulo:",
+          "$$",
+          "F",
+          "=",
+          "qvB\\sintheta",
+          "=",
+          "qv_nB",
+          "$$",
+        ].join("\n")
+      )
+    ).toEqual([
+      { type: "paragraph", content: "In modulo:" },
+      {
+        type: "formula",
+        props: { formula: "F = qvB\\sintheta = qv_nB" },
+      },
+    ]);
+  });
+
+  it("keeps boxed multiline formulas with compact denominator symbols", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "$$",
+          "\\boxed{",
+          "v_p T",
+          "=",
+          "\\frac{2\\pi m v \\cos\\theta}",
+          "{qB}",
+          "}",
+          "$$",
+        ].join("\n")
+      )
+    ).toEqual([
+      {
+        type: "formula",
+        props: { formula: "\\boxed{ v_p T = \\frac{2\\pi m v \\cos\\theta} {qB} }" },
+      },
+    ]);
+  });
+
+  it("keeps boxed vector integral formulas inside display math fences", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "si ottiene:",
+          "$$",
+          "\\boxed{",
+          "d\\vec{F}",
+          "=",
+          "i,d\\vec{s}\\times\\vec{B}",
+          "}",
+          "$$",
+        ].join("\n")
+      )
+    ).toEqual([
+      { type: "paragraph", content: "si ottiene:" },
+      {
+        type: "formula",
+        props: { formula: "\\boxed{ d\\vec{F} = i,d\\vec{s}\\times\\vec{B} }" },
+      },
+    ]);
+  });
+
+  it("keeps compact work differential symbols inside display math fences", () => {
+    expect(blocksFromPastedMathText("e:\n$$\nM,d\\theta\n=\ndW\n$$")).toEqual([
+      { type: "paragraph", content: "e:" },
+      {
+        type: "formula",
+        props: { formula: "M,d\\theta = dW" },
+      },
+    ]);
+  });
 });
 
 describe("openNotionEditorSchema", () => {
@@ -247,6 +325,26 @@ describe("renderFormulaHtml", () => {
     expect(html).not.toContain("\\qquad");
     expect(html).not.toContain("\\forall");
     expect(html).not.toContain("color:#cc0000");
+  });
+
+  it("renders ChatGPT shorthand trig commands pasted without command boundaries", () => {
+    const html = renderFormulaHtml("qvB\\sintheta = qv_nB", true);
+
+    expect(html).not.toContain("\\sintheta");
+    expect(html).not.toContain("color:#cc0000");
+  });
+
+  it("renders common boxed vector mechanics formulas without raw latex errors", () => {
+    for (const formula of [
+      "\\boxed{ \\ddot{\\theta} + \\omega^2\\theta = 0 }",
+      "\\boxed{ \\vec{M} = \\vec{m}\\times\\vec{B} }",
+      "\\boxed{ d\\vec{F} = i,d\\vec{s}\\times\\vec{B} }",
+      "\\int_P^Q d\\vec{s}\\times\\vec{B}",
+    ]) {
+      const html = renderFormulaHtml(formula, true);
+
+      expect(html).not.toContain("color:#cc0000");
+    }
   });
 });
 
@@ -548,6 +646,130 @@ describe("normalizeMathInlineContentInEditor", () => {
         content: undefined,
         children: [],
       },
+    ]);
+  });
+
+  it("normalizes display math fences with compact product symbols on page load", () => {
+    const document = [
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "In modulo:", styles: {} }], children: [] },
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "force", type: "paragraph", content: [{ type: "text", text: "F", styles: {} }], children: [] },
+      { id: "equals-start", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "lorentz", type: "paragraph", content: [{ type: "text", text: "qvB\\sintheta", styles: {} }], children: [] },
+      { id: "equals-end", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "normal", type: "paragraph", content: [{ type: "text", text: "qv_nB", styles: {} }], children: [] },
+      { id: "close", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "In modulo:", styles: {} }], children: [] },
+      {
+        id: "force",
+        type: "formula",
+        props: { formula: "F = qvB\\sintheta = qv_nB" },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes every display math fence group on page load", () => {
+    const document = [
+      { id: "open-first", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "force", type: "paragraph", content: [{ type: "text", text: "F", styles: {} }], children: [] },
+      { id: "equals-first", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "lorentz", type: "paragraph", content: [{ type: "text", text: "qvB\\sintheta", styles: {} }], children: [] },
+      { id: "close-first", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "between", type: "paragraph", content: [{ type: "text", text: "quindi:", styles: {} }], children: [] },
+      { id: "open-second", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+      { id: "moment", type: "paragraph", content: [{ type: "text", text: "M", styles: {} }], children: [] },
+      { id: "equals-second", type: "paragraph", content: [{ type: "text", text: "=", styles: {} }], children: [] },
+      { id: "work", type: "paragraph", content: [{ type: "text", text: "ia b B\\sin\\theta", styles: {} }], children: [] },
+      { id: "close-second", type: "paragraph", content: [{ type: "text", text: "$$", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      {
+        id: "force",
+        type: "formula",
+        props: { formula: "F = qvB\\sintheta" },
+        content: undefined,
+        children: [],
+      },
+      { id: "between", type: "paragraph", content: [{ type: "text", text: "quindi:", styles: {} }], children: [] },
+      {
+        id: "moment",
+        type: "formula",
+        props: { formula: "M = ia b B\\sin\\theta" },
+        content: undefined,
+        children: [],
+      },
+    ]);
+  });
+
+  it("normalizes pre-existing display math fences attached to formula lines", () => {
+    const document = [
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "si ottiene:", styles: {} }], children: [] },
+      { id: "open", type: "paragraph", content: [{ type: "text", text: "$$\n\\boxed{", styles: {} }], children: [] },
+      { id: "force", type: "heading", content: [{ type: "text", text: "d\\vec{F}", styles: {} }], children: [] },
+      {
+        id: "body",
+        type: "paragraph",
+        content: [{ type: "text", text: "i,d\\vec{s}\\times\\vec{B}\n}\n$$", styles: {} }],
+        children: [],
+      },
+      { id: "after", type: "paragraph", content: [{ type: "text", text: "Questa è la seconda legge.", styles: {} }], children: [] },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toEqual([
+      { id: "before", type: "paragraph", content: [{ type: "text", text: "si ottiene:", styles: {} }], children: [] },
+      {
+        id: "open",
+        type: "formula",
+        props: { formula: "\\boxed{ d\\vec{F} i,d\\vec{s}\\times\\vec{B} }" },
+        content: undefined,
+        children: [],
+      },
+      { id: "after", type: "paragraph", content: [{ type: "text", text: "Questa è la seconda legge.", styles: {} }], children: [] },
     ]);
   });
 
