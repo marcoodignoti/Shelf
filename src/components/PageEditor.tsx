@@ -33,6 +33,7 @@ import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMen
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
+import { reorderedSiblingIds } from "../lib/pageOrder";
 import { subpageSectionMode } from "../lib/subpageSection";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { useAppStore } from "../store/useAppStore";
@@ -50,6 +51,18 @@ type HeadingRailItem = {
   id: string;
   level: number;
   title: string;
+};
+
+type SubpageDropTarget = {
+  pageId: string;
+  position: "before" | "after";
+};
+
+type SubpageDragSession = {
+  pageId: string;
+  startX: number;
+  startY: number;
+  active: boolean;
 };
 
 function moveEditorBlock(editor: BlockNoteEditor, sourceId: string, targetId: string, placement: BlockDropPlacement) {
@@ -692,12 +705,17 @@ export function Editor({
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState("");
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [draggedSubpageId, setDraggedSubpageId] = useState<string | null>(null);
+  const [subpageDropTarget, setSubpageDropTarget] = useState<SubpageDropTarget | null>(null);
   const [saveState, dispatchSaveState] = useReducer(editorSaveReducer, { status: "saved" });
+  const subpageDragSessionRef = useRef<SubpageDragSession | null>(null);
+  const subpageDropTargetRef = useRef<SubpageDropTarget | null>(null);
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const addPage = useAppStore((state) => state.addPage);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
   const duplicatePageAction = useAppStore((state) => state.duplicatePageAction);
   const movePageAction = useAppStore((state) => state.movePageAction);
+  const reorderPagesAction = useAppStore((state) => state.reorderPagesAction);
   const removePage = useAppStore((state) => state.removePage);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
@@ -1096,6 +1114,88 @@ export function Editor({
       onSelectPage(newPage.id);
     }
   };
+
+  const clearSubpageDragState = useCallback(() => {
+    setDraggedSubpageId(null);
+    setSubpageDropTarget(null);
+    subpageDropTargetRef.current = null;
+  }, []);
+
+  const reorderSubpagesFromDropTarget = useCallback(async (sourceId: string, target: SubpageDropTarget) => {
+    const siblingIds = childPages.map((childPage) => childPage.id);
+    const orderedIds = reorderedSiblingIds(siblingIds, sourceId, target.pageId, target.position);
+    if (orderedIds.join("\0") === siblingIds.join("\0")) return;
+
+    await reorderPagesAction(page.id, orderedIds);
+  }, [childPages, page.id, reorderPagesAction]);
+
+  const updateSubpageDropTarget = useCallback((sourceId: string, clientX: number, clientY: number) => {
+    const row = window.document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-subpage-row-id]");
+    const targetId = row?.dataset.subpageRowId;
+    if (!row || !targetId || targetId === sourceId) {
+      subpageDropTargetRef.current = null;
+      setSubpageDropTarget(null);
+      return;
+    }
+
+    const rect = row.getBoundingClientRect();
+    const position: SubpageDropTarget["position"] = clientY - rect.top < rect.height / 2 ? "before" : "after";
+    const nextTarget = { pageId: targetId, position };
+    subpageDropTargetRef.current = nextTarget;
+    setSubpageDropTarget(nextTarget);
+  }, []);
+
+  const handleSubpagePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, subpageId: string) => {
+    if (event.button !== 0 || event.pointerType === "touch") return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    subpageDragSessionRef.current = {
+      pageId: subpageId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const session = subpageDragSessionRef.current;
+      if (!session) return;
+
+      const distance = Math.hypot(moveEvent.clientX - session.startX, moveEvent.clientY - session.startY);
+      if (!session.active && distance < 4) return;
+
+      if (!session.active) {
+        subpageDragSessionRef.current = { ...session, active: true };
+        setDraggedSubpageId(session.pageId);
+        window.document.body.style.cursor = "grabbing";
+        window.document.body.style.userSelect = "none";
+      }
+
+      moveEvent.preventDefault();
+      updateSubpageDropTarget(session.pageId, moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handlePointerUp = () => {
+      const session = subpageDragSessionRef.current;
+      const target = subpageDropTargetRef.current;
+      subpageDragSessionRef.current = null;
+      window.document.body.style.cursor = "";
+      window.document.body.style.userSelect = "";
+      clearSubpageDragState();
+
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      if (session?.active && target) {
+        void reorderSubpagesFromDropTarget(session.pageId, target);
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }, [clearSubpageDragState, reorderSubpagesFromDropTarget, updateSubpageDropTarget]);
 
   const handleToggleFavorite = async () => {
     setPageMenuOpen(false);
@@ -1571,21 +1671,44 @@ export function Editor({
                 />
               </div>
             </div>
-            {childPages.map((childPage) => (
-              <button
-                key={childPage.id}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-muted hover:text-foreground"
-                onClick={() => onSelectPage(childPage.id)}
-              >
-                {childPage.icon ? (
-                  <span className="flex h-5 w-5 items-center justify-center text-sm">{childPage.icon}</span>
-                ) : (
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                )}
-                <span className="truncate">{childPage.title || "Untitled"}</span>
-              </button>
-            ))}
+            {childPages.map((childPage) => {
+              const childTitle = childPage.title || "Untitled";
+              const dropClass = subpageDropTarget?.pageId === childPage.id
+                ? subpageDropTarget.position === "before"
+                  ? "border-t-primary"
+                  : "border-b-primary"
+                : "border-y-transparent";
+
+              return (
+                <div
+                  key={childPage.id}
+                  data-subpage-row-id={childPage.id}
+                  className={`group flex w-full items-center rounded-md border-y-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${dropClass} ${draggedSubpageId === childPage.id ? "opacity-45" : ""}`}
+                >
+                  <button
+                    type="button"
+                    data-subpage-drag-handle=""
+                    aria-label={`Reorder ${childTitle}`}
+                    className="flex h-8 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground active:cursor-grabbing group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onPointerDown={(event) => handleSubpagePointerDown(event, childPage.id)}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pr-2 text-left"
+                    onClick={() => onSelectPage(childPage.id)}
+                  >
+                    {childPage.icon ? (
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-sm">{childPage.icon}</span>
+                    ) : (
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="truncate">{childTitle}</span>
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : null}
         <div className="on-page-editor-blocks relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
