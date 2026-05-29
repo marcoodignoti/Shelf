@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const tinyPdfFixture = Buffer.from(
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
@@ -164,6 +164,13 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+async function submitProjectDialog(page: Page, title: string, name: string) {
+  const dialog = page.getByRole("dialog", { name: title });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Project name").fill(name);
+  await dialog.getByRole("button", { name: "Create" }).click();
+}
+
 test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();
@@ -183,11 +190,8 @@ test("organizes Studio documents into projects with inline rename and drag drop"
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("New Studio project");
-    await dialog.accept("Physics");
-  });
   await page.getByRole("button", { name: "New Studio project" }).click();
+  await submitProjectDialog(page, "New Studio project", "Physics");
 
   const physicsProjectId = await page.evaluate(() => {
     const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
@@ -237,11 +241,8 @@ test("creates nested Studio project folders and moves projects into folders", as
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("New Studio project");
-    await dialog.accept("Physics");
-  });
   await page.getByRole("button", { name: "New Studio project" }).click();
+  await submitProjectDialog(page, "New Studio project", "Physics");
   const physicsProjectId = await page.evaluate(() => {
     const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
       id: string;
@@ -253,11 +254,8 @@ test("creates nested Studio project folders and moves projects into folders", as
   const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
 
   await physicsProject.getByLabel("Actions for project Physics").click();
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("New Studio subfolder");
-    await dialog.accept("Mechanics");
-  });
   await page.getByRole("menuitem", { name: "New subfolder" }).click();
+  await submitProjectDialog(page, "New Studio subfolder", "Mechanics");
 
   const mechanicsProjectId = await page.evaluate(() => {
     const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
@@ -267,14 +265,14 @@ test("creates nested Studio project folders and moves projects into folders", as
     return projects.find((item) => item.name === "Mechanics")?.id;
   });
   expect(mechanicsProjectId).toBeTruthy();
-  const mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
+  await physicsProject.getByRole("button", { name: "Open project Physics" }).click();
+  let mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
   await expect(mechanicsProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
   await expect(mechanicsProject).toHaveAttribute("data-studio-project-depth", "1");
 
-  page.once("dialog", async (dialog) => {
-    await dialog.accept("Chemistry");
-  });
+  await page.getByRole("button", { name: "Back to Projects" }).click();
   await page.getByRole("button", { name: "New Studio project" }).click();
+  await submitProjectDialog(page, "New Studio project", "Chemistry");
   const chemistryProjectId = await page.evaluate(() => {
     const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
       id: string;
@@ -285,16 +283,75 @@ test("creates nested Studio project folders and moves projects into folders", as
   expect(chemistryProjectId).toBeTruthy();
   const chemistryProject = page.locator(`[data-studio-project-id='${chemistryProjectId}']`);
   await chemistryProject.locator("[data-studio-project-drag-handle]").dragTo(physicsProject);
+  await physicsProject.getByRole("button", { name: "Open project Physics" }).click();
+  mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
   await expect(chemistryProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
   await expect(chemistryProject).toHaveAttribute("data-studio-project-depth", "1");
 
   await page.getByRole("button", { name: "Import PDF" }).click();
   await page
-    .locator("[data-studio-project-id='studio-inbox'] [data-studio-document-id]")
+    .locator(`[data-studio-project-id='${physicsProjectId}'] [data-studio-document-id]`)
     .filter({ hasText: "civil-law" })
     .dragTo(mechanicsProject);
 
   await expect(mechanicsProject.locator("[role='button'][title='civil-law.pdf']")).toBeVisible();
+  await page.waitForFunction((targetProjectId) => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      title: string;
+      project_id: string | null;
+    }>;
+    return documents.some((document) => document.title === "civil-law" && document.project_id === targetProjectId);
+  }, mechanicsProjectId);
+});
+
+test("navigates Studio folders and creates content in the current folder", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+
+  await page.getByRole("button", { name: "New Studio project" }).click();
+  await submitProjectDialog(page, "New Studio project", "Physics");
+  const physicsProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Physics")?.id;
+  });
+  expect(physicsProjectId).toBeTruthy();
+  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
+
+  await physicsProject.getByLabel("Actions for project Physics").click();
+  await page.getByRole("menuitem", { name: "New subfolder" }).click();
+  await submitProjectDialog(page, "New Studio subfolder", "Mechanics");
+  const mechanicsProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Mechanics")?.id;
+  });
+  expect(mechanicsProjectId).toBeTruthy();
+
+  await physicsProject.getByRole("button", { name: "Open project Physics" }).click();
+  await expect(page.locator(`[data-studio-current-project-id='${physicsProjectId}']`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to Projects" })).toBeVisible();
+
+  await page.getByRole("button", { name: "New Studio subfolder" }).click();
+  await submitProjectDialog(page, "New Studio subfolder", "Thermodynamics");
+
+  await page.waitForFunction((parentProjectId) => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      name: string;
+      parent_id: string | null;
+    }>;
+    return projects.some((project) => project.name === "Thermodynamics" && project.parent_id === parentProjectId);
+  }, physicsProjectId);
+
+  const mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
+  await mechanicsProject.getByRole("button", { name: "Open project Mechanics" }).click();
+  await expect(page.locator(`[data-studio-current-project-id='${mechanicsProjectId}']`)).toBeVisible();
+
+  await page.getByRole("button", { name: "Import PDF" }).click();
   await page.waitForFunction((targetProjectId) => {
     const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
       title: string;

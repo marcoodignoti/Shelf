@@ -937,7 +937,7 @@ export function Sidebar() {
           projects={studioProjects}
           currentDocumentId={currentStudioDocumentId}
           isLoading={isLoading}
-          onImport={() => void importStudioPdfAction()}
+          onImport={(projectId = null) => void importStudioPdfAction(projectId)}
           onCreateProject={(name, parentId = null) => void createStudioProjectAction(name, parentId)}
           onRenameProject={(id, name) => void renameStudioProjectAction(id, name)}
           onMoveProject={(id, parentId) => void updateStudioProjectParentAction(id, parentId)}

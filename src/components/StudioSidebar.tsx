@@ -1,5 +1,5 @@
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudioDocument, StudioProject } from "../lib/studio";
@@ -12,7 +12,7 @@ type StudioSidebarProps = {
   projects: StudioProject[];
   currentDocumentId: string | null;
   isLoading: boolean;
-  onImport: () => void;
+  onImport: (projectId?: string | null) => void;
   onCreateProject: (name: string, parentId?: string | null) => void;
   onRenameProject: (id: string, name: string) => void;
   onMoveProject: (id: string, parentId: string | null) => void;
@@ -27,6 +27,126 @@ const STUDIO_DOCUMENT_MENU_WIDTH = 220;
 const STUDIO_DOCUMENT_MENU_HEIGHT = 178;
 const STUDIO_PROJECT_MENU_WIDTH = 190;
 const STUDIO_PROJECT_MENU_HEIGHT = 134;
+
+type ProjectNameDialogRequest = {
+  title: string;
+  parentId: string | null;
+};
+
+function StudioProjectNameDialog({
+  request,
+  onCancel,
+  onSubmit,
+}: {
+  request: ProjectNameDialogRequest;
+  onCancel: () => void;
+  onSubmit: (name: string, parentId: string | null) => void;
+}) {
+  const [name, setName] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return createPortal(
+    <div className="on-modal-overlay z-[240] items-center justify-center p-4" onMouseDown={onCancel}>
+      <form
+        role="dialog"
+        aria-label={request.title}
+        className="on-modal-panel w-[340px] max-w-[calc(100vw-2rem)] p-4"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const trimmedName = name.trim();
+          if (trimmedName) onSubmit(trimmedName, request.parentId);
+        }}
+      >
+        <div className="text-sm font-semibold text-foreground">{request.title}</div>
+        <input
+          ref={inputRef}
+          aria-label="Project name"
+          className="mt-3 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="on-button-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="on-button-primary" disabled={!name.trim()}>
+            Create
+          </button>
+        </div>
+      </form>
+    </div>,
+    globalThis.document.body
+  );
+}
+
+function StudioDocumentRenameDialog({
+  initialTitle,
+  onCancel,
+  onSubmit,
+}: {
+  initialTitle: string;
+  onCancel: () => void;
+  onSubmit: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  return createPortal(
+    <div className="on-modal-overlay z-[240] items-center justify-center p-4" onMouseDown={onCancel}>
+      <form
+        role="dialog"
+        aria-label="Rename Studio document"
+        className="on-modal-panel w-[360px] max-w-[calc(100vw-2rem)] p-4"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const nextTitle = title.trim();
+          if (nextTitle) onSubmit(nextTitle);
+        }}
+      >
+        <div className="text-sm font-semibold text-foreground">Rename Studio document</div>
+        <input
+          ref={inputRef}
+          aria-label="Document title"
+          className="mt-3 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="on-button-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="on-button-primary" disabled={!title.trim()}>
+            Rename
+          </button>
+        </div>
+      </form>
+    </div>,
+    globalThis.document.body
+  );
+}
 
 function StudioDocumentRow({
   document,
@@ -50,6 +170,7 @@ function StudioDocumentRow({
   onDragEnd: () => void;
 }) {
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -92,8 +213,7 @@ function StudioDocumentRow({
 
   const handleRename = () => {
     setMenuPosition(null);
-    const nextTitle = window.prompt("Rename Studio document", document.title)?.trim();
-    if (nextTitle) onRename(nextTitle);
+    setIsRenameDialogOpen(true);
   };
 
   const handleDelete = () => {
@@ -230,6 +350,16 @@ function StudioDocumentRow({
           </div>,
           globalThis.document.body
         )}
+      {isRenameDialogOpen && (
+        <StudioDocumentRenameDialog
+          initialTitle={document.title}
+          onCancel={() => setIsRenameDialogOpen(false)}
+          onSubmit={(title) => {
+            setIsRenameDialogOpen(false);
+            onRename(title);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -238,6 +368,8 @@ function StudioProjectHeader({
   project,
   count,
   depth,
+  active,
+  onOpen,
   onCreateChild,
   onRename,
   onDelete,
@@ -247,7 +379,9 @@ function StudioProjectHeader({
   project: StudioProject;
   count: number;
   depth: number;
-  onCreateChild: (name: string) => void;
+  active: boolean;
+  onOpen: () => void;
+  onCreateChild: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
   onProjectDragStart: () => void;
@@ -306,8 +440,7 @@ function StudioProjectHeader({
 
   const handleCreateChild = () => {
     setMenuPosition(null);
-    const name = window.prompt("New Studio subfolder")?.trim();
-    if (name) onCreateChild(name);
+    onCreateChild();
   };
 
   const handleDelete = () => {
@@ -337,22 +470,26 @@ function StudioProjectHeader({
   return (
     <>
       <div
-        draggable={!isInbox}
-        data-studio-project-drag-handle={isInbox ? undefined : ""}
-        className="mb-1 flex items-center gap-2 px-3 py-1 text-xs font-medium text-muted-foreground"
+        className={`mb-1 flex items-center gap-2 rounded-md px-3 py-1 text-xs font-medium text-muted-foreground ${active ? "bg-accent/60" : ""}`}
         style={{ paddingLeft: 12 + depth * 10 }}
-        onDragStart={(event) => {
-          if (isInbox) return;
-          closeOpenOverlays();
-          event.stopPropagation();
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("application/x-opennotion-studio-project-id", project.id);
-          event.dataTransfer.setData("text/plain", project.id);
-          onProjectDragStart();
-        }}
-        onDragEnd={onProjectDragEnd}
       >
-        <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+        <span
+          draggable={!isInbox}
+          data-studio-project-drag-handle={isInbox ? undefined : ""}
+          className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center ${isInbox ? "" : "cursor-grab active:cursor-grabbing"}`}
+          onDragStart={(event) => {
+            if (isInbox) return;
+            closeOpenOverlays();
+            event.stopPropagation();
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("application/x-opennotion-studio-project-id", project.id);
+            event.dataTransfer.setData("text/plain", project.id);
+            onProjectDragStart();
+          }}
+          onDragEnd={onProjectDragEnd}
+        >
+          {active ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
+        </span>
         {isRenaming && !isInbox ? (
           <input
             ref={inputRef}
@@ -374,14 +511,17 @@ function StudioProjectHeader({
             }}
           />
         ) : (
-          <span
-            className="min-w-0 flex-1 truncate text-foreground/80"
+          <button
+            type="button"
+            aria-label={`Open project ${project.name}`}
+            className="min-w-0 flex-1 truncate text-left text-foreground/80 hover:text-foreground"
+            onClick={onOpen}
             onDoubleClick={() => {
               if (!isInbox) handleRename();
             }}
           >
             {project.name}
-          </span>
+          </button>
         )}
         <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span>
         {!isInbox && (
@@ -448,10 +588,41 @@ export function StudioSidebar({
   const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dropProjectId, setDropProjectId] = useState<string | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [projectNameDialog, setProjectNameDialog] = useState<ProjectNameDialogRequest | null>(null);
+
+  const currentProject = currentProjectId === DEFAULT_STUDIO_PROJECT_ID
+    ? projectGroups.find((group) => group.project.id === DEFAULT_STUDIO_PROJECT_ID)?.project ?? null
+    : projects.find((project) => project.id === currentProjectId) ?? null;
+  const currentImportProjectId = currentProjectId && currentProjectId !== DEFAULT_STUDIO_PROJECT_ID
+    ? currentProjectId
+    : null;
+
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (currentProjectId === DEFAULT_STUDIO_PROJECT_ID) return;
+    if (!projects.some((project) => project.id === currentProjectId)) {
+      setCurrentProjectId(null);
+    }
+  }, [currentProjectId, projects]);
 
   const handleCreateProject = () => {
-    const name = window.prompt("New Studio project")?.trim();
-    if (name) onCreateProject(name);
+    setProjectNameDialog({
+      title: currentImportProjectId ? "New Studio subfolder" : "New Studio project",
+      parentId: currentImportProjectId,
+    });
+  };
+
+  const handleSubmitProjectName = (name: string, parentId: string | null) => {
+    setProjectNameDialog(null);
+    onCreateProject(name, parentId);
+  };
+
+  const openChildProjectDialog = (parentId: string) => {
+    setProjectNameDialog({
+      title: "New Studio subfolder",
+      parentId,
+    });
   };
 
   const clearDragState = () => {
@@ -496,10 +667,22 @@ export function StudioSidebar({
     onMoveDocument(documentId, targetProjectId);
   };
 
+  const visibleProjectGroups = projectGroups.filter((group) => {
+    if (!currentProjectId) {
+      return group.project.id === DEFAULT_STUDIO_PROJECT_ID || !group.project.parent_id;
+    }
+
+    if (currentProjectId === DEFAULT_STUDIO_PROJECT_ID) {
+      return group.project.id === DEFAULT_STUDIO_PROJECT_ID;
+    }
+
+    return group.project.id === currentProjectId || group.project.parent_id === currentProjectId;
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-2">
-        <button type="button" className="on-studio-import-button" onClick={onImport}>
+        <button type="button" className="on-studio-import-button" onClick={() => onImport(currentImportProjectId)}>
           <Upload className="h-4 w-4" />
           <span>Import PDF</span>
         </button>
@@ -537,12 +720,24 @@ export function StudioSidebar({
           </section>
         )}
         {!isLoading && (
-          <section>
+          <section data-studio-current-project-id={currentProjectId ?? "root"}>
             <div className="mb-1 flex items-center justify-between">
-              <div className="on-section-label">Projects</div>
+              <div className="flex min-w-0 items-center gap-1">
+                {currentProjectId && (
+                  <button
+                    type="button"
+                    aria-label="Back to Projects"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                    onClick={() => setCurrentProjectId(currentProject?.parent_id ?? null)}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <div className="on-section-label truncate">{currentProject?.name ?? "Projects"}</div>
+              </div>
               <button
                 type="button"
-                aria-label="New Studio project"
+                aria-label={currentImportProjectId ? "New Studio subfolder" : "New Studio project"}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={handleCreateProject}
               >
@@ -554,7 +749,7 @@ export function StudioSidebar({
                 Create a project to organize PDFs.
               </div>
             )}
-            {projectGroups.map((group) => {
+            {visibleProjectGroups.map((group) => {
               const depth = studioProjectDepth(group.project, projects);
               const isDropTarget = dropProjectId === group.project.id;
               const canAcceptDraggedProject = draggedProjectId
@@ -602,8 +797,10 @@ export function StudioSidebar({
                   <StudioProjectHeader
                     project={group.project}
                     count={group.documents.length}
-                    depth={depth}
-                    onCreateChild={(name) => onCreateProject(name, group.project.id)}
+                    depth={currentProjectId ? Math.max(0, depth - studioProjectDepth(currentProject ?? group.project, projects)) : depth}
+                    active={group.project.id === currentProjectId}
+                    onOpen={() => setCurrentProjectId(group.project.id)}
+                    onCreateChild={() => openChildProjectDialog(group.project.id)}
                     onRename={(name) => onRenameProject(group.project.id, name)}
                     onDelete={() => onDeleteProject(group.project.id)}
                     onProjectDragStart={() => setDraggedProjectId(group.project.id)}
@@ -637,6 +834,13 @@ export function StudioSidebar({
           </section>
         )}
       </div>
+      {projectNameDialog && (
+        <StudioProjectNameDialog
+          request={projectNameDialog}
+          onCancel={() => setProjectNameDialog(null)}
+          onSubmit={handleSubmitProjectName}
+        />
+      )}
     </div>
   );
 }

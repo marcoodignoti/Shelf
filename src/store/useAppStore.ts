@@ -40,7 +40,7 @@ interface AppState {
   setCurrentPageId: (id: string | null) => void;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
   setCurrentStudioDocumentId: (id: string | null) => void;
-  importStudioPdfAction: () => Promise<StudioDocument | null>;
+  importStudioPdfAction: (projectId?: string | null) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
   renameStudioProjectAction: (id: string, name: string) => Promise<void>;
@@ -198,7 +198,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
-  importStudioPdfAction: async () => {
+  importStudioPdfAction: async (projectId = null) => {
     try {
       const path = await open({
         multiple: false,
@@ -207,17 +207,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!path || Array.isArray(path)) return null;
 
       const document = await importStudioDocument(path);
+      const importedDocument = projectId
+        ? { ...document, project_id: projectId, updated_at: new Date().toISOString() }
+        : document;
+      if (projectId) {
+        await updateStudioDocumentProject(document.id, projectId);
+      }
       const note = await getPage(document.note_page_id);
       localStorage.setItem('opennotion-workspace-mode', 'studio');
       localStorage.setItem('opennotion-current-studio-document-id', document.id);
       set((state) => ({
-        studioDocuments: [document, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
+        studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
         currentStudioDocumentId: document.id,
         workspaceMode: 'studio',
         error: null
       }));
-      return document;
+      return importedDocument;
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
