@@ -1,30 +1,37 @@
-import { useCallback, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
 import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
-import { Editor } from "./components/PageEditor";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { CommandPalette } from "./components/CommandPalette";
 import { AppNotice } from "./components/AppNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { HomeView } from "./components/HomeView";
-import { StudioWorkspace } from "./components/StudioWorkspace";
+
+const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
+const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
+const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
+
+function WorkspaceLoadingFallback() {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      Loading workspace...
+    </div>
+  );
+}
 
 export default function App() {
-  const {
-    pages,
-    currentPageId,
-    theme,
-    isLoading,
-    addPage,
-    setCurrentPageId,
-    workspaceMode,
-    studioDocuments,
-    currentStudioDocumentId,
-    updateStudioViewerAction,
-    createMissingStudioNoteAction,
-    replaceStudioPdfAction,
-  } = useAppStore();
+  const pages = useAppStore((state) => state.pages);
+  const currentPageId = useAppStore((state) => state.currentPageId);
+  const theme = useAppStore((state) => state.theme);
+  const isLoading = useAppStore((state) => state.isLoading);
+  const addPage = useAppStore((state) => state.addPage);
+  const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
+  const workspaceMode = useAppStore((state) => state.workspaceMode);
+  const studioDocuments = useAppStore((state) => state.studioDocuments);
+  const currentStudioDocumentId = useAppStore((state) => state.currentStudioDocumentId);
+  const updateStudioViewerAction = useAppStore((state) => state.updateStudioViewerAction);
+  const createMissingStudioNoteAction = useAppStore((state) => state.createMissingStudioNoteAction);
+  const replaceStudioPdfAction = useAppStore((state) => state.replaceStudioPdfAction);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -65,11 +72,20 @@ export default function App() {
     return () => window.removeEventListener("contextmenu", preventNativeContextMenu);
   }, []);
 
-  const currentPage = pages.find(p => p.id === currentPageId);
-  const currentStudioDocument = studioDocuments.find((document) => document.id === currentStudioDocumentId);
-  const currentStudioNote = currentStudioDocument
-    ? pages.find((page) => page.id === currentStudioDocument.note_page_id) ?? null
-    : null;
+  const currentPage = useMemo(
+    () => pages.find(p => p.id === currentPageId),
+    [currentPageId, pages]
+  );
+  const currentStudioDocument = useMemo(
+    () => studioDocuments.find((document) => document.id === currentStudioDocumentId),
+    [currentStudioDocumentId, studioDocuments]
+  );
+  const currentStudioNote = useMemo(
+    () => currentStudioDocument
+      ? pages.find((page) => page.id === currentStudioDocument.note_page_id) ?? null
+      : null,
+    [currentStudioDocument, pages]
+  );
   const handleUpdateStudioViewer = useCallback((id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }) => {
     void updateStudioViewerAction(id, updates);
   }, [updateStudioViewerAction]);
@@ -83,21 +99,21 @@ export default function App() {
   return (
     <Layout>
       {isLoading ? (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Loading workspace...
-        </div>
+        <WorkspaceLoadingFallback />
       ) : workspaceMode === 'studio' ? (
         currentStudioDocument ? (
           <ErrorBoundary key={currentStudioDocument.id}>
-            <StudioWorkspace
-              document={currentStudioDocument}
-              note={currentStudioNote}
-              pages={pages}
-              onSelectPage={setCurrentPageId}
-              onCreateMissingNote={handleCreateMissingStudioNote}
-              onReplacePdfFile={handleReplaceStudioPdf}
-              onUpdateViewer={handleUpdateStudioViewer}
-            />
+            <Suspense fallback={<WorkspaceLoadingFallback />}>
+              <StudioWorkspace
+                document={currentStudioDocument}
+                note={currentStudioNote}
+                pages={pages}
+                onSelectPage={setCurrentPageId}
+                onCreateMissingNote={handleCreateMissingStudioNote}
+                onReplacePdfFile={handleReplaceStudioPdf}
+                onUpdateViewer={handleUpdateStudioViewer}
+              />
+            </Suspense>
           </ErrorBoundary>
         ) : (
           <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
@@ -111,7 +127,9 @@ export default function App() {
         />
       ) : currentPage ? (
         <ErrorBoundary key={currentPage.id}>
-          <Editor page={currentPage} pages={pages} onSelectPage={setCurrentPageId} />
+          <Suspense fallback={<WorkspaceLoadingFallback />}>
+            <Editor page={currentPage} pages={pages} onSelectPage={setCurrentPageId} />
+          </Suspense>
         </ErrorBoundary>
       ) : (
         <div className="flex h-full items-center justify-center px-8 text-center">
@@ -129,7 +147,9 @@ export default function App() {
           </div>
         </div>
       )}
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <CommandPalette />
+      </Suspense>
       <AppNotice />
     </Layout>
   );

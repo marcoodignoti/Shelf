@@ -12,6 +12,11 @@ node_modules
 dist
 dist-ssr
 .superpowers/
+
+# caveman skill (installed globally in ~/.claude; these are project-level duplicates)
+.agents/
+.claude/
+skills-lock.json
 playwright-report/
 test-results/
 src-tauri/target
