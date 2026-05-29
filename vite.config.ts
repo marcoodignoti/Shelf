@@ -13,9 +13,28 @@ export default defineConfig(async () => ({
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'tauri-vendor': ['@tauri-apps/api']
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+
+          if (id.includes('/@blocknote/') || id.includes('/@mantine/')) {
+            return 'editor-vendor';
+          }
+          if (id.includes('/pdfjs-dist/')) {
+            return 'pdf-vendor';
+          }
+          if (id.includes('/katex/') || id.includes('/react-icons/')) {
+            return 'math-vendor';
+          }
+          if (id.includes('/lucide-react/')) {
+            return 'icons-vendor';
+          }
+          if (id.includes('/@tauri-apps/')) {
+            return 'tauri-vendor';
+          }
+          if (id.includes('/zustand/')) {
+            return 'state-vendor';
+          }
+          return undefined;
         }
       }
     }
