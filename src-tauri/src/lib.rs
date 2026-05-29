@@ -774,6 +774,19 @@ async fn create_studio_project_record(
         return Err("project name cannot be empty".to_string());
     }
 
+    if let Some(parent_id) = parent_id {
+        let parent_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+                .bind(parent_id)
+                .fetch_one(db)
+                .await
+                .map_err(|error| error.to_string())?;
+
+        if parent_exists == 0 {
+            return Err("parent project not found".to_string());
+        }
+    }
+
     let sort_order: i64 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(sort_order), -1) + 1
          FROM studio_projects
@@ -828,6 +841,95 @@ async fn rename_studio_project_record(
         .execute(db)
         .await
         .map_err(|error| error.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("project not found".to_string());
+    }
+
+    Ok(())
+}
+
+async fn update_studio_project_parent_record(
+    db: &SqlitePool,
+    id: &str,
+    parent_id: Option<&str>,
+    updated_at: &str,
+) -> Result<(), String> {
+    if parent_id == Some(id) {
+        return Err("project cannot be its own parent".to_string());
+    }
+
+    if let Some(parent_id) = parent_id {
+        let parent_exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+                .bind(parent_id)
+                .fetch_one(db)
+                .await
+                .map_err(|error| error.to_string())?;
+
+        if parent_exists == 0 {
+            return Err("parent project not found".to_string());
+        }
+
+        let would_cycle: i64 = sqlx::query_scalar(
+            "WITH RECURSIVE ancestors(id, parent_id) AS (
+                SELECT id, parent_id
+                FROM studio_projects
+                WHERE id = ?
+                UNION ALL
+                SELECT studio_projects.id, studio_projects.parent_id
+                FROM studio_projects
+                INNER JOIN ancestors ON studio_projects.id = ancestors.parent_id
+             )
+             SELECT COUNT(*)
+             FROM ancestors
+             WHERE id = ?",
+        )
+        .bind(parent_id)
+        .bind(id)
+        .fetch_one(db)
+        .await
+        .map_err(|error| error.to_string())?;
+
+        if would_cycle > 0 {
+            return Err("project cycle not allowed".to_string());
+        }
+    }
+
+    let project_exists: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM studio_projects WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .map_err(|error| error.to_string())?;
+
+    if project_exists == 0 {
+        return Err("project not found".to_string());
+    }
+
+    let sort_order: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1
+         FROM studio_projects
+         WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?",
+    )
+    .bind(parent_id)
+    .bind(parent_id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let result = sqlx::query(
+        "UPDATE studio_projects
+         SET parent_id = ?, sort_order = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(parent_id)
+    .bind(sort_order)
+    .bind(updated_at)
+    .bind(id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
 
     if result.rows_affected() == 0 {
         return Err("project not found".to_string());
@@ -1639,6 +1741,16 @@ async fn rename_studio_project(
 }
 
 #[tauri::command]
+async fn update_studio_project_parent(
+    id: String,
+    parent_id: Option<String>,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    update_studio_project_parent_record(&state.db, &id, parent_id.as_deref(), &updated_at).await
+}
+
+#[tauri::command]
 async fn delete_studio_project(
     id: String,
     updated_at: String,
@@ -1881,6 +1993,7 @@ pub fn run() {
             list_studio_projects,
             create_studio_project,
             rename_studio_project,
+            update_studio_project_parent,
             delete_studio_project,
             update_studio_document_project,
             import_studio_document,
@@ -2339,6 +2452,88 @@ mod tests {
                 .expect("list documents")
                 .remove(0);
             assert_eq!(unassigned_document.project_id, None);
+        });
+    }
+
+    #[test]
+    fn studio_project_parent_records_reparent_and_reject_cycles() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_studio_project_record(&db, "root", "Physics", None, "2026-05-29T00:00:00.000Z")
+                .await
+                .expect("create root project");
+            create_studio_project_record(
+                &db,
+                "child",
+                "Mechanics",
+                Some("root"),
+                "2026-05-29T00:01:00.000Z",
+            )
+            .await
+            .expect("create child project");
+            create_studio_project_record(
+                &db,
+                "sibling",
+                "Electromagnetism",
+                None,
+                "2026-05-29T00:02:00.000Z",
+            )
+            .await
+            .expect("create sibling project");
+
+            update_studio_project_parent_record(
+                &db,
+                "sibling",
+                Some("child"),
+                "2026-05-29T00:03:00.000Z",
+            )
+            .await
+            .expect("move sibling under child");
+
+            let projects = list_studio_project_records(&db)
+                .await
+                .expect("list projects");
+            let moved = projects
+                .iter()
+                .find(|project| project.id == "sibling")
+                .expect("moved project exists");
+            assert_eq!(moved.parent_id.as_deref(), Some("child"));
+
+            let self_parent_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("root"),
+                "2026-05-29T00:04:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                self_parent_result.expect_err("reject self parent"),
+                "project cannot be its own parent"
+            );
+
+            let cycle_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("sibling"),
+                "2026-05-29T00:05:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                cycle_result.expect_err("reject cycle"),
+                "project cycle not allowed"
+            );
+
+            let missing_parent_result = update_studio_project_parent_record(
+                &db,
+                "root",
+                Some("missing"),
+                "2026-05-29T00:06:00.000Z",
+            )
+            .await;
+            assert_eq!(
+                missing_parent_result.expect_err("reject missing parent"),
+                "parent project not found"
+            );
         });
     }
 

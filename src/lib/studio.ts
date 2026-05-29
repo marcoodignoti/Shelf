@@ -59,6 +59,14 @@ export async function renameStudioProject(id: string, name: string): Promise<voi
   });
 }
 
+export async function updateStudioProjectParent(id: string, parentId: string | null): Promise<void> {
+  await invoke("update_studio_project_parent", {
+    id,
+    parentId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function deleteStudioProject(id: string): Promise<void> {
   await invoke("delete_studio_project", {
     id,

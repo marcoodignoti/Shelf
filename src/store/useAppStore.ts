@@ -16,7 +16,8 @@ import {
   StudioPanelLayout,
   StudioProject,
   updateStudioDocumentProject,
-  updateStudioDocumentViewerState
+  updateStudioDocumentViewerState,
+  updateStudioProjectParent
 } from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -43,6 +44,7 @@ interface AppState {
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
   renameStudioProjectAction: (id: string, name: string) => Promise<void>;
+  updateStudioProjectParentAction: (id: string, parentId: string | null) => Promise<void>;
   deleteStudioProjectAction: (id: string) => Promise<void>;
   updateStudioDocumentProjectAction: (documentId: string, projectId: string | null) => Promise<void>;
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
@@ -271,6 +273,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       await renameStudioProject(id, trimmedName);
+    } catch (error: unknown) {
+      const message = userMessageForError(error);
+      set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });
+    }
+  },
+  updateStudioProjectParentAction: async (id, parentId) => {
+    if (id === parentId) return;
+
+    const previousProjects = get().studioProjects;
+    const updated_at = new Date().toISOString();
+    set((state) => ({
+      studioProjects: state.studioProjects.map((project) =>
+        project.id === id ? { ...project, parent_id: parentId, updated_at } : project
+      ),
+      error: null
+    }));
+
+    try {
+      await updateStudioProjectParent(id, parentId);
     } catch (error: unknown) {
       const message = userMessageForError(error);
       set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });

@@ -98,6 +98,16 @@ test.beforeEach(async ({ page }) => {
           ));
           return null;
         }
+        if (cmd === "update_studio_project_parent") {
+          save(projectsKey, load<any>(projectsKey).map((project) =>
+            project.id === args.id ? {
+              ...project,
+              parent_id: (args.parentId as string | null) ?? null,
+              updated_at: args.updatedAt,
+            } : project
+          ));
+          return null;
+        }
         if (cmd === "delete_studio_project") {
           save(projectsKey, load<any>(projectsKey).filter((project) => project.id !== args.id));
           save(documentsKey, load<any>(documentsKey).map((document) =>
@@ -221,6 +231,77 @@ test("organizes Studio documents into projects with inline rename and drag drop"
     const project = projects.find((item) => item.name === "Mechanics");
     return Boolean(project && documents.some((document) => document.title === "civil-law" && document.project_id === project.id));
   });
+});
+
+test("creates nested Studio project folders and moves projects into folders", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("New Studio project");
+    await dialog.accept("Physics");
+  });
+  await page.getByRole("button", { name: "New Studio project" }).click();
+  const physicsProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Physics")?.id;
+  });
+  expect(physicsProjectId).toBeTruthy();
+  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
+
+  await physicsProject.getByLabel("Actions for project Physics").click();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("New Studio subfolder");
+    await dialog.accept("Mechanics");
+  });
+  await page.getByRole("menuitem", { name: "New subfolder" }).click();
+
+  const mechanicsProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Mechanics")?.id;
+  });
+  expect(mechanicsProjectId).toBeTruthy();
+  const mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
+  await expect(mechanicsProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
+  await expect(mechanicsProject).toHaveAttribute("data-studio-project-depth", "1");
+
+  page.once("dialog", async (dialog) => {
+    await dialog.accept("Chemistry");
+  });
+  await page.getByRole("button", { name: "New Studio project" }).click();
+  const chemistryProjectId = await page.evaluate(() => {
+    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
+      id: string;
+      name: string;
+    }>;
+    return projects.find((item) => item.name === "Chemistry")?.id;
+  });
+  expect(chemistryProjectId).toBeTruthy();
+  const chemistryProject = page.locator(`[data-studio-project-id='${chemistryProjectId}']`);
+  await chemistryProject.locator("[data-studio-project-drag-handle]").dragTo(physicsProject);
+  await expect(chemistryProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
+  await expect(chemistryProject).toHaveAttribute("data-studio-project-depth", "1");
+
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await page
+    .locator("[data-studio-project-id='studio-inbox'] [data-studio-document-id]")
+    .filter({ hasText: "civil-law" })
+    .dragTo(mechanicsProject);
+
+  await expect(mechanicsProject.locator("[role='button'][title='civil-law.pdf']")).toBeVisible();
+  await page.waitForFunction((targetProjectId) => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      title: string;
+      project_id: string | null;
+    }>;
+    return documents.some((document) => document.title === "civil-law" && document.project_id === targetProjectId);
+  }, mechanicsProjectId);
 });
 
 test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {

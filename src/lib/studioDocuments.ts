@@ -88,6 +88,51 @@ export function studioProjectDepth(project: StudioProject, projects: StudioProje
   return depth;
 }
 
+function compareStudioProjectGroups(first: StudioProjectGroup, second: StudioProjectGroup): number {
+  if (first.project.sort_order !== second.project.sort_order) {
+    return first.project.sort_order - second.project.sort_order;
+  }
+  return first.project.name.localeCompare(second.project.name);
+}
+
+function orderStudioProjectGroups(groups: StudioProjectGroup[]): StudioProjectGroup[] {
+  const groupsById = new Map(groups.map((group) => [group.project.id, group]));
+  const childrenByParentId = new Map<string | null, StudioProjectGroup[]>();
+
+  for (const group of groups) {
+    const parentId = cleanProjectValue(group.project.parent_id);
+    const normalizedParentId =
+      parentId && parentId !== group.project.id && groupsById.has(parentId) ? parentId : null;
+    const siblings = childrenByParentId.get(normalizedParentId) ?? [];
+    siblings.push(group);
+    childrenByParentId.set(normalizedParentId, siblings);
+  }
+
+  const orderedGroups: StudioProjectGroup[] = [];
+  const visitedProjectIds = new Set<string>();
+
+  const visitChildren = (parentId: string | null) => {
+    const children = [...(childrenByParentId.get(parentId) ?? [])].sort(compareStudioProjectGroups);
+    for (const child of children) {
+      if (visitedProjectIds.has(child.project.id)) continue;
+      visitedProjectIds.add(child.project.id);
+      orderedGroups.push(child);
+      visitChildren(child.project.id);
+    }
+  };
+
+  visitChildren(null);
+
+  for (const group of [...groups].sort(compareStudioProjectGroups)) {
+    if (visitedProjectIds.has(group.project.id)) continue;
+    visitedProjectIds.add(group.project.id);
+    orderedGroups.push(group);
+    visitChildren(group.project.id);
+  }
+
+  return orderedGroups;
+}
+
 export function groupStudioDocumentsByProject(
   documents: ProjectableStudioDocument[],
   projects: StudioProject[] = []
@@ -109,17 +154,11 @@ export function groupStudioDocumentsByProject(
     }
   }
 
-  return [...groups.values()]
+  return orderStudioProjectGroups([...groups.values()]
     .map((group) => ({
       ...group,
       documents: allStudioDocuments(group.documents),
-    }))
-    .sort((first, second) => {
-      if (first.project.sort_order !== second.project.sort_order) {
-        return first.project.sort_order - second.project.sort_order;
-      }
-      return first.project.name.localeCompare(second.project.name);
-    });
+    })));
 }
 
 export function normalizePanelLayout(value: string): StudioPanelLayout {
