@@ -835,7 +835,12 @@ export function Editor({
       const pending = pendingUpdatesRef.current;
       if (Object.keys(pending).length > 0) {
         pendingUpdatesRef.current = {};
-        void updatePage(page.id, pending);
+        // Fire-and-forget on unmount: there is no UI left to roll back to, so
+        // at least log a failed final write instead of dropping it silently
+        // (and avoid an unhandled promise rejection).
+        void updatePage(page.id, pending).catch((error) => {
+          console.error("Failed to flush pending edits on page switch:", error);
+        });
       }
     };
   }, [page.id]);
