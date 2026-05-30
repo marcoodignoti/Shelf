@@ -28,7 +28,7 @@ Record the machine in the baseline table below.
 |--------------------|--------------------------------------|-----------------|--------------------------------------------------|
 | Disk (cold insert) | 5,000 empty pages, main .db after checkpoint | <= 1.2 MB | `perf_tests.rs` `DISK_BUDGET_BYTES`              |
 | Throughput         | insert 5,000 pages                   | <= 2,200 ms     | `perf_tests.rs` `INSERT_BUDGET_MS`               |
-| Long-session DB    | 2,000 content-update cycles + VACUUM | <= 12 MB        | `perf_tests.rs` `CHURN_DISK_BUDGET_BYTES`        |
+| Long-session DB    | 2,000 content-update cycles + VACUUM | <= 640 KB       | `perf_tests.rs` `CHURN_DISK_BUDGET_BYTES`        |
 | Startup            | dev server "/" to first render       | <= 3,000 ms     | `perf.perf.e2e.ts` `STARTUP_BUDGET_MS`           |
 | Frontend leak      | heap delta over 200 edit cycles      | <= 15 MB        | `perf.perf.e2e.ts` `HEAP_DELTA_BUDGET_BYTES`     |
 | Native RSS         | built binary peak resident set       | document only   | `profile-macos.sh` `RSS_BUDGET_MB`               |
@@ -39,7 +39,7 @@ Record the machine in the baseline table below.
 
 | Date | Machine | Disk cold | Insert ms | Churn disk | Startup ms | Heap delta | Native RSS | PDF import |
 |------|---------|-----------|-----------|------------|------------|------------|------------|------------|
-| 2026-05-30 | macOS (Darwin 25.5.0, M-series) | 892928 bytes (~872 KB) | 1655 ms | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| 2026-05-30 | macOS (Darwin 25.5.0, M-series) | 892928 bytes (~872 KB) | 1655 ms | 471040 bytes (~460 KB) | _pending_ | _pending_ | _pending_ | _pending_ |
 
 ## Manual runbook (native shell + PDF import + soak)
 
