@@ -17,6 +17,7 @@ dist-ssr
 .agents/
 .claude/
 skills-lock.json
+
 playwright-report/
 test-results/
 src-tauri/target

@@ -202,6 +202,26 @@ test("creates a blank page from the sidebar new page menu", async ({ page }) => 
   );
 });
 
+test("flushes pending editor edits when switching pages before the save debounce", async ({ page }) => {
+  const editor = await createPageAndFocusEditor(page, "Flush Page A");
+  await editor.pressSequentially("Edit made right before navigating");
+
+  // Switch pages immediately — well within the 300ms save debounce — which
+  // unmounts the editor. The flush-on-unmount must persist the pending edit;
+  // before the fix the queued content was dropped and never reached storage.
+  await page.getByRole("button", { name: "New page" }).click();
+  await page.getByText("Blank page").click();
+
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const pageA = pages.find((page) => page.title === "Flush Page A");
+      return (pageA?.search_text ?? "").includes("Edit made right before navigating");
+    },
+    { key: storageKey }
+  );
+});
+
 test("keeps sidebar page context menu open while scrolling with the mouse", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 280 });
   await page.goto("/");
