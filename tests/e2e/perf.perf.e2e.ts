@@ -1,8 +1,13 @@
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 
 // Budgets — set from the first measured run on the reference machine
-// (measured * ~1.3). Record values in perf/README.md.
-const STARTUP_BUDGET_MS = 1_000; // baseline ~428 ms on ref machine; ×2.3 headroom for noise
+// (measured * ~1.5). Record values in perf/README.md.
+//
+// STARTUP_BUDGET_MS is a coarse Node-side Date.now() measure wrapping
+// page.goto("/") + waitFor(CTA visible). It includes Playwright IPC overhead,
+// navigation latency, and poll interval — it is NOT a pure browser
+// navigationStart→DCL timing. Used as a manual pre-release gate only (not CI).
+const STARTUP_BUDGET_MS = 700; // baseline ~428 ms on ref machine; ×1.5 headroom for noise
 const HEAP_DELTA_BUDGET_BYTES = 7 * 1024 * 1024; // baseline ~4.5 MB on ref machine; ×1.3 = ~7 MB
 const EDIT_CYCLES = 200;
 
@@ -134,6 +139,18 @@ test("editing churn does not leak JS heap", async ({ page }) => {
 
   const before = await jsHeapUsedBytes(page, client);
   for (let i = 0; i < EDIT_CYCLES; i++) {
+    // Re-assert focus every 50 cycles: a debounced save re-render can steal
+    // focus, causing pressSequentially to silently type into nothing and make
+    // the heap delta meaningless. Re-click to restore focus if needed.
+    if (i % 50 === 0 && i > 0) {
+      const isFocused = await editor.evaluate(
+        (el) => el === document.activeElement,
+      );
+      if (!isFocused) {
+        await editor.click();
+      }
+      await expect(editor).toBeFocused();
+    }
     await editor.pressSequentially(`line ${i} `, { delay: 0 });
     await editor.press("Enter");
   }

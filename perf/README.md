@@ -29,11 +29,17 @@ Record the machine in the baseline table below.
 | Disk (cold insert) | 5,000 empty pages, main .db after checkpoint | <= 1.2 MB | `perf_tests.rs` `DISK_BUDGET_BYTES`              |
 | Throughput         | insert 5,000 pages                   | <= 2,200 ms     | `perf_tests.rs` `INSERT_BUDGET_MS`               |
 | Long-session DB    | 2,000 content-update cycles + VACUUM | <= 640 KB       | `perf_tests.rs` `CHURN_DISK_BUDGET_BYTES`        |
-| Startup            | dev server "/" to first render       | <= 1,000 ms     | `perf.perf.e2e.ts` `STARTUP_BUDGET_MS`           |
+| Startup            | dev server "/" to first render       | <= 700 ms       | `perf.perf.e2e.ts` `STARTUP_BUDGET_MS`           |
 | Frontend leak      | heap delta over 200 edit cycles      | <= 7 MB         | `perf.perf.e2e.ts` `HEAP_DELTA_BUDGET_BYTES`     |
 | Native RSS         | built binary peak resident set       | document only   | `profile-macos.sh` `RSS_BUDGET_MB`               |
 | Native startup     | launch to window visible             | document only   | manual runbook                                   |
 | PDF import         | import a ~50 MB PDF in-app           | document only   | manual runbook                                   |
+
+> **Startup timing note:** the `<= 700 ms` startup budget is a coarse
+> Playwright-side `Date.now()` measure (includes Playwright IPC overhead,
+> navigation, and poll latency) — it is **not** a pure browser
+> `navigationStart → DCL` timing. It is used as a manual pre-release signal
+> only; it is not part of the CI gate.
 
 ## Baselines
 
