@@ -188,6 +188,18 @@ async function submitProjectDialog(page: Page, title: string, name: string) {
   await dialog.getByRole("button", { name: "Create" }).click();
 }
 
+test("auto-dismisses Studio success notices", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Studio" }).click();
+
+  await page.getByRole("button", { name: "New Studio project" }).click();
+  await submitProjectDialog(page, "New Studio project", "Physics");
+
+  const notice = page.locator(".on-notice").filter({ hasText: "Studio project created." });
+  await expect(notice).toBeVisible();
+  await expect(notice).toBeHidden({ timeout: 5_500 });
+});
+
 test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Studio" }).click();

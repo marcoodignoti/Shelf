@@ -1,28 +1,56 @@
-import { X } from "lucide-react";
+import { useEffect } from "react";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+
+const SUCCESS_NOTICE_AUTO_DISMISS_MS = 4_200;
+const ERROR_NOTICE_AUTO_DISMISS_MS = 6_500;
 
 export function AppNotice() {
   const { notice, clearNotice } = useAppStore();
+  const autoDismissMs = notice?.kind === "error"
+    ? ERROR_NOTICE_AUTO_DISMISS_MS
+    : SUCCESS_NOTICE_AUTO_DISMISS_MS;
+
+  useEffect(() => {
+    if (!notice) return;
+
+    const timeoutId = window.setTimeout(clearNotice, autoDismissMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [autoDismissMs, clearNotice, notice]);
 
   if (!notice) return null;
 
+  const NoticeIcon = notice.kind === "error" ? AlertCircle : CheckCircle2;
+  const ariaLive = notice.kind === "error" ? "assertive" : "polite";
+
   return (
-    <div className="pointer-events-none fixed left-1/2 top-8 z-[120] w-[min(520px,calc(100vw-32px))] -translate-x-1/2">
+    <div className="pointer-events-none fixed left-1/2 top-5 z-[120] w-[min(440px,calc(100vw-24px))] -translate-x-1/2">
       <div
-        className={`on-notice pointer-events-auto flex items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm ${
+        className={`on-notice pointer-events-auto flex items-center gap-3 px-3.5 py-3 text-sm ${
           notice.kind === "error"
             ? "on-notice-error"
-            : "text-foreground"
+            : "on-notice-success"
         }`}
+        role={notice.kind === "error" ? "alert" : "status"}
+        aria-live={ariaLive}
       >
-        <span>{notice.message}</span>
+        <div className="on-notice-icon" aria-hidden="true">
+          <NoticeIcon className="h-4 w-4" strokeWidth={2} />
+        </div>
+        <span className="on-notice-message min-w-0 flex-1">{notice.message}</span>
         <button
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="on-notice-close"
           onClick={clearNotice}
           aria-label="Dismiss notification"
+          title="Dismiss"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
+        <div
+          className="on-notice-progress"
+          style={{ animationDuration: `${autoDismissMs}ms` }}
+          aria-hidden="true"
+        />
       </div>
     </div>
   );

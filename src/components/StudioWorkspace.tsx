@@ -234,7 +234,7 @@ export function StudioWorkspace({
         </div>
       ) : (
         <StudioPdfViewer
-          key={`${document.id}-${document.updated_at}-${document.stored_file_path}`}
+          key={`${document.id}-${document.stored_file_path}`}
           src={pdfSrc}
           title={document.title}
           page={currentPage}

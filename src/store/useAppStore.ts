@@ -111,6 +111,12 @@ function getStoredSidebarWidth(): number {
   return Number.isFinite(storedWidth) ? clampSidebarWidth(storedWidth) : SIDEBAR_DEFAULT_WIDTH;
 }
 
+function logStoreError(error: unknown): void {
+  if (import.meta.env.DEV) {
+    console.error(error);
+  }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   pages: [],
   currentPageId: getStoredPageId(),
@@ -460,7 +466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return newPage;
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
       return null;
@@ -478,7 +484,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       await updatePage(id, { title });
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ pages: previousPages, error: message, notice: { kind: 'error', message } });
     }
@@ -494,7 +500,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const current = get().currentPageId;
       localStorage.setItem('opennotion-current-page-id', current || HOME_PAGE_ID);
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
     }
@@ -507,7 +513,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       await movePage(id, parentId);
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
       await get().fetchPages();
@@ -526,7 +532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       await reorderPages(parentId, orderedIds);
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ pages: previousPages, error: message, notice: { kind: 'error', message } });
     }
@@ -538,7 +544,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       await toggleFavorite(id, isFavorite);
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
     }
@@ -550,7 +556,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       await toggleTemplate(id, isTemplate);
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
     }
@@ -568,7 +574,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return newPage;
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
       return null;
@@ -587,7 +593,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return newPage;
     } catch (error: unknown) {
-      console.error(error);
+      logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
       return null;
