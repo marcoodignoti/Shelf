@@ -2086,6 +2086,9 @@ pub fn run() {
 }
 
 #[cfg(test)]
+mod perf_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::{remove_dir_all, remove_file, write};
