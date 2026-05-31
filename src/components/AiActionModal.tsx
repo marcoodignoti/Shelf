@@ -3,15 +3,11 @@ import { createPortal } from 'react-dom';
 import {
   Bot,
   CheckCircle2,
-  ChevronsRight,
   Database,
   FileText,
-  Mic,
-  PanelRight,
-  Plus,
   SendHorizontal,
-  SlidersHorizontal,
   Sparkles,
+  StopCircle,
   WandSparkles,
   X,
 } from 'lucide-react';
@@ -66,6 +62,7 @@ export function AiActionModal() {
   const fetchAiModels = useAppStore((state) => state.fetchAiModels);
   const fetchPages = useAppStore((state) => state.fetchPages);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
+  const updateAiSettingsAction = useAppStore((state) => state.updateAiSettingsAction);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const showError = useAppStore((state) => state.showError);
   const [prompt, setPrompt] = useState('');
@@ -73,6 +70,10 @@ export function AiActionModal() {
   const [plan, setPlan] = useState<AiActionPlan | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  // Monotonic token: a generate run whose id no longer matches has been
+  // cancelled (panel closed, new chat, or explicit Stop) and its result is
+  // discarded. The backend call itself cannot be aborted, so we drop its result.
+  const generationIdRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -110,10 +111,39 @@ export function AiActionModal() {
     messagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [isOpen, messages, isGenerating]);
 
+  // Closing the panel mid-generation discards the pending run so it does not
+  // resolve into a stale "Generating..." state on reopen.
+  useEffect(() => {
+    if (isOpen) return;
+    generationIdRef.current += 1;
+    setIsGenerating(false);
+  }, [isOpen]);
+
   const selectedModel: AiModelId = aiSettings?.model ?? AI_MODELS[0].id;
   const hasApiKey = Boolean(aiSettings?.has_api_key);
   const trustedModeEnabled = Boolean(aiSettings?.trusted_mode_enabled);
   const canSend = useMemo(() => Boolean(trimmedAiPrompt(prompt)) && !isGenerating && !isApplying, [isApplying, isGenerating, prompt]);
+
+  const handleModelChange = (model: AiModelId) => {
+    if (model === selectedModel) return;
+    void updateAiSettingsAction({
+      provider: AI_PROVIDER_OPENROUTER,
+      model,
+      trusted_mode_enabled: trustedModeEnabled,
+    });
+  };
+
+  const cancelGeneration = () => {
+    generationIdRef.current += 1;
+    setIsGenerating(false);
+  };
+
+  const startNewChat = () => {
+    cancelGeneration();
+    setMessages([]);
+    setPlan(null);
+    setPrompt('');
+  };
 
   const handleApply = async (targetPlan = plan) => {
     if (!targetPlan) return;
@@ -149,6 +179,8 @@ export function AiActionModal() {
       return;
     }
 
+    const generationId = generationIdRef.current + 1;
+    generationIdRef.current = generationId;
     setIsGenerating(true);
     try {
       const nextPlan = await generateAiActionPlan({
@@ -157,6 +189,7 @@ export function AiActionModal() {
         model: selectedModel,
         current_page_id: currentPageId,
       });
+      if (generationIdRef.current !== generationId) return;
       setMessages((current) => [
         ...current,
         ...aiPlanMessages(cleanPrompt, nextPlan, nextMessageId(), nextMessageId()),
@@ -166,29 +199,20 @@ export function AiActionModal() {
         await handleApply(nextPlan);
       }
     } catch (error: unknown) {
+      if (generationIdRef.current !== generationId) return;
       showError(error);
     } finally {
-      setIsGenerating(false);
+      if (generationIdRef.current === generationId) setIsGenerating(false);
     }
   };
 
   const panel = isOpen ? createPortal(
     <aside ref={panelRef} className="on-ai-chat-shell" aria-label="OpenNotion AI chat">
       <div className="on-ai-chat-header">
-        <button type="button" className="on-ai-chat-title" aria-label="AI chat menu">
-          <span>New AI chat</span>
-          <ChevronsRight className="h-4 w-4 rotate-90" strokeWidth={1.9} />
-        </button>
+        <span className="on-ai-chat-title">New AI chat</span>
         <div className="on-ai-chat-header-actions">
-          <button type="button" aria-label="New AI chat" onClick={() => {
-            setMessages([]);
-            setPlan(null);
-            setPrompt('');
-          }}>
+          <button type="button" aria-label="New AI chat" onClick={startNewChat}>
             <Sparkles className="h-4 w-4" strokeWidth={1.9} />
-          </button>
-          <button type="button" aria-label="Focus AI panel">
-            <PanelRight className="h-4 w-4" strokeWidth={1.9} />
           </button>
           <button type="button" aria-label="Close AI" onClick={onClose}>
             <X className="h-4 w-4" strokeWidth={1.9} />
@@ -271,27 +295,42 @@ export function AiActionModal() {
           />
           <div className="on-ai-composer-actions">
             <div className="on-ai-composer-left-actions">
-              <button type="button" aria-label="Add attachment">
-                <Plus className="h-5 w-5" strokeWidth={1.85} />
-              </button>
-              <button type="button" aria-label="AI options">
-                <SlidersHorizontal className="h-5 w-5" strokeWidth={1.85} />
-              </button>
+              <select
+                className="on-ai-composer-model"
+                aria-label="AI model"
+                value={selectedModel}
+                onChange={(event) => handleModelChange(event.target.value as AiModelId)}
+                disabled={isGenerating || isApplying}
+              >
+                {!aiModels.some((model) => model.id === selectedModel) && (
+                  <option value={selectedModel}>{aiModelLabel(selectedModel, aiModels)}</option>
+                )}
+                {aiModels.map((model) => (
+                  <option key={model.id} value={model.id}>{model.label}</option>
+                ))}
+              </select>
             </div>
             <div className="on-ai-composer-right-actions">
-              <span>Auto</span>
-              <button type="button" aria-label="Voice input">
-                <Mic className="h-5 w-5" strokeWidth={1.85} />
-              </button>
-              <button
-                type="button"
-                className="on-ai-chat-send"
-                aria-label="Send AI prompt"
-                onClick={() => void handleGenerate()}
-                disabled={!canSend}
-              >
-                <SendHorizontal className="h-4 w-4" />
-              </button>
+              {isGenerating ? (
+                <button
+                  type="button"
+                  className="on-ai-chat-send"
+                  aria-label="Stop AI generation"
+                  onClick={cancelGeneration}
+                >
+                  <StopCircle className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="on-ai-chat-send"
+                  aria-label="Send AI prompt"
+                  onClick={() => void handleGenerate()}
+                  disabled={!canSend}
+                >
+                  <SendHorizontal className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>
