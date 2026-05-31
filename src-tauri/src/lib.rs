@@ -1,19 +1,32 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
+use std::collections::HashMap;
 use std::fs::{
-    copy, create_dir_all, metadata, remove_dir_all, remove_file, set_permissions, write, File,
-    Permissions,
+    copy, create_dir_all, metadata, read_to_string, remove_dir_all, remove_file, set_permissions,
+    write, File, Permissions,
 };
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, Runtime};
+use uuid::Uuid;
+
+mod ai;
 
 const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
 const STUDIO_PDF_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const BACKUP_MAX_BYTES: u64 = 50 * 1024 * 1024;
+const BACKUP_MAX_PAGES: usize = 5000;
+const BACKUP_MAX_ID_LENGTH: usize = 512;
+const BACKUP_MAX_TITLE_LENGTH: usize = 512;
+const BACKUP_MAX_TEXT_LENGTH: usize = 1024 * 1024;
+const BACKUP_MAX_METADATA_LENGTH: usize = 1024 * 1024;
+const BACKUP_MAX_ICON_LENGTH: usize = 512;
+const BACKUP_MAX_COVER_URL_LENGTH: usize = 4096;
 const APP_SCHEMA_VERSION: &str = "1";
 const IMAGE_MAGIC_HEADERS: &[(&str, &[u8])] = &[
     ("png", &[137, 80, 78, 71, 13, 10, 26, 10]),
@@ -26,6 +39,7 @@ const IMAGE_MAGIC_HEADERS: &[(&str, &[u8])] = &[
 #[derive(Clone)]
 struct AppState {
     db: SqlitePool,
+    ai: ai::AiRuntime,
 }
 
 #[derive(Debug, FromRow, Serialize)]
@@ -125,6 +139,20 @@ struct ImportStudioDocumentRecord<'a> {
     original_filename: &'a str,
     stored_file_path: &'a str,
     imported_at: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkspaceBackup<'a> {
+    version: u8,
+    exported_at: &'a str,
+    pages: Vec<Page>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportedWorkspaceBackup {
+    version: u8,
+    exported_at: String,
+    pages: Vec<ImportedPage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -336,6 +364,8 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(db)
     .await?;
 
+    ai::migrate_ai_settings(db).await?;
+
     Ok(())
 }
 
@@ -543,6 +573,145 @@ async fn hard_delete_page_tree(db: &SqlitePool, id: &str) -> Result<(), sqlx::Er
     Ok(())
 }
 
+fn validate_backup_file_path(path: &Path) -> Result<(), String> {
+    let is_json = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("json"));
+    if !is_json {
+        return Err("backup file must be a JSON file".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_backup_import_source(path: &Path) -> Result<(), String> {
+    validate_backup_file_path(path)?;
+    let file_metadata = metadata(path).map_err(|error| error.to_string())?;
+    if !file_metadata.is_file() {
+        return Err("backup path must be a file".to_string());
+    }
+    if file_metadata.len() > BACKUP_MAX_BYTES {
+        return Err("Backup file is too large".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_backup_export_destination(path: &Path) -> Result<(), String> {
+    validate_backup_file_path(path)?;
+    let Some(parent) = path.parent() else {
+        return Err("backup destination is invalid".to_string());
+    };
+    let parent_metadata = metadata(parent).map_err(|error| error.to_string())?;
+    if !parent_metadata.is_dir() {
+        return Err("backup destination parent must be a directory".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_optional_string_length(
+    field: &str,
+    value: Option<&String>,
+    max_length: usize,
+) -> Result<(), String> {
+    if value.is_some_and(|value| value.len() > max_length) {
+        return Err(format!("backup field {field} is too large"));
+    }
+
+    Ok(())
+}
+
+fn validate_imported_page(page: &ImportedPage) -> Result<(), String> {
+    if page.id.len() > BACKUP_MAX_ID_LENGTH {
+        return Err("backup field id is too large".to_string());
+    }
+    if page.title.len() > BACKUP_MAX_TITLE_LENGTH {
+        return Err("backup field title is too large".to_string());
+    }
+    validate_optional_string_length("parent_id", page.parent_id.as_ref(), BACKUP_MAX_ID_LENGTH)?;
+    validate_optional_string_length("content", page.content.as_ref(), BACKUP_MAX_TEXT_LENGTH)?;
+    validate_optional_string_length(
+        "search_text",
+        page.search_text.as_ref(),
+        BACKUP_MAX_TEXT_LENGTH,
+    )?;
+    validate_optional_string_length("icon", page.icon.as_ref(), BACKUP_MAX_ICON_LENGTH)?;
+    validate_optional_string_length(
+        "cover_url",
+        page.cover_url.as_ref(),
+        BACKUP_MAX_COVER_URL_LENGTH,
+    )?;
+    validate_optional_string_length(
+        "database_schema",
+        page.database_schema.as_ref(),
+        BACKUP_MAX_METADATA_LENGTH,
+    )?;
+    validate_optional_string_length(
+        "properties",
+        page.properties.as_ref(),
+        BACKUP_MAX_METADATA_LENGTH,
+    )?;
+
+    Ok(())
+}
+
+fn validate_imported_backup(backup: &ImportedWorkspaceBackup) -> Result<(), String> {
+    if backup.version != 1 {
+        return Err("Backup file version is not supported".to_string());
+    }
+    if backup.exported_at.len() > BACKUP_MAX_TITLE_LENGTH {
+        return Err("Backup file has invalid export timestamp".to_string());
+    }
+    if backup.pages.len() > BACKUP_MAX_PAGES {
+        return Err("Backup file has too many pages".to_string());
+    }
+
+    for page in &backup.pages {
+        validate_imported_page(page)?;
+    }
+
+    Ok(())
+}
+
+fn read_imported_backup(path: &Path) -> Result<ImportedWorkspaceBackup, String> {
+    validate_backup_import_source(path)?;
+    let raw = read_to_string(path).map_err(|error| error.to_string())?;
+    if raw.len() as u64 > BACKUP_MAX_BYTES {
+        return Err("Backup file is too large".to_string());
+    }
+    let backup: ImportedWorkspaceBackup =
+        serde_json::from_str(&raw).map_err(|_| "Backup file is not valid JSON".to_string())?;
+    validate_imported_backup(&backup)?;
+
+    Ok(backup)
+}
+
+fn prepare_imported_backup_pages(pages: Vec<ImportedPage>, imported_at: &str) -> Vec<ImportedPage> {
+    let id_map: HashMap<String, String> = pages
+        .iter()
+        .enumerate()
+        .map(|(index, page)| (page.id.clone(), format!("{}-{}", Uuid::new_v4(), index + 1)))
+        .collect();
+
+    pages
+        .into_iter()
+        .map(|mut page| {
+            let original_id = page.id.clone();
+            let original_parent_id = page.parent_id.clone();
+            page.id = id_map.get(&original_id).cloned().unwrap_or(original_id);
+            page.parent_id =
+                original_parent_id.and_then(|parent_id| id_map.get(&parent_id).cloned());
+            page.is_deleted = 0;
+            page.is_template = Some(0);
+            page.created_at = imported_at.to_string();
+            page.updated_at = imported_at.to_string();
+            page
+        })
+        .collect()
+}
+
 async fn import_page_records(db: &SqlitePool, pages: &[ImportedPage]) -> Result<u64, sqlx::Error> {
     let mut imported_count = 0;
     let mut transaction = db.begin().await?;
@@ -588,6 +757,15 @@ async fn list_studio_document_records(db: &SqlitePool) -> Result<Vec<StudioDocum
     )
     .fetch_all(db)
     .await
+}
+
+async fn get_studio_document_stored_file_path(db: &SqlitePool, id: &str) -> Result<String, String> {
+    sqlx::query_scalar::<_, String>("SELECT stored_file_path FROM studio_documents WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "document not found".to_string())
 }
 
 async fn import_studio_document_record(
@@ -1044,9 +1222,51 @@ async fn update_studio_document_project_record(
     Ok(())
 }
 
-fn remove_stored_studio_document_file(stored_file_path: &str) -> Result<(), String> {
-    let stored_path = Path::new(stored_file_path);
-    match remove_file(stored_path) {
+fn canonical_studio_documents_root<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("studio-documents")
+        .canonicalize()
+        .map_err(|error| error.to_string())
+}
+
+fn validate_managed_studio_document_path(
+    stored_file_path: &str,
+    studio_documents_root: &Path,
+) -> Result<PathBuf, String> {
+    let canonical_path = Path::new(stored_file_path)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let canonical_root = studio_documents_root
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+
+    let is_expected_studio_copy = canonical_path
+        .file_name()
+        .is_some_and(|name| name == std::ffi::OsStr::new("source.pdf"))
+        && canonical_path.starts_with(&canonical_root);
+
+    if !is_expected_studio_copy {
+        return Err("stored Studio document path is outside app storage".to_string());
+    }
+
+    Ok(canonical_path)
+}
+
+fn remove_stored_studio_document_file(
+    stored_file_path: &str,
+    studio_documents_root: &Path,
+) -> Result<(), String> {
+    if !Path::new(stored_file_path).exists() {
+        return Ok(());
+    }
+
+    let stored_path =
+        validate_managed_studio_document_path(stored_file_path, studio_documents_root)?;
+    match remove_file(&stored_path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
@@ -1055,18 +1275,6 @@ fn remove_stored_studio_document_file(stored_file_path: &str) -> Result<(), Stri
     let Some(parent) = stored_path.parent() else {
         return Ok(());
     };
-    let is_expected_studio_copy = stored_path
-        .file_name()
-        .is_some_and(|name| name == std::ffi::OsStr::new("source.pdf"))
-        && parent
-            .parent()
-            .and_then(|ancestor| ancestor.file_name())
-            .is_some_and(|name| name == std::ffi::OsStr::new("studio-documents"));
-
-    if !is_expected_studio_copy {
-        return Ok(());
-    }
-
     match remove_dir_all(parent) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1541,6 +1749,125 @@ async fn list_all_pages(state: tauri::State<'_, AppState>) -> Result<Vec<Page>, 
 }
 
 #[tauri::command]
+async fn export_backup(
+    path: String,
+    exported_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
+    let destination = Path::new(&path);
+    validate_backup_export_destination(destination)?;
+    let pages = list_all_page_records(&state.db)
+        .await
+        .map_err(|error| error.to_string())?;
+    let exported_count = pages.len();
+    let backup = WorkspaceBackup {
+        version: 1,
+        exported_at: &exported_at,
+        pages,
+    };
+    let raw = serde_json::to_string_pretty(&backup).map_err(|error| error.to_string())?;
+    if raw.len() as u64 > BACKUP_MAX_BYTES {
+        return Err("Backup export is too large".to_string());
+    }
+
+    write(destination, raw).map_err(|error| error.to_string())?;
+    Ok(exported_count)
+}
+
+#[tauri::command]
+async fn import_backup(
+    path: String,
+    imported_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<u64, String> {
+    let backup = read_imported_backup(Path::new(&path))?;
+    let imported_pages = prepare_imported_backup_pages(backup.pages, &imported_at);
+    import_page_records(&state.db, &imported_pages)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_ai_settings(state: tauri::State<'_, AppState>) -> Result<ai::AiSettings, String> {
+    ai::read_ai_settings(&state.db, &state.ai).await
+}
+
+#[tauri::command]
+async fn get_ai_models(state: tauri::State<'_, AppState>) -> Result<Vec<ai::AiModelInfo>, String> {
+    ai::list_openrouter_models(&state.ai)
+        .await
+        .or_else(|_| Ok(ai::fallback_ai_models()))
+}
+
+#[tauri::command]
+async fn update_ai_settings(
+    settings: ai::AiSettingsUpdate,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiSettings, String> {
+    ai::update_ai_settings_record(&state.db, &state.ai, settings).await
+}
+
+#[tauri::command]
+async fn save_ai_api_key(
+    provider: String,
+    api_key: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiSettings, String> {
+    if api_key.trim().is_empty() {
+        return Err("AI API key cannot be empty".to_string());
+    }
+
+    if provider != ai::AI_PROVIDER_OPENROUTER {
+        return Err("Unsupported AI provider".to_string());
+    }
+
+    state
+        .ai
+        .secret_store
+        .set_secret(&provider, api_key.trim())?;
+    ai::read_ai_settings(&state.db, &state.ai).await
+}
+
+#[tauri::command]
+async fn clear_ai_api_key(
+    provider: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiSettings, String> {
+    if provider != ai::AI_PROVIDER_OPENROUTER {
+        return Err("Unsupported AI provider".to_string());
+    }
+
+    state.ai.secret_store.delete_secret(&provider)?;
+    ai::read_ai_settings(&state.db, &state.ai).await
+}
+
+#[tauri::command]
+async fn generate_ai_action_plan(
+    request: ai::AiPlanRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiActionPlan, String> {
+    let context = if let Some(page_id) = &request.current_page_id {
+        get_page_record(&state.db, page_id)
+            .await
+            .map_err(|error| error.to_string())?
+            .map(|page| format!("Current page: {} ({})", page.title, page.id))
+    } else {
+        None
+    };
+
+    ai::generate_openrouter_plan(&state.ai, request, context).await
+}
+
+#[tauri::command]
+async fn apply_ai_action_plan(
+    plan: ai::AiActionPlan,
+    created_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiApplyResult, String> {
+    ai::apply_ai_action_plan_to_db(&state.db, plan, &created_at).await
+}
+
+#[tauri::command]
 async fn search_pages(
     query: String,
     state: tauri::State<'_, AppState>,
@@ -1914,12 +2241,42 @@ async fn rename_studio_document(
 }
 
 #[tauri::command]
-async fn delete_studio_document(
+async fn open_studio_document_file<R: Runtime>(
     id: String,
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let stored_file_path = get_studio_document_stored_file_path(&state.db, &id).await?;
+    let studio_root = canonical_studio_documents_root(&app)?;
+    let stored_path = validate_managed_studio_document_path(&stored_file_path, &studio_root)?;
+    tauri_plugin_opener::open_path(stored_path, None::<&str>).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn reveal_studio_document_file<R: Runtime>(
+    id: String,
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let stored_file_path = get_studio_document_stored_file_path(&state.db, &id).await?;
+    let studio_root = canonical_studio_documents_root(&app)?;
+    let stored_path = validate_managed_studio_document_path(&stored_file_path, &studio_root)?;
+    tauri_plugin_opener::reveal_item_in_dir(stored_path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn delete_studio_document<R: Runtime>(
+    id: String,
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let stored_file_path = delete_studio_document_record(&state.db, &id).await?;
-    remove_stored_studio_document_file(&stored_file_path)
+    let studio_root = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?
+        .join("studio-documents");
+    remove_stored_studio_document_file(&stored_file_path, &studio_root)
 }
 
 #[tauri::command]
@@ -2044,15 +2401,28 @@ pub fn run() {
                 Ok::<_, sqlx::Error>(db)
             })?;
 
-            app.manage(AppState { db });
+            app.manage(AppState {
+                db,
+                ai: ai::AiRuntime {
+                    secret_store: Arc::new(ai::KeyringSecretStore),
+                },
+            });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_pages,
             list_all_pages,
+            export_backup,
+            import_backup,
+            get_ai_settings,
+            get_ai_models,
+            update_ai_settings,
+            save_ai_api_key,
+            clear_ai_api_key,
+            generate_ai_action_plan,
+            apply_ai_action_plan,
             search_pages,
             get_page,
             create_page,
@@ -2072,6 +2442,8 @@ pub fn run() {
             replace_studio_document_file,
             update_studio_document_viewer_state,
             rename_studio_document,
+            open_studio_document_file,
+            reveal_studio_document_file,
             delete_studio_document,
             toggle_favorite,
             toggle_template,
@@ -2112,6 +2484,28 @@ mod tests {
             .expect("system time")
             .as_nanos();
         std::env::temp_dir().join(format!("opennotion-test-{}-{}", timestamp, name))
+    }
+
+    fn imported_page(id: &str, parent_id: Option<&str>) -> ImportedPage {
+        ImportedPage {
+            id: id.to_string(),
+            title: id.to_string(),
+            parent_id: parent_id.map(str::to_string),
+            content: None,
+            search_text: None,
+            icon: None,
+            cover_url: None,
+            is_deleted: 0,
+            is_favorite: 0,
+            is_template: Some(0),
+            is_database: Some(0),
+            database_schema: None,
+            properties: None,
+            sort_order: Some(0),
+            page_kind: Some("note".to_string()),
+            created_at: "2026-05-18T00:00:00.000Z".to_string(),
+            updated_at: "2026-05-18T00:00:00.000Z".to_string(),
+        }
     }
 
     #[test]
@@ -2292,6 +2686,65 @@ mod tests {
                 .expect("reload page")
                 .expect("page exists");
             assert_eq!(reloaded.content.as_deref(), Some(content));
+        });
+    }
+
+    #[test]
+    fn backup_import_rejects_non_json_and_oversized_fields() {
+        let text_path = temp_path("backup.txt");
+        write(&text_path, "{}").expect("write backup");
+        let error = read_imported_backup(&text_path).expect_err("reject non-json backup");
+        assert_eq!(error, "backup file must be a JSON file");
+        let _ = remove_file(&text_path);
+
+        let mut page = imported_page("page-1", None);
+        page.content = Some("x".repeat(BACKUP_MAX_TEXT_LENGTH + 1));
+        let backup = ImportedWorkspaceBackup {
+            version: 1,
+            exported_at: "2026-05-18T00:00:00.000Z".to_string(),
+            pages: vec![page],
+        };
+        let error = validate_imported_backup(&backup).expect_err("reject oversized content");
+        assert_eq!(error, "backup field content is too large");
+    }
+
+    #[test]
+    fn backup_import_rejects_too_many_pages() {
+        let backup = ImportedWorkspaceBackup {
+            version: 1,
+            exported_at: "2026-05-18T00:00:00.000Z".to_string(),
+            pages: (0..=BACKUP_MAX_PAGES)
+                .map(|index| imported_page(&format!("page-{index}"), None))
+                .collect(),
+        };
+
+        let error = validate_imported_backup(&backup).expect_err("reject too many pages");
+        assert_eq!(error, "Backup file has too many pages");
+    }
+
+    #[test]
+    fn backup_import_remaps_ids_and_parents_before_insert() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            let imported_pages = prepare_imported_backup_pages(
+                vec![
+                    imported_page("parent", None),
+                    imported_page("child", Some("parent")),
+                ],
+                "2026-05-30T00:00:00.000Z",
+            );
+
+            assert_ne!(imported_pages[0].id, "parent");
+            assert_ne!(imported_pages[1].id, "child");
+            assert_eq!(
+                imported_pages[1].parent_id.as_deref(),
+                Some(imported_pages[0].id.as_str())
+            );
+
+            let inserted = import_page_records(&db, &imported_pages)
+                .await
+                .expect("import pages");
+            assert_eq!(inserted, 2);
         });
     }
 
@@ -2786,6 +3239,7 @@ mod tests {
             stored_path
                 .to_str()
                 .expect("temp path should be valid unicode for test"),
+            &root.join("studio-documents"),
         )
         .expect("remove copied PDF");
 
@@ -2803,18 +3257,20 @@ mod tests {
                 .expect("clock")
                 .as_nanos()
         ));
-        create_dir_all(&root).expect("create arbitrary dir");
+        create_dir_all(root.join("studio-documents")).expect("create studio root");
         let stored_path = root.join("sample.pdf");
         File::create(&stored_path).expect("create arbitrary PDF");
 
-        remove_stored_studio_document_file(
+        let error = remove_stored_studio_document_file(
             stored_path
                 .to_str()
                 .expect("temp path should be valid unicode for test"),
+            &root.join("studio-documents"),
         )
-        .expect("remove arbitrary PDF");
+        .expect_err("reject arbitrary PDF");
 
-        assert!(!stored_path.exists());
+        assert_eq!(error, "stored Studio document path is outside app storage");
+        assert!(stored_path.exists());
         assert!(root.exists());
         remove_dir_all(root).expect("cleanup arbitrary dir");
     }
