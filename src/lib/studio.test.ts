@@ -5,6 +5,8 @@ import {
   clampStudioPage,
   clampStudioPanelRatio,
   clampStudioZoom,
+  isStudioPdfPageCountAllowed,
+  MAX_STUDIO_PDF_PAGES,
   studioPanelRatioFromPointer,
 } from "./studio";
 
@@ -19,6 +21,14 @@ describe("studio viewer helpers", () => {
     expect(clampStudioPage(-4)).toBe(1);
     expect(clampStudioPage(2.7)).toBe(3);
     expect(clampStudioPage(Number.NaN)).toBe(1);
+  });
+
+  it("accepts only bounded PDF page counts", () => {
+    expect(isStudioPdfPageCountAllowed(1)).toBe(true);
+    expect(isStudioPdfPageCountAllowed(MAX_STUDIO_PDF_PAGES)).toBe(true);
+    expect(isStudioPdfPageCountAllowed(0)).toBe(false);
+    expect(isStudioPdfPageCountAllowed(MAX_STUDIO_PDF_PAGES + 1)).toBe(false);
+    expect(isStudioPdfPageCountAllowed(1.5)).toBe(false);
   });
 
   it("builds a PDF hash with persisted page and zoom", () => {

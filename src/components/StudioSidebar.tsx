@@ -1,8 +1,7 @@
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronLeft, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { StudioDocument, StudioProject } from "../lib/studio";
+import { openStudioDocumentFile, revealStudioDocumentFile, StudioDocument, StudioProject } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata, studioProjectDepth } from "../lib/studioDocuments";
@@ -225,12 +224,12 @@ function StudioDocumentRow({
 
   const handleReveal = () => {
     setMenuPosition(null);
-    void revealItemInDir(document.stored_file_path);
+    void revealStudioDocumentFile(document.id);
   };
 
   const handleOpen = () => {
     setMenuPosition(null);
-    void openPath(document.stored_file_path);
+    void openStudioDocumentFile(document.id);
   };
 
   const handleMove = (projectId: string | null) => {
