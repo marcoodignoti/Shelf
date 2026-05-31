@@ -10,6 +10,7 @@ import { HomeView } from "./components/HomeView";
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
 const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
+const AiActionModal = lazy(() => import("./components/AiActionModal").then((module) => ({ default: module.AiActionModal })));
 
 function WorkspaceLoadingFallback() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
   const isLoading = useAppStore((state) => state.isLoading);
   const addPage = useAppStore((state) => state.addPage);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
+  const openCommandPalette = useAppStore((state) => state.openCommandPalette);
   const workspaceMode = useAppStore((state) => state.workspaceMode);
   const studioDocuments = useAppStore((state) => state.studioDocuments);
   const currentStudioDocumentId = useAppStore((state) => state.currentStudioDocumentId);
@@ -53,6 +55,12 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
       if (isNewPageShortcut(event)) {
         event.preventDefault();
         void addPage();
@@ -61,7 +69,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [addPage]);
+  }, [addPage, openCommandPalette]);
 
   useEffect(() => {
     const preventNativeContextMenu = (event: MouseEvent) => {
@@ -149,6 +157,7 @@ export default function App() {
       )}
       <Suspense fallback={null}>
         <CommandPalette />
+        <AiActionModal />
       </Suspense>
       <AppNotice />
     </Layout>

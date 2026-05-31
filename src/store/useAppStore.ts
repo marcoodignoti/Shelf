@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
+import { AiModelInfo, AiSettings, AI_MODELS, AI_PROVIDER_OPENROUTER, clearAiApiKey, getAiModels, getAiSettings, saveAiApiKey, updateAiSettings } from '../lib/ai';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
 import {
@@ -32,6 +33,9 @@ interface AppState {
   error: string | null;
   notice: AppNotice | null;
   isCommandPaletteOpen: boolean;
+  isAiActionModalOpen: boolean;
+  aiSettings: AiSettings | null;
+  aiModels: AiModelInfo[];
   workspaceMode: WorkspaceMode;
   studioDocuments: StudioDocument[];
   studioProjects: StudioProject[];
@@ -69,6 +73,13 @@ interface AppState {
   showError: (error: unknown) => void;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
+  openAiActionModal: () => void;
+  closeAiActionModal: () => void;
+  fetchAiSettings: () => Promise<void>;
+  fetchAiModels: () => Promise<void>;
+  updateAiSettingsAction: (settings: Pick<AiSettings, 'provider' | 'model' | 'trusted_mode_enabled'>) => Promise<void>;
+  saveAiApiKeyAction: (apiKey: string) => Promise<void>;
+  clearAiApiKeyAction: () => Promise<void>;
   isSidebarOpen: boolean;
   sidebarWidth: number;
   theme: Theme;
@@ -124,6 +135,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   notice: null,
   isCommandPaletteOpen: false,
+  isAiActionModalOpen: false,
+  aiSettings: null,
+  aiModels: [...AI_MODELS],
   workspaceMode: getStoredWorkspaceMode(),
   studioDocuments: [],
   studioProjects: [],
@@ -206,6 +220,47 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
+  openAiActionModal: () => set({ isAiActionModalOpen: true, isCommandPaletteOpen: false }),
+  closeAiActionModal: () => set({ isAiActionModalOpen: false }),
+  fetchAiSettings: async () => {
+    try {
+      set({ aiSettings: await getAiSettings() });
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  fetchAiModels: async () => {
+    try {
+      set({ aiModels: await getAiModels() });
+    } catch (error: unknown) {
+      logStoreError(error);
+      set({ aiModels: [...AI_MODELS] });
+    }
+  },
+  updateAiSettingsAction: async (settings) => {
+    try {
+      set({ aiSettings: await updateAiSettings(settings) });
+      get().showSuccess('AI settings updated.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  saveAiApiKeyAction: async (apiKey) => {
+    try {
+      set({ aiSettings: await saveAiApiKey(AI_PROVIDER_OPENROUTER, apiKey) });
+      get().showSuccess('AI API key saved.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  clearAiApiKeyAction: async () => {
+    try {
+      set({ aiSettings: await clearAiApiKey(AI_PROVIDER_OPENROUTER) });
+      get().showSuccess('AI API key removed.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
   importStudioPdfAction: async (projectId = null) => {
     try {
       const path = await open({
