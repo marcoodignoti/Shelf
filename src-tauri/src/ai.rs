@@ -1121,8 +1121,19 @@ fn free_openrouter_models_from_payload(payload: OpenRouterModelsResponse) -> Vec
     }
 }
 
+/// HTTP client for OpenRouter calls with bounded timeouts. Without these a
+/// stalled connection makes the Tauri command await forever, which the UI shows
+/// as a permanent "Generating..." state with no error.
+fn openrouter_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|error| format!("AI HTTP client could not be created: {}", error))
+}
+
 pub async fn list_openrouter_models(runtime: &AiRuntime) -> Result<Vec<AiModelInfo>, String> {
-    let client = reqwest::Client::new();
+    let client = openrouter_http_client()?;
     let mut request = client
         .get(OPENROUTER_MODELS_URL)
         .header("HTTP-Referer", "https://opennotion.local")
@@ -1160,7 +1171,7 @@ pub async fn generate_openrouter_plan(
         .get_secret(&request.provider)?
         .ok_or_else(|| "Missing AI API key".to_string())?;
 
-    let client = reqwest::Client::new();
+    let client = openrouter_http_client()?;
     let structured_body =
         build_openrouter_request_body(&request.model, &request.prompt, context.as_deref(), true);
     let payload = match send_openrouter_chat_request(&client, &api_key, structured_body).await {

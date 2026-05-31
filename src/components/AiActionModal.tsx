@@ -119,6 +119,18 @@ export function AiActionModal() {
     setIsGenerating(false);
   }, [isOpen]);
 
+  // Self-heal a stored model that the live OpenRouter list no longer offers
+  // (e.g. a deprecated/invalid id), so generation never targets a 404 model.
+  useEffect(() => {
+    if (!isOpen || !aiSettings || aiModels.length === 0) return;
+    if (aiModels.some((model) => model.id === aiSettings.model)) return;
+    void updateAiSettingsAction({
+      provider: AI_PROVIDER_OPENROUTER,
+      model: aiModels[0].id,
+      trusted_mode_enabled: aiSettings.trusted_mode_enabled,
+    });
+  }, [isOpen, aiSettings, aiModels, updateAiSettingsAction]);
+
   const selectedModel: AiModelId = aiSettings?.model ?? AI_MODELS[0].id;
   const hasApiKey = Boolean(aiSettings?.has_api_key);
   const trustedModeEnabled = Boolean(aiSettings?.trusted_mode_enabled);
