@@ -158,18 +158,33 @@ test.beforeEach(async ({ page }) => {
 
         if (cmd === "apply_ai_action_plan") {
           const plan = args.plan as { actions: Array<{ type: string; title?: string; parent_id?: string | null; content_blocks?: unknown[] }> };
+          // Mirror the backend: search_text is plain extracted text (not raw
+          // block JSON) and the timestamp comes from the caller's createdAt.
+          const searchTextFromBlocks = (blocks: unknown[] | undefined): string =>
+            (Array.isArray(blocks) ? blocks : [])
+              .map((block) => {
+                const content = (block as { content?: unknown }).content;
+                return Array.isArray(content)
+                  ? content.map((item) => (typeof (item as { text?: unknown }).text === "string" ? (item as { text: string }).text : "")).join(" ")
+                  : "";
+              })
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .trim();
+          const createdAt = (args.createdAt as string) ?? "2026-05-31T00:00:00.000Z";
           const created: string[] = [];
           const nextPages = [...pages];
           for (const action of plan.actions) {
             if (action.type !== "create_page") continue;
             const id = `ai-page-${created.length + 1}`;
             created.push(id);
+            const searchText = searchTextFromBlocks(action.content_blocks);
             nextPages.unshift({
               id,
               title: action.title ?? "AI Page",
               parent_id: action.parent_id ?? null,
               content: JSON.stringify(action.content_blocks ?? []),
-              search_text: JSON.stringify(action.content_blocks ?? []),
+              search_text: searchText.length > 0 ? searchText : null,
               icon: null,
               cover_url: null,
               is_deleted: 0,
@@ -180,8 +195,8 @@ test.beforeEach(async ({ page }) => {
               properties: null,
               sort_order: -10 - created.length,
               page_kind: "note",
-              created_at: "2026-05-31T00:00:00.000Z",
-              updated_at: "2026-05-31T00:00:00.000Z",
+              created_at: createdAt,
+              updated_at: createdAt,
             });
           }
           savePages(nextPages);
