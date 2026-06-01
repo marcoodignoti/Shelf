@@ -51,6 +51,19 @@ pub struct AiPlanRequest {
     pub history: Vec<AiChatTurn>,
 }
 
+// Consumed by the chat command (Task 6); allow dead_code until that lands.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct AiChatRequest {
+    pub conversation_id: String,
+    pub prompt: String,
+    pub provider: String,
+    pub model: String,
+    pub current_page_id: Option<String>,
+    #[serde(default)]
+    pub regenerate: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct AiChatTurn {
     pub role: String,
@@ -1201,6 +1214,31 @@ Set requires_confirmation true unless the request is clearly low-risk create-onl
     body
 }
 
+// Consumed by the chat command (Task 6); allow dead_code until that lands.
+#[allow(dead_code)]
+fn build_chat_request_body(
+    model: &str,
+    prompt: &str,
+    context: Option<&str>,
+    history: &[AiChatTurn],
+) -> serde_json::Value {
+    let mut messages = vec![serde_json::json!({
+        "role": "system",
+        "content": CHAT_SYSTEM_PROMPT
+    })];
+    messages.extend(chat_history_messages(history));
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": format!("Context:\n{}\n\nMessage:\n{}", context.unwrap_or("No page context."), prompt)
+    }));
+    serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": 0.4,
+        "stream": true
+    })
+}
+
 // Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
 #[allow(dead_code)]
 pub const CHAT_ACTIONS_FENCE: &str = "```opennotion-actions";
@@ -1804,6 +1842,43 @@ async fn consume_plan_stream(
     }
 
     parse_ai_action_plan(&content)
+}
+
+/// Streaming chat completion: builds the chat body, sends it, and drives the
+/// response through consume_chat_stream. `history` is the prior conversation
+/// turns; `cancel` aborts the in-flight request.
+// Consumed by the chat command (Task 6); allow dead_code until that lands.
+#[allow(dead_code, clippy::too_many_arguments)]
+pub async fn stream_openrouter_chat(
+    runtime: &AiRuntime,
+    provider: &str,
+    model: &str,
+    prompt: &str,
+    context: Option<String>,
+    history: Vec<AiChatTurn>,
+    on_delta: impl Fn(&str) + Send,
+    cancel: impl std::future::Future<Output = ()> + Send,
+) -> Result<AiChatReply, String> {
+    validate_provider_model(provider, model)?;
+    let api_key = runtime
+        .secret_store
+        .get_secret(provider)?
+        .ok_or_else(|| "Missing AI API key".to_string())?;
+
+    let client = openrouter_http_client()?;
+    let body = build_chat_request_body(model, prompt, context.as_deref(), &history);
+
+    let response = client
+        .post(OPENROUTER_CHAT_URL)
+        .bearer_auth(&api_key)
+        .header("HTTP-Referer", "https://opennotion.local")
+        .header("X-Title", "OpenNotion")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("AI request failed: {}", error))?;
+
+    consume_chat_stream(response, on_delta, cancel).await
 }
 
 #[cfg(test)]
