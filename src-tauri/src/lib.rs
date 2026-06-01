@@ -2024,6 +2024,130 @@ async fn apply_ai_action_plan(
 }
 
 #[tauri::command]
+async fn list_ai_conversations(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ai::AiConversationSummary>, String> {
+    ai::list_ai_conversation_records(&state.db).await
+}
+
+#[tauri::command]
+async fn get_ai_conversation(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiConversationDetail, String> {
+    ai::get_ai_conversation_detail(&state.db, &id).await
+}
+
+#[tauri::command]
+async fn create_ai_conversation(
+    created_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiConversationSummary, String> {
+    ai::insert_ai_conversation(&state.db, "New chat", &created_at).await
+}
+
+#[tauri::command]
+async fn rename_ai_conversation(
+    id: String,
+    title: String,
+    updated_at: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    ai::rename_ai_conversation_record(&state.db, &id, &title, &updated_at).await
+}
+
+#[tauri::command]
+async fn delete_ai_conversation(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    ai::delete_ai_conversation_record(&state.db, &id).await
+}
+
+#[tauri::command]
+async fn stream_ai_chat_reply(
+    request: ai::AiChatRequest,
+    created_at: String,
+    on_event: tauri::ipc::Channel<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiChatStoredMessage, String> {
+    // Regenerate drops the trailing assistant turn and reuses the last user
+    // message; a normal turn persists the new user message first (and names the
+    // conversation from the first prompt).
+    if request.regenerate {
+        ai::delete_last_assistant_message(&state.db, &request.conversation_id).await?;
+    } else {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?")
+                .bind(&request.conversation_id)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|error| error.to_string())?;
+        if count == 0 {
+            let title: String = request.prompt.trim().chars().take(40).collect();
+            let title = if title.is_empty() {
+                "New chat".to_string()
+            } else {
+                title
+            };
+            ai::rename_ai_conversation_record(
+                &state.db,
+                &request.conversation_id,
+                &title,
+                &created_at,
+            )
+            .await?;
+        }
+        ai::insert_ai_message(
+            &state.db,
+            &request.conversation_id,
+            "user",
+            &request.prompt,
+            None,
+            &created_at,
+        )
+        .await?;
+    }
+
+    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    let context = ai::build_workspace_context_prompt(&workspace);
+
+    let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
+    // The current prompt is sent separately as the final user message; drop the
+    // trailing user turn from history so it is not duplicated.
+    if !request.regenerate {
+        history.pop();
+    }
+
+    let cancel = state.ai_cancel.notified();
+    let reply = ai::stream_openrouter_chat(
+        &state.ai,
+        &request.provider,
+        &request.model,
+        &request.prompt,
+        context,
+        history,
+        move |delta| {
+            let _ = on_event.send(delta.to_string());
+        },
+        cancel,
+    )
+    .await?;
+
+    ai::insert_ai_message(
+        &state.db,
+        &request.conversation_id,
+        "assistant",
+        &reply.content,
+        reply.plan.as_ref(),
+        &created_at,
+    )
+    .await
+}
+
+#[tauri::command]
 async fn search_pages(
     query: String,
     state: tauri::State<'_, AppState>,
@@ -2582,6 +2706,12 @@ pub fn run() {
             generate_ai_action_plan_streaming,
             cancel_ai_generation,
             apply_ai_action_plan,
+            list_ai_conversations,
+            get_ai_conversation,
+            create_ai_conversation,
+            rename_ai_conversation,
+            delete_ai_conversation,
+            stream_ai_chat_reply,
             search_pages,
             get_page,
             create_page,

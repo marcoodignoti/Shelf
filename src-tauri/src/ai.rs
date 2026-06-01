@@ -51,8 +51,6 @@ pub struct AiPlanRequest {
     pub history: Vec<AiChatTurn>,
 }
 
-// Consumed by the chat command (Task 6); allow dead_code until that lands.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct AiChatRequest {
     pub conversation_id: String,
@@ -140,8 +138,6 @@ pub struct AiApplyResult {
     pub primary_page_id: Option<String>,
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, PartialEq)]
 pub struct AiConversationSummary {
     pub id: String,
@@ -149,8 +145,6 @@ pub struct AiConversationSummary {
     pub updated_at: String,
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct AiChatStoredMessage {
     pub id: String,
@@ -160,16 +154,12 @@ pub struct AiChatStoredMessage {
     pub created_at: String,
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct AiConversationDetail {
     pub conversation: AiConversationSummary,
     pub messages: Vec<AiChatStoredMessage>,
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn insert_ai_conversation(
     db: &SqlitePool,
     title: &str,
@@ -193,8 +183,6 @@ pub async fn insert_ai_conversation(
     })
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn insert_ai_message(
     db: &SqlitePool,
     conversation_id: &str,
@@ -243,8 +231,6 @@ pub async fn insert_ai_message(
     })
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn list_ai_conversation_records(
     db: &SqlitePool,
 ) -> Result<Vec<AiConversationSummary>, String> {
@@ -256,8 +242,6 @@ pub async fn list_ai_conversation_records(
     .map_err(|error| error.to_string())
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn get_ai_conversation_detail(
     db: &SqlitePool,
     id: &str,
@@ -282,15 +266,17 @@ pub async fn get_ai_conversation_detail(
 
     let messages = rows
         .into_iter()
-        .map(|(id, role, content, plan_json, created_at)| AiChatStoredMessage {
-            id,
-            role,
-            content,
-            plan: plan_json
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<AiActionPlan>(raw).ok()),
-            created_at,
-        })
+        .map(
+            |(id, role, content, plan_json, created_at)| AiChatStoredMessage {
+                id,
+                role,
+                content,
+                plan: plan_json
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<AiActionPlan>(raw).ok()),
+                created_at,
+            },
+        )
         .collect();
 
     Ok(AiConversationDetail {
@@ -299,8 +285,6 @@ pub async fn get_ai_conversation_detail(
     })
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn rename_ai_conversation_record(
     db: &SqlitePool,
     id: &str,
@@ -317,8 +301,6 @@ pub async fn rename_ai_conversation_record(
     Ok(())
 }
 
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn delete_ai_conversation_record(db: &SqlitePool, id: &str) -> Result<(), String> {
     let mut tx = db.begin().await.map_err(|error| error.to_string())?;
     sqlx::query("DELETE FROM ai_messages WHERE conversation_id = ?")
@@ -336,8 +318,6 @@ pub async fn delete_ai_conversation_record(db: &SqlitePool, id: &str) -> Result<
 }
 
 /// Last turns of a conversation as bounded chat history for the model.
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn conversation_history(
     db: &SqlitePool,
     conversation_id: &str,
@@ -356,8 +336,6 @@ pub async fn conversation_history(
 }
 
 /// Remove the trailing assistant message (used by regenerate).
-// consumed by chat commands (Task 6)
-#[allow(dead_code)]
 pub async fn delete_last_assistant_message(
     db: &SqlitePool,
     conversation_id: &str,
@@ -1487,8 +1465,6 @@ Set requires_confirmation true unless the request is clearly low-risk create-onl
     body
 }
 
-// Consumed by the chat command (Task 6); allow dead_code until that lands.
-#[allow(dead_code)]
 fn build_chat_request_body(
     model: &str,
     prompt: &str,
@@ -1512,12 +1488,8 @@ fn build_chat_request_body(
     })
 }
 
-// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
-#[allow(dead_code)]
 pub const CHAT_ACTIONS_FENCE: &str = "```opennotion-actions";
 
-// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AiChatReply {
     pub content: String,
@@ -1527,8 +1499,6 @@ pub struct AiChatReply {
 /// Drive an OpenRouter SSE response into a chat reply: accumulate prose, emit
 /// token deltas, race each chunk against `cancel`, then split any embedded
 /// action fence. Returns the prose plus an optional plan.
-// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
-#[allow(dead_code)]
 async fn consume_chat_stream(
     response: reqwest::Response,
     on_delta: impl Fn(&str) + Send,
@@ -1604,7 +1574,6 @@ async fn consume_chat_stream(
 /// plan. The model is told to append at most one ```opennotion-actions fenced
 /// JSON block (the AiActionPlan schema) at the very end. A malformed or invalid
 /// fence is dropped so the prose still renders.
-#[allow(dead_code)]
 pub fn split_chat_actions(raw: &str) -> (String, Option<AiActionPlan>) {
     let Some(marker) = raw.find(CHAT_ACTIONS_FENCE) else {
         return (raw.trim().to_string(), None);
@@ -1623,8 +1592,6 @@ pub fn split_chat_actions(raw: &str) -> (String, Option<AiActionPlan>) {
     (prose, plan)
 }
 
-// Used by the chat streaming task (Task 2); allow dead_code until that lands.
-#[allow(dead_code)]
 const CHAT_SYSTEM_PROMPT: &str = r#"You are OpenNotion's in-app assistant.
 Answer the user conversationally in GitHub-flavored Markdown. Be concise.
 You can also create workspace structures. When (and only when) creating
@@ -2120,8 +2087,7 @@ async fn consume_plan_stream(
 /// Streaming chat completion: builds the chat body, sends it, and drives the
 /// response through consume_chat_stream. `history` is the prior conversation
 /// turns; `cancel` aborts the in-flight request.
-// Consumed by the chat command (Task 6); allow dead_code until that lands.
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_openrouter_chat(
     runtime: &AiRuntime,
     provider: &str,
@@ -3070,9 +3036,16 @@ mod tests {
             let convo = insert_ai_conversation(&db, "First chat", "2026-06-01T00:00:00.000Z")
                 .await
                 .expect("insert convo");
-            insert_ai_message(&db, &convo.id, "user", "Hi", None, "2026-06-01T00:00:01.000Z")
-                .await
-                .expect("user msg");
+            insert_ai_message(
+                &db,
+                &convo.id,
+                "user",
+                "Hi",
+                None,
+                "2026-06-01T00:00:01.000Z",
+            )
+            .await
+            .expect("user msg");
             insert_ai_message(
                 &db,
                 &convo.id,
@@ -3091,14 +3064,9 @@ mod tests {
             assert_eq!(detail.messages[0].role, "user");
             assert_eq!(detail.messages[1].content, "Hello");
 
-            rename_ai_conversation_record(
-                &db,
-                &convo.id,
-                "Renamed",
-                "2026-06-01T00:01:00.000Z",
-            )
-            .await
-            .expect("rename");
+            rename_ai_conversation_record(&db, &convo.id, "Renamed", "2026-06-01T00:01:00.000Z")
+                .await
+                .expect("rename");
             let list = list_ai_conversation_records(&db).await.expect("list");
             assert_eq!(list[0].title, "Renamed");
 
