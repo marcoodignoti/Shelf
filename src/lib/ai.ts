@@ -188,3 +188,66 @@ export async function cancelAiGeneration(): Promise<void> {
 export async function applyAiActionPlan(plan: AiActionPlan): Promise<AiApplyResult> {
   return await invoke<AiApplyResult>("apply_ai_action_plan", { plan, createdAt: new Date().toISOString() });
 }
+
+export interface AiConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
+export interface AiChatStoredMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  plan?: AiActionPlan | null;
+  created_at: string;
+}
+
+export interface AiConversationDetail {
+  conversation: AiConversationSummary;
+  messages: AiChatStoredMessage[];
+}
+
+export interface AiChatRequest {
+  conversation_id: string;
+  prompt: string;
+  provider: AiProviderId;
+  model: AiModelId;
+  current_page_id?: string | null;
+  regenerate?: boolean;
+}
+
+export async function listAiConversations(): Promise<AiConversationSummary[]> {
+  return await invoke<AiConversationSummary[]>("list_ai_conversations");
+}
+
+export async function getAiConversation(id: string): Promise<AiConversationDetail> {
+  return await invoke<AiConversationDetail>("get_ai_conversation", { id });
+}
+
+export async function createAiConversation(): Promise<AiConversationSummary> {
+  return await invoke<AiConversationSummary>("create_ai_conversation", {
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function renameAiConversation(id: string, title: string): Promise<void> {
+  await invoke("rename_ai_conversation", { id, title, updatedAt: new Date().toISOString() });
+}
+
+export async function deleteAiConversation(id: string): Promise<void> {
+  await invoke("delete_ai_conversation", { id });
+}
+
+export async function streamAiChatReply(
+  request: AiChatRequest,
+  onDelta: (delta: string) => void
+): Promise<AiChatStoredMessage> {
+  const channel = new Channel<string>();
+  channel.onmessage = onDelta;
+  return await invoke<AiChatStoredMessage>("stream_ai_chat_reply", {
+    request,
+    createdAt: new Date().toISOString(),
+    onEvent: channel,
+  });
+}
