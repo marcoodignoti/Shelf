@@ -272,6 +272,42 @@ pub async fn migrate_ai_settings(db: &SqlitePool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+pub async fn migrate_ai_chat(db: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS ai_conversations (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS ai_messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            plan_json TEXT,
+            seq INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );",
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation
+         ON ai_messages (conversation_id, seq);",
+    )
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn read_ai_settings(db: &SqlitePool, runtime: &AiRuntime) -> Result<AiSettings, String> {
     let row: (String, String, i64) = sqlx::query_as(
         "SELECT provider, model, trusted_mode_enabled FROM ai_settings WHERE id = 1",

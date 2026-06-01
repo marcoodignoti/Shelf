@@ -369,6 +369,7 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
     .await?;
 
     ai::migrate_ai_settings(db).await?;
+    ai::migrate_ai_chat(db).await?;
 
     Ok(())
 }
