@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { DatabaseProperty, DatabasePropertyType } from "./database";
 
 export const AI_PROVIDER_OPENROUTER = "openrouter" as const;
@@ -51,11 +51,18 @@ export interface AiCreateDatabaseRowsAction {
   rows: Array<{ title: string; properties?: Record<string, string | boolean> }>;
 }
 
+export interface AiAppendBlocksAction {
+  type: "append_blocks";
+  page_id: string;
+  content_blocks: unknown[];
+}
+
 export type AiAction =
   | AiCreatePageAction
   | AiCreateSubpagesAction
   | AiCreateDatabaseAction
-  | AiCreateDatabaseRowsAction;
+  | AiCreateDatabaseRowsAction
+  | AiAppendBlocksAction;
 
 export interface AiActionPlan {
   version: 1;
@@ -64,11 +71,17 @@ export interface AiActionPlan {
   actions: AiAction[];
 }
 
+export interface AiChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface AiPlanRequest {
   prompt: string;
   provider: AiProviderId;
   model: AiModelId;
   current_page_id?: string | null;
+  history?: AiChatTurn[];
 }
 
 export interface AiApplyResult {
@@ -98,9 +111,24 @@ export function formatAiActionPreview(plan: AiActionPlan): string[] {
       const propertyLabel = action.properties.length === 1 ? "1 property" : `${action.properties.length} properties`;
       return `Create database: ${action.title} with ${propertyLabel} and ${rowLabel}`;
     }
+    if (action.type === "append_blocks") {
+      const blockLabel = action.content_blocks.length === 1 ? "block" : "blocks";
+      return `Append ${action.content_blocks.length} ${blockLabel} to an existing page`;
+    }
     const rowLabel = action.rows.length === 1 ? "database row" : "database rows";
     return `Create ${action.rows.length} ${rowLabel}`;
   });
+}
+
+// Build a plan containing only the actions the user kept checked in the
+// preview, preserving their original order. Lets the user apply part of a plan
+// instead of all-or-nothing. Indices outside range are ignored.
+export function selectAiActions(plan: AiActionPlan, selectedIndices: number[]): AiActionPlan {
+  const selected = new Set(selectedIndices);
+  return {
+    ...plan,
+    actions: plan.actions.filter((_, index) => selected.has(index)),
+  };
 }
 
 export function canTrustedModeAutoApply(plan: AiActionPlan, trustedModeEnabled: boolean): boolean {
@@ -137,6 +165,24 @@ export async function clearAiApiKey(provider: AiProviderId): Promise<AiSettings>
 
 export async function generateAiActionPlan(request: AiPlanRequest): Promise<AiActionPlan> {
   return await invoke<AiActionPlan>("generate_ai_action_plan", { request });
+}
+
+// Streaming variant: the backend emits each token chunk over a Channel as it
+// arrives, then resolves with the parsed plan. `onDelta` receives raw content
+// fragments so the UI can show live progress instead of a blank spinner.
+export async function generateAiActionPlanStreaming(
+  request: AiPlanRequest,
+  onDelta: (delta: string) => void
+): Promise<AiActionPlan> {
+  const channel = new Channel<string>();
+  channel.onmessage = onDelta;
+  return await invoke<AiActionPlan>("generate_ai_action_plan_streaming", { request, onEvent: channel });
+}
+
+// Abort the in-flight streaming generation backend-side so its HTTP request is
+// dropped instead of running to completion after the user hits Stop.
+export async function cancelAiGeneration(): Promise<void> {
+  await invoke("cancel_ai_generation");
 }
 
 export async function applyAiActionPlan(plan: AiActionPlan): Promise<AiApplyResult> {

@@ -20,7 +20,7 @@ import {
 } from "@blocknote/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, WandSparkles, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
@@ -352,7 +352,10 @@ function OpenNotionDragHandleButton() {
   );
 }
 
-function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
+function openNotionSlashMenuItems(
+  editor: BlockNoteEditor<any, any, any>,
+  onAskAi: () => void
+) {
   return async (query: string) =>
     filterSuggestionItems(
       [
@@ -360,6 +363,14 @@ function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
         {
           ...formulaSlashMenuItem(editor),
           icon: <Sigma size={18} />,
+        },
+        {
+          title: "Ask AI",
+          aliases: ["ai", "assistant", "generate", "gpt"],
+          group: "AI",
+          subtext: "Plan pages, databases, or append content",
+          icon: <WandSparkles size={18} />,
+          onItemClick: () => onAskAi(),
         },
       ],
       query
@@ -719,6 +730,7 @@ export function Editor({
   const removePage = useAppStore((state) => state.removePage);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
+  const openAiActionModal = useAppStore((state) => state.openAiActionModal);
   const appTheme = useAppStore((state) => state.theme);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id]);
@@ -793,7 +805,10 @@ export function Editor({
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
-  const slashMenuItems = useMemo(() => openNotionSlashMenuItems(editor), [editor]);
+  const slashMenuItems = useMemo(
+    () => openNotionSlashMenuItems(editor, openAiActionModal),
+    [editor, openAiActionModal]
+  );
   const headingItems = useEditorState({
     editor,
     selector: ({ editor }) => headingItemsFromBlocks(editor.document as Block<any, any, any>[]),

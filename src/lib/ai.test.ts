@@ -6,6 +6,7 @@ import {
   canTrustedModeAutoApply,
   formatAiActionPreview,
   isAllowedAiModel,
+  selectAiActions,
   type AiActionPlan,
 } from "./ai";
 
@@ -77,6 +78,57 @@ describe("AI action previews", () => {
       "Create 1 subpage under current page",
       "Create 2 database rows",
     ]);
+  });
+
+  it("summarizes append-blocks plans with pluralization", () => {
+    const plan: AiActionPlan = {
+      version: 1,
+      summary: "Continue writing.",
+      requires_confirmation: true,
+      actions: [
+        { type: "append_blocks", page_id: "page-1", content_blocks: [{}] },
+        { type: "append_blocks", page_id: "page-2", content_blocks: [{}, {}, {}] },
+      ],
+    };
+
+    expect(formatAiActionPreview(plan)).toEqual([
+      "Append 1 block to an existing page",
+      "Append 3 blocks to an existing page",
+    ]);
+  });
+
+  it("never auto-applies append-blocks because it mutates existing content", () => {
+    const appendPlan: AiActionPlan = {
+      version: 1,
+      summary: "Add a section.",
+      requires_confirmation: false,
+      actions: [{ type: "append_blocks", page_id: "page-1", content_blocks: [{}] }],
+    };
+
+    expect(canTrustedModeAutoApply(appendPlan, true)).toBe(false);
+  });
+
+  it("keeps only the checked actions, preserving order", () => {
+    const plan: AiActionPlan = {
+      version: 1,
+      summary: "Three actions.",
+      requires_confirmation: true,
+      actions: [
+        { type: "create_page", title: "A" },
+        { type: "create_page", title: "B" },
+        { type: "create_page", title: "C" },
+      ],
+    };
+
+    const filtered = selectAiActions(plan, [2, 0]);
+
+    expect(filtered.actions).toEqual([
+      { type: "create_page", title: "A" },
+      { type: "create_page", title: "C" },
+    ]);
+    expect(filtered.summary).toBe("Three actions.");
+    // original plan is untouched
+    expect(plan.actions).toHaveLength(3);
   });
 
   it("auto-applies only create-only plans in trusted mode", () => {

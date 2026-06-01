@@ -20,11 +20,15 @@ import {
   aiModelLabel,
   applyAiActionPlan,
   canTrustedModeAutoApply,
-  generateAiActionPlan
+  cancelAiGeneration,
+  formatAiActionPreview,
+  generateAiActionPlanStreaming,
+  selectAiActions
 } from '../lib/ai';
 import {
   AiChatMessage,
   aiAppliedMessage,
+  aiChatHistory,
   aiMissingKeyMessage,
   aiPlanMessages,
   trimmedAiPrompt
@@ -52,10 +56,26 @@ export function AiActionModal() {
   const isOpen = useAppStore((state) => state.isAiActionModalOpen);
   const openAiActionModal = useAppStore((state) => state.openAiActionModal);
   const onClose = useAppStore((state) => state.closeAiActionModal);
-  const currentPageId = useAppStore((state) => state.currentPageId);
-  const currentPageTitle = useAppStore((state) =>
-    state.pages.find((page) => page.id === state.currentPageId)?.title ?? null
+  const notesPageId = useAppStore((state) => state.currentPageId);
+  const workspaceMode = useAppStore((state) => state.workspaceMode);
+  // In Studio mode the active note is the current document's linked note page,
+  // not currentPageId (which is stale from notes mode). Target that so AI
+  // context/append act on the PDF's note, not whatever was last open in notes.
+  const studioDocument = useAppStore((state) =>
+    state.workspaceMode === 'studio'
+      ? state.studioDocuments.find((document) => document.id === state.currentStudioDocumentId) ?? null
+      : null
   );
+  const notesPageTitle = useAppStore(
+    (state) => state.pages.find((page) => page.id === state.currentPageId)?.title ?? null
+  );
+  const currentPageId = workspaceMode === 'studio' ? studioDocument?.note_page_id ?? null : notesPageId;
+  const currentPageTitle =
+    workspaceMode === 'studio'
+      ? studioDocument
+        ? `${studioDocument.title} Notes`
+        : null
+      : notesPageTitle;
   const aiSettings = useAppStore((state) => state.aiSettings);
   const aiModels = useAppStore((state) => state.aiModels);
   const fetchAiSettings = useAppStore((state) => state.fetchAiSettings);
@@ -68,7 +88,13 @@ export function AiActionModal() {
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [plan, setPlan] = useState<AiActionPlan | null>(null);
+  // One checkbox per action in the pending plan; user can drop actions before
+  // applying. Reset to all-checked whenever a new plan arrives.
+  const [selectedActions, setSelectedActions] = useState<boolean[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  // Running count of streamed characters, shown while generating so the user
+  // sees live progress instead of a static spinner.
+  const [streamChars, setStreamChars] = useState(0);
   const [isApplying, setIsApplying] = useState(false);
   // Monotonic token: a generate run whose id no longer matches has been
   // cancelled (panel closed, new chat, or explicit Stop) and its result is
@@ -112,11 +138,13 @@ export function AiActionModal() {
   }, [isOpen, messages, isGenerating]);
 
   // Closing the panel mid-generation discards the pending run so it does not
-  // resolve into a stale "Generating..." state on reopen.
+  // resolve into a stale "Generating..." state on reopen, and aborts the
+  // backend request instead of leaving it to finish in the background.
   useEffect(() => {
     if (isOpen) return;
     generationIdRef.current += 1;
     setIsGenerating(false);
+    void cancelAiGeneration();
   }, [isOpen]);
 
   // Self-heal a stored model that the live OpenRouter list no longer offers
@@ -148,25 +176,39 @@ export function AiActionModal() {
   const cancelGeneration = () => {
     generationIdRef.current += 1;
     setIsGenerating(false);
+    // Abort the backend request too, not just discard its result.
+    void cancelAiGeneration();
   };
 
   const startNewChat = () => {
     cancelGeneration();
     setMessages([]);
     setPlan(null);
+    setSelectedActions([]);
     setPrompt('');
   };
 
-  const handleApply = async (targetPlan = plan) => {
+  // `useSelection` filters the plan down to the checked actions (manual Apply);
+  // trusted-mode auto-apply passes the full plan with useSelection = false.
+  const handleApply = async (targetPlan = plan, useSelection = false) => {
     if (!targetPlan) return;
+    const planToApply = useSelection
+      ? selectAiActions(
+          targetPlan,
+          selectedActions.flatMap((checked, index) => (checked ? [index] : []))
+        )
+      : targetPlan;
+    if (planToApply.actions.length === 0) return;
     setIsApplying(true);
     try {
-      const result = await applyAiActionPlan(targetPlan);
+      const result = await applyAiActionPlan(planToApply);
       await fetchPages();
       if (result.primary_page_id) setCurrentPageId(result.primary_page_id);
       setPlan(null);
-      setMessages((current) => [...current, aiAppliedMessage(result.created_page_ids.length, nextMessageId())]);
-      showSuccess(`AI created ${result.created_page_ids.length} item${result.created_page_ids.length === 1 ? '' : 's'}.`);
+      setSelectedActions([]);
+      const changed = result.created_page_ids.length + result.updated_page_ids.length;
+      setMessages((current) => [...current, aiAppliedMessage(changed, nextMessageId())]);
+      showSuccess(`AI updated ${changed} item${changed === 1 ? '' : 's'}.`);
     } catch (error: unknown) {
       showError(error);
     } finally {
@@ -193,22 +235,34 @@ export function AiActionModal() {
 
     const generationId = generationIdRef.current + 1;
     generationIdRef.current = generationId;
+    // Snapshot the transcript before this prompt's turns are appended so the
+    // backend sees only prior context, not the in-flight request.
+    const history = aiChatHistory(messages);
+    setStreamChars(0);
     setIsGenerating(true);
     try {
-      const nextPlan = await generateAiActionPlan({
-        prompt: cleanPrompt,
-        provider: AI_PROVIDER_OPENROUTER,
-        model: selectedModel,
-        current_page_id: currentPageId,
-      });
+      const nextPlan = await generateAiActionPlanStreaming(
+        {
+          prompt: cleanPrompt,
+          provider: AI_PROVIDER_OPENROUTER,
+          model: selectedModel,
+          current_page_id: currentPageId,
+          history,
+        },
+        (delta) => {
+          if (generationIdRef.current !== generationId) return;
+          setStreamChars((count) => count + delta.length);
+        }
+      );
       if (generationIdRef.current !== generationId) return;
       setMessages((current) => [
         ...current,
         ...aiPlanMessages(cleanPrompt, nextPlan, nextMessageId(), nextMessageId()),
       ]);
       setPlan(nextPlan);
+      setSelectedActions(nextPlan.actions.map(() => true));
       if (canTrustedModeAutoApply(nextPlan, trustedModeEnabled)) {
-        await handleApply(nextPlan);
+        await handleApply(nextPlan, false);
       }
     } catch (error: unknown) {
       if (generationIdRef.current !== generationId) return;
@@ -267,7 +321,7 @@ export function AiActionModal() {
             ))}
             {isGenerating && (
               <div className="on-ai-chat-message on-ai-chat-message-assistant">
-                Generating preview...
+                {streamChars > 0 ? `Generating preview... (${streamChars} characters)` : 'Generating preview...'}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -277,8 +331,33 @@ export function AiActionModal() {
 
       {plan && (
         <div className="on-ai-chat-preview-actions">
-          <button className="on-button-secondary gap-2" onClick={() => void handleApply()} disabled={isApplying}>
-            <Sparkles className="h-4 w-4" /> {isApplying ? 'Applying...' : 'Apply preview'}
+          <ul className="on-ai-preview-checklist">
+            {formatAiActionPreview(plan).map((line, index) => (
+              <li key={`${line}-${index}`}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selectedActions[index] ?? true}
+                    disabled={isApplying}
+                    onChange={(event) =>
+                      setSelectedActions((current) => {
+                        const next = plan.actions.map((_, actionIndex) => current[actionIndex] ?? true);
+                        next[index] = event.target.checked;
+                        return next;
+                      })
+                    }
+                  />
+                  <span>{line}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <button
+            className="on-button-secondary gap-2"
+            onClick={() => void handleApply(plan, true)}
+            disabled={isApplying || !selectedActions.some(Boolean)}
+          >
+            <Sparkles className="h-4 w-4" /> {isApplying ? 'Applying...' : `Apply ${selectedActions.filter(Boolean).length} selected`}
           </button>
         </div>
       )}

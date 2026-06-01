@@ -17,6 +17,7 @@ const AI_MAX_CONTENT_BLOCKS: usize = 80;
 const AI_MAX_CONTENT_BYTES: usize = 256 * 1024;
 const AI_MAX_ROW_PROPERTIES_BYTES: usize = 64 * 1024;
 const AI_MAX_PROPERTY_VALUE_CHARS: usize = 2_000;
+const AI_MAX_BLOCK_DEPTH: usize = 6;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AiSettings {
@@ -46,6 +47,14 @@ pub struct AiPlanRequest {
     pub provider: String,
     pub model: String,
     pub current_page_id: Option<String>,
+    #[serde(default)]
+    pub history: Vec<AiChatTurn>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct AiChatTurn {
+    pub role: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -82,6 +91,11 @@ pub enum AiAction {
     CreateDatabaseRows {
         database_page_id: String,
         rows: Vec<AiDatabaseRow>,
+    },
+    #[serde(rename = "append_blocks")]
+    AppendBlocks {
+        page_id: String,
+        content_blocks: serde_json::Value,
     },
 }
 
@@ -316,7 +330,11 @@ pub fn parse_ai_action_plan(raw: &str) -> Result<AiActionPlan, String> {
                 .unwrap_or("");
             if !matches!(
                 action_type,
-                "create_page" | "create_subpages" | "create_database" | "create_database_rows"
+                "create_page"
+                    | "create_subpages"
+                    | "create_database"
+                    | "create_database_rows"
+                    | "append_blocks"
             ) {
                 return Err(format!("Unsupported AI action type: {}", action_type));
             }
@@ -395,6 +413,17 @@ pub fn validate_ai_action_plan(plan: &AiActionPlan) -> Result<(), String> {
                     validate_row_properties(row.properties.as_ref())?;
                 }
             }
+            AiAction::AppendBlocks {
+                page_id,
+                content_blocks,
+            } => {
+                validate_id(page_id)?;
+                let is_empty = content_blocks.as_array().is_none_or(Vec::is_empty);
+                if is_empty {
+                    return Err("AI append has no content blocks".to_string());
+                }
+                validate_content_blocks(Some(content_blocks))?;
+            }
         }
     }
 
@@ -431,7 +460,60 @@ fn validate_content_blocks(value: Option<&serde_json::Value>) -> Result<(), Stri
         if bytes.len() > AI_MAX_CONTENT_BYTES {
             return Err("AI content blocks are too large".to_string());
         }
+        for block in blocks {
+            validate_block_shape(block, 0)?;
+        }
     }
+    Ok(())
+}
+
+/// Reject content blocks whose shape the BlockNote editor cannot render. Size is
+/// checked elsewhere; this guards structure: every block must be an object with
+/// a sane `type`, well-typed `props`/`content`, and bounded `children` nesting.
+/// Without this a model can emit JSON that passes size limits but corrupts the
+/// editor on load.
+fn validate_block_shape(block: &serde_json::Value, depth: usize) -> Result<(), String> {
+    if depth > AI_MAX_BLOCK_DEPTH {
+        return Err("AI content blocks are nested too deeply".to_string());
+    }
+
+    let Some(object) = block.as_object() else {
+        return Err("AI content block must be an object".to_string());
+    };
+
+    let Some(block_type) = object.get("type").and_then(serde_json::Value::as_str) else {
+        return Err("AI content block is missing a type".to_string());
+    };
+    if block_type.is_empty()
+        || block_type.len() > 64
+        || !block_type
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    {
+        return Err("AI content block type is invalid".to_string());
+    }
+
+    if let Some(props) = object.get("props") {
+        if !props.is_object() {
+            return Err("AI content block props must be an object".to_string());
+        }
+    }
+
+    if let Some(content) = object.get("content") {
+        if !(content.is_string() || content.is_array() || content.is_object()) {
+            return Err("AI content block content is invalid".to_string());
+        }
+    }
+
+    if let Some(children) = object.get("children") {
+        let Some(children) = children.as_array() else {
+            return Err("AI content block children must be an array".to_string());
+        };
+        for child in children {
+            validate_block_shape(child, depth + 1)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -543,6 +625,7 @@ pub async fn apply_ai_action_plan_to_db(
     validate_ai_action_plan(&plan)?;
     let mut tx = db.begin().await.map_err(|error| error.to_string())?;
     let mut created_page_ids = Vec::new();
+    let mut updated_page_ids = Vec::new();
 
     for action in plan.actions {
         match action {
@@ -655,16 +738,80 @@ pub async fn apply_ai_action_plan_to_db(
                     created_page_ids.push(row_id);
                 }
             }
+            AiAction::AppendBlocks {
+                page_id,
+                content_blocks,
+            } => {
+                append_blocks_to_page(&mut tx, &page_id, content_blocks, now).await?;
+                updated_page_ids.push(page_id);
+            }
         }
     }
 
     tx.commit().await.map_err(|error| error.to_string())?;
-    let primary_page_id = created_page_ids.first().cloned();
+    let primary_page_id = created_page_ids
+        .first()
+        .or_else(|| updated_page_ids.first())
+        .cloned();
     Ok(AiApplyResult {
         created_page_ids,
-        updated_page_ids: Vec::new(),
+        updated_page_ids,
         primary_page_id,
     })
+}
+
+/// Append AI-generated blocks to an existing note page, merging into its
+/// BlockNote content array and refreshing the plain-text search index. Errors
+/// (rather than creating) if the page is missing or is a database, so append
+/// never silently overwrites or targets the wrong row.
+async fn append_blocks_to_page(
+    tx: &mut Transaction<'_, Sqlite>,
+    page_id: &str,
+    new_blocks: serde_json::Value,
+    now: &str,
+) -> Result<(), String> {
+    let existing: Option<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT content, is_database
+         FROM pages
+         WHERE id = ?
+           AND is_deleted = 0",
+    )
+    .bind(page_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let Some((content, is_database)) = existing else {
+        return Err("AI target page not found".to_string());
+    };
+    if is_database == 1 {
+        return Err("AI cannot append blocks to a database".to_string());
+    }
+
+    let mut blocks = content
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default();
+
+    if let Some(appended) = new_blocks.as_array() {
+        blocks.extend(appended.iter().cloned());
+    }
+
+    let merged = serde_json::Value::Array(blocks);
+    let search_text = search_text_from_content_blocks(&merged);
+    let search_text = (!search_text.is_empty()).then_some(search_text);
+
+    sqlx::query("UPDATE pages SET content = ?, search_text = ?, updated_at = ? WHERE id = ?")
+        .bind(merged.to_string())
+        .bind(search_text)
+        .bind(now)
+        .bind(page_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 /// Extract plain, searchable text from a BlockNote-style content-block array.
@@ -836,10 +983,175 @@ async fn insert_ai_page(
     Ok(())
 }
 
+/// Bounded snapshot of the workspace handed to the model as planning context.
+/// Built backend-side from live DB rows; never deserialized from the model.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AiWorkspaceContext {
+    pub current_page: Option<AiContextPage>,
+    /// Title of the PDF attached to the current page when it is a Studio note,
+    /// so AI prompts run while reading a PDF know what document they concern.
+    pub attached_document: Option<String>,
+    pub pages: Vec<AiContextPage>,
+    pub databases: Vec<AiContextDatabase>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiContextPage {
+    pub id: String,
+    pub title: String,
+    pub snippet: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiContextDatabase {
+    pub id: String,
+    pub title: String,
+    pub properties: Vec<AiContextProperty>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiContextProperty {
+    pub id: String,
+    pub name: String,
+    pub property_type: String,
+}
+
+const AI_CONTEXT_SNIPPET_CHARS: usize = 400;
+const AI_CONTEXT_MAX_PAGES: usize = 40;
+const AI_CONTEXT_MAX_DATABASES: usize = 25;
+
+fn context_title(title: &str) -> String {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        "Untitled".to_string()
+    } else {
+        trimmed.chars().take(120).collect()
+    }
+}
+
+fn truncate_snippet(text: &str) -> Option<String> {
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    if collapsed.chars().count() <= AI_CONTEXT_SNIPPET_CHARS {
+        return Some(collapsed);
+    }
+    let truncated: String = collapsed.chars().take(AI_CONTEXT_SNIPPET_CHARS).collect();
+    Some(format!("{}…", truncated))
+}
+
+/// Render the workspace snapshot into a plain-text block the model can use to
+/// target real page/database ids. Returns None when nothing useful is known,
+/// so the caller keeps the original "No page context." placeholder.
+pub fn build_workspace_context_prompt(context: &AiWorkspaceContext) -> Option<String> {
+    let mut sections: Vec<String> = Vec::new();
+
+    if let Some(current) = &context.current_page {
+        let mut lines = vec![format!(
+            "Current page: {} (id: {})",
+            context_title(&current.title),
+            current.id
+        )];
+        if let Some(document) = context.attached_document.as_deref() {
+            let trimmed = document.trim();
+            if !trimmed.is_empty() {
+                lines.push(format!("Attached PDF document: {}", context_title(trimmed)));
+            }
+        }
+        if let Some(snippet) = current.snippet.as_deref().and_then(truncate_snippet) {
+            lines.push(format!("Current page content: {}", snippet));
+        }
+        sections.push(lines.join("\n"));
+    }
+
+    let pages: Vec<&AiContextPage> = context
+        .pages
+        .iter()
+        .filter(|page| context.current_page.as_ref().map(|c| &c.id) != Some(&page.id))
+        .take(AI_CONTEXT_MAX_PAGES)
+        .collect();
+    if !pages.is_empty() {
+        let mut lines = vec!["Existing pages (use an id below for parent_id):".to_string()];
+        for page in pages {
+            lines.push(format!(
+                "- {} (id: {})",
+                context_title(&page.title),
+                page.id
+            ));
+        }
+        sections.push(lines.join("\n"));
+    }
+
+    let databases: Vec<&AiContextDatabase> = context
+        .databases
+        .iter()
+        .take(AI_CONTEXT_MAX_DATABASES)
+        .collect();
+    if !databases.is_empty() {
+        let mut lines =
+            vec!["Existing databases (use an id below for database_page_id):".to_string()];
+        for database in databases {
+            let props = database
+                .properties
+                .iter()
+                .map(|prop| format!("{}[{}]", prop.id, prop.property_type))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if props.is_empty() {
+                lines.push(format!(
+                    "- {} (id: {})",
+                    context_title(&database.title),
+                    database.id
+                ));
+            } else {
+                lines.push(format!(
+                    "- {} (id: {}) properties: {}",
+                    context_title(&database.title),
+                    database.id,
+                    props
+                ));
+            }
+        }
+        sections.push(lines.join("\n"));
+    }
+
+    if sections.is_empty() {
+        None
+    } else {
+        Some(sections.join("\n\n"))
+    }
+}
+
+const AI_MAX_HISTORY_TURNS: usize = 10;
+const AI_MAX_HISTORY_CHARS: usize = 2_000;
+
+/// Convert recent chat turns into OpenRouter messages, bounded by turn count and
+/// per-turn length so a long conversation cannot blow the token budget. Keeps
+/// only the most recent turns and drops anything that is not a user/assistant
+/// text turn.
+fn chat_history_messages(history: &[AiChatTurn]) -> Vec<serde_json::Value> {
+    let valid: Vec<serde_json::Value> = history
+        .iter()
+        .filter(|turn| matches!(turn.role.as_str(), "user" | "assistant"))
+        .filter_map(|turn| {
+            let content = turn.content.trim();
+            if content.is_empty() {
+                return None;
+            }
+            let content: String = content.chars().take(AI_MAX_HISTORY_CHARS).collect();
+            Some(serde_json::json!({ "role": turn.role, "content": content }))
+        })
+        .collect();
+    let start = valid.len().saturating_sub(AI_MAX_HISTORY_TURNS);
+    valid[start..].to_vec()
+}
+
 pub fn build_openrouter_request_body(
     model: &str,
     prompt: &str,
     context: Option<&str>,
+    history: &[AiChatTurn],
     structured_json: bool,
 ) -> serde_json::Value {
     let system_prompt = r#"You create OpenNotion workspace structures.
@@ -853,27 +1165,32 @@ Schema:
     {"type":"create_page","title":"Page title","parent_id":null,"content_blocks":[]},
     {"type":"create_subpages","parent_id":"existing-page-id","pages":[{"title":"Subpage title","content_blocks":[]}]},
     {"type":"create_database","title":"Database title","parent_id":null,"properties":[{"id":"status","name":"Status","type":"select","options":["Todo","Done"]}],"starter_rows":[{"title":"First row","properties":{"status":"Todo"}}]},
-    {"type":"create_database_rows","database_page_id":"existing-database-id","rows":[{"title":"Row title","properties":{"done":false}}]}
+    {"type":"create_database_rows","database_page_id":"existing-database-id","rows":[{"title":"Row title","properties":{"done":false}}]},
+    {"type":"append_blocks","page_id":"existing-page-id","content_blocks":[{"type":"paragraph","content":[{"type":"text","text":"New text","styles":{}}]}]}
   ]
 }
-Allowed actions only: create_page, create_subpages, create_database, create_database_rows.
+Allowed actions only: create_page, create_subpages, create_database, create_database_rows, append_blocks.
+Use append_blocks to add content to an existing page (e.g. "continue writing", "summarize into this page"); its page_id must come from the Context. append_blocks adds to the end and never removes existing content.
 Allowed property types only: text, checkbox, select, date.
+Only use a parent_id or database_page_id that appears in the Context. To add under the current page, use its id. Never invent ids.
+For create_database_rows, the row "properties" keys must be property ids listed for that database in the Context.
 Never delete, rename, overwrite, move, or modify existing content.
 Use content_blocks as a BlockNote-style JSON array. Keep content concise.
 Set requires_confirmation true unless the request is clearly low-risk create-only."#;
 
+    let mut messages = vec![serde_json::json!({
+        "role": "system",
+        "content": system_prompt
+    })];
+    messages.extend(chat_history_messages(history));
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": format!("Context:\n{}\n\nRequest:\n{}", context.unwrap_or("No page context."), prompt)
+    }));
+
     let mut body = serde_json::json!({
         "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": format!("Context:\n{}\n\nRequest:\n{}", context.unwrap_or("No page context."), prompt)
-            }
-        ],
+        "messages": messages,
         "temperature": 0.2
     });
 
@@ -1172,8 +1489,13 @@ pub async fn generate_openrouter_plan(
         .ok_or_else(|| "Missing AI API key".to_string())?;
 
     let client = openrouter_http_client()?;
-    let structured_body =
-        build_openrouter_request_body(&request.model, &request.prompt, context.as_deref(), true);
+    let structured_body = build_openrouter_request_body(
+        &request.model,
+        &request.prompt,
+        context.as_deref(),
+        &request.history,
+        true,
+    );
     let payload = match send_openrouter_chat_request(&client, &api_key, structured_body).await {
         Ok(payload) => payload,
         Err(error) if should_retry_without_response_format(&error) => {
@@ -1181,6 +1503,7 @@ pub async fn generate_openrouter_plan(
                 &request.model,
                 &request.prompt,
                 context.as_deref(),
+                &request.history,
                 false,
             );
             send_openrouter_chat_request(&client, &api_key, plain_json_body)
@@ -1200,6 +1523,157 @@ pub async fn generate_openrouter_plan(
         .ok_or_else(|| "AI response did not include content".to_string())?;
 
     parse_ai_action_plan(content)
+}
+
+#[derive(Debug, PartialEq)]
+enum SseLine {
+    Delta(String),
+    Done,
+    Other,
+}
+
+/// Parse one Server-Sent-Events line from OpenRouter's streaming chat endpoint.
+/// Payload lines start with `data:`; `data: [DONE]` ends the stream; every other
+/// data line is JSON whose `choices[0].delta.content` holds the next token chunk.
+fn parse_sse_line(line: &str) -> SseLine {
+    let Some(payload) = line.trim().strip_prefix("data:") else {
+        return SseLine::Other;
+    };
+    let payload = payload.trim();
+    if payload == "[DONE]" {
+        return SseLine::Done;
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return SseLine::Other;
+    };
+    value
+        .get("choices")
+        .and_then(|choices| choices.as_array())
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("delta"))
+        .and_then(|delta| delta.get("content"))
+        .and_then(|content| content.as_str())
+        .filter(|text| !text.is_empty())
+        .map(|text| SseLine::Delta(text.to_string()))
+        .unwrap_or(SseLine::Other)
+}
+
+/// Streaming sibling of `generate_openrouter_plan`: requests `stream: true`,
+/// feeds each token chunk to `on_delta` (e.g. to emit UI progress), accumulates
+/// the full body, then parses it into a plan exactly like the non-streaming path.
+/// `cancel` resolves when the user aborts; resolving it drops the HTTP response
+/// so the request is torn down instead of finishing in the background.
+pub async fn stream_openrouter_plan(
+    runtime: &AiRuntime,
+    request: AiPlanRequest,
+    context: Option<String>,
+    on_delta: impl Fn(&str) + Send,
+    cancel: impl std::future::Future<Output = ()> + Send,
+) -> Result<AiActionPlan, String> {
+    validate_provider_model(&request.provider, &request.model)?;
+    let api_key = runtime
+        .secret_store
+        .get_secret(&request.provider)?
+        .ok_or_else(|| "Missing AI API key".to_string())?;
+
+    let client = openrouter_http_client()?;
+    let mut body = build_openrouter_request_body(
+        &request.model,
+        &request.prompt,
+        context.as_deref(),
+        &request.history,
+        true,
+    );
+    body["stream"] = serde_json::Value::Bool(true);
+
+    let response = client
+        .post(OPENROUTER_CHAT_URL)
+        .bearer_auth(&api_key)
+        .header("HTTP-Referer", "https://opennotion.local")
+        .header("X-Title", "OpenNotion")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("AI request failed: {}", error))?;
+
+    consume_plan_stream(response, on_delta, cancel).await
+}
+
+/// Drive an OpenRouter SSE response to a parsed plan. Split out from
+/// `stream_openrouter_plan` so the streaming/cancel logic can be tested against
+/// a local mock server without a live API key. Races each stream chunk against
+/// `cancel`; if cancel wins, the response is dropped (aborting the request) and
+/// an `"AI generation cancelled"` error is returned.
+async fn consume_plan_stream(
+    response: reqwest::Response,
+    on_delta: impl Fn(&str) + Send,
+    cancel: impl std::future::Future<Output = ()> + Send,
+) -> Result<AiActionPlan, String> {
+    use futures_util::StreamExt;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(OpenRouterRequestError {
+            status,
+            message: summarize_openrouter_error(&text),
+        }
+        .to_string());
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut content = String::new();
+    let mut done = false;
+
+    tokio::pin!(cancel);
+
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            _ = &mut cancel => return Err("AI generation cancelled".to_string()),
+            chunk = stream.next() => chunk,
+        };
+
+        let Some(chunk) = chunk else {
+            break;
+        };
+        let chunk = chunk.map_err(|error| format!("AI stream failed: {}", error))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(newline) = buffer.find('\n') {
+            let line: String = buffer.drain(..=newline).collect();
+            match parse_sse_line(&line) {
+                SseLine::Delta(text) => {
+                    on_delta(&text);
+                    content.push_str(&text);
+                }
+                SseLine::Done => {
+                    done = true;
+                    break;
+                }
+                SseLine::Other => {}
+            }
+        }
+
+        if done {
+            break;
+        }
+    }
+
+    // Flush a trailing line with no newline terminator.
+    if !done {
+        if let SseLine::Delta(text) = parse_sse_line(&buffer) {
+            on_delta(&text);
+            content.push_str(&text);
+        }
+    }
+
+    if content.trim().is_empty() {
+        return Err("AI response did not include content".to_string());
+    }
+
+    parse_ai_action_plan(&content)
 }
 
 #[cfg(test)]
@@ -1632,11 +2106,263 @@ mod tests {
     }
 
     #[test]
+    fn accepts_well_formed_nested_content_blocks() {
+        let blocks = serde_json::json!([
+            {"type":"heading","props":{"level":1},"content":[{"type":"text","text":"Title","styles":{}}]},
+            {"type":"bulletListItem","content":[{"type":"text","text":"Point","styles":{}}],
+             "children":[{"type":"paragraph","content":"Nested"}]},
+            {"type":"table","content":{"type":"tableContent","rows":[]}}
+        ]);
+        assert_eq!(validate_content_blocks(Some(&blocks)), Ok(()));
+    }
+
+    #[test]
+    fn rejects_block_missing_type() {
+        let blocks = serde_json::json!([{"content":[{"type":"text","text":"x","styles":{}}]}]);
+        assert_eq!(
+            validate_content_blocks(Some(&blocks)),
+            Err("AI content block is missing a type".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_non_object_block_and_bad_props() {
+        assert_eq!(
+            validate_content_blocks(Some(&serde_json::json!(["just a string"]))),
+            Err("AI content block must be an object".to_string())
+        );
+        assert_eq!(
+            validate_content_blocks(Some(&serde_json::json!([{"type":"paragraph","props":[]}]))),
+            Err("AI content block props must be an object".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_overly_deep_block_nesting() {
+        // Build children nested deeper than AI_MAX_BLOCK_DEPTH.
+        let mut block = serde_json::json!({"type":"paragraph"});
+        for _ in 0..(AI_MAX_BLOCK_DEPTH + 1) {
+            block = serde_json::json!({"type":"paragraph","children":[block]});
+        }
+        assert_eq!(
+            validate_content_blocks(Some(&serde_json::json!([block]))),
+            Err("AI content blocks are nested too deeply".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_workspace_context_yields_no_prompt() {
+        assert_eq!(
+            build_workspace_context_prompt(&AiWorkspaceContext::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn workspace_context_lists_ids_for_pages_and_databases() {
+        let context = AiWorkspaceContext {
+            current_page: Some(AiContextPage {
+                id: "page-1".to_string(),
+                title: "Physics".to_string(),
+                snippet: Some("  Gauss   law   flux  ".to_string()),
+            }),
+            attached_document: None,
+            pages: vec![
+                // current page is filtered out of the "Existing pages" list
+                AiContextPage {
+                    id: "page-1".to_string(),
+                    title: "Physics".to_string(),
+                    snippet: None,
+                },
+                AiContextPage {
+                    id: "page-2".to_string(),
+                    title: "Chemistry".to_string(),
+                    snippet: None,
+                },
+            ],
+            databases: vec![AiContextDatabase {
+                id: "db-1".to_string(),
+                title: "Exams".to_string(),
+                properties: vec![AiContextProperty {
+                    id: "status".to_string(),
+                    name: "Status".to_string(),
+                    property_type: "select".to_string(),
+                }],
+            }],
+        };
+
+        let prompt = build_workspace_context_prompt(&context).expect("prompt");
+
+        assert!(prompt.contains("Current page: Physics (id: page-1)"));
+        assert!(prompt.contains("Current page content: Gauss law flux"));
+        assert!(prompt.contains("- Chemistry (id: page-2)"));
+        assert!(!prompt.contains("- Physics (id: page-1)"));
+        assert!(prompt.contains("- Exams (id: db-1) properties: status[select]"));
+    }
+
+    #[test]
+    fn workspace_context_surfaces_attached_pdf_for_studio_note() {
+        let context = AiWorkspaceContext {
+            current_page: Some(AiContextPage {
+                id: "note-1".to_string(),
+                title: "Lecture Notes".to_string(),
+                snippet: None,
+            }),
+            attached_document: Some("Thermodynamics.pdf".to_string()),
+            ..AiWorkspaceContext::default()
+        };
+
+        let prompt = build_workspace_context_prompt(&context).expect("prompt");
+
+        assert!(prompt.contains("Current page: Lecture Notes (id: note-1)"));
+        assert!(prompt.contains("Attached PDF document: Thermodynamics.pdf"));
+    }
+
+    #[test]
+    fn workspace_context_truncates_long_snippet() {
+        let long = "word ".repeat(200);
+        let context = AiWorkspaceContext {
+            current_page: Some(AiContextPage {
+                id: "page-1".to_string(),
+                title: "Big".to_string(),
+                snippet: Some(long),
+            }),
+            ..AiWorkspaceContext::default()
+        };
+
+        let prompt = build_workspace_context_prompt(&context).expect("prompt");
+        let snippet_line = prompt
+            .lines()
+            .find(|line| line.starts_with("Current page content:"))
+            .expect("snippet line");
+
+        assert!(snippet_line.ends_with('…'));
+        assert!(snippet_line.chars().count() <= AI_CONTEXT_SNIPPET_CHARS + 40);
+    }
+
+    #[test]
+    fn workspace_context_caps_page_list() {
+        let pages = (0..(AI_CONTEXT_MAX_PAGES + 10))
+            .map(|index| AiContextPage {
+                id: format!("page-{}", index),
+                title: format!("Page {}", index),
+                snippet: None,
+            })
+            .collect();
+        let context = AiWorkspaceContext {
+            pages,
+            ..AiWorkspaceContext::default()
+        };
+
+        let prompt = build_workspace_context_prompt(&context).expect("prompt");
+        let listed = prompt.matches("(id: page-").count();
+
+        assert_eq!(listed, AI_CONTEXT_MAX_PAGES);
+    }
+
+    #[test]
+    fn rejects_append_blocks_with_empty_content() {
+        let raw = r#"{"version":1,"summary":"Append","requires_confirmation":true,"actions":[{"type":"append_blocks","page_id":"page-1","content_blocks":[]}]}"#;
+        assert_eq!(
+            parse_ai_action_plan(raw),
+            Err("AI append has no content blocks".to_string())
+        );
+    }
+
+    #[test]
+    fn append_blocks_merges_into_existing_page_content() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_pages_table(&db).await;
+            sqlx::query(
+                "INSERT INTO pages (id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at)
+                 VALUES ('page-1', 'Notes', NULL, ?, 'Existing', NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, 'note', '2026-05-31T00:00:00.000Z', '2026-05-31T00:00:00.000Z')",
+            )
+            .bind(r#"[{"type":"paragraph","content":[{"type":"text","text":"Existing","styles":{}}]}]"#)
+            .execute(&db)
+            .await
+            .expect("seed page");
+
+            let plan = parse_ai_action_plan(
+                r#"{"version":1,"summary":"Append","requires_confirmation":true,"actions":[{"type":"append_blocks","page_id":"page-1","content_blocks":[{"type":"paragraph","content":[{"type":"text","text":"Appended","styles":{}}]}]}]}"#,
+            )
+            .expect("plan");
+            let result = apply_ai_action_plan_to_db(&db, plan, "2026-06-01T00:00:00.000Z")
+                .await
+                .expect("apply");
+
+            assert!(result.created_page_ids.is_empty());
+            assert_eq!(result.updated_page_ids, vec!["page-1".to_string()]);
+            assert_eq!(result.primary_page_id.as_deref(), Some("page-1"));
+
+            let (content, search_text, updated_at): (Option<String>, Option<String>, String) =
+                sqlx::query_as(
+                    "SELECT content, search_text, updated_at FROM pages WHERE id = 'page-1'",
+                )
+                .fetch_one(&db)
+                .await
+                .expect("row");
+
+            let blocks: serde_json::Value =
+                serde_json::from_str(&content.expect("content")).expect("json");
+            assert_eq!(blocks.as_array().map(Vec::len), Some(2));
+            assert_eq!(search_text.as_deref(), Some("Existing Appended"));
+            assert_eq!(updated_at, "2026-06-01T00:00:00.000Z");
+        });
+    }
+
+    #[test]
+    fn append_blocks_rejects_database_target_without_mutating() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_pages_table(&db).await;
+            insert_test_page(&db, "db-1", 1).await;
+
+            let plan = parse_ai_action_plan(
+                r#"{"version":1,"summary":"Append","requires_confirmation":true,"actions":[{"type":"append_blocks","page_id":"db-1","content_blocks":[{"type":"paragraph","content":[{"type":"text","text":"x","styles":{}}]}]}]}"#,
+            )
+            .expect("plan");
+
+            let error = apply_ai_action_plan_to_db(&db, plan, "2026-06-01T00:00:00.000Z")
+                .await
+                .expect_err("reject database target");
+            let content: Option<String> =
+                sqlx::query_scalar("SELECT content FROM pages WHERE id = 'db-1'")
+                    .fetch_one(&db)
+                    .await
+                    .expect("row");
+
+            assert_eq!(error, "AI cannot append blocks to a database");
+            assert!(content.is_none());
+        });
+    }
+
+    #[test]
+    fn append_blocks_rejects_missing_page() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            create_pages_table(&db).await;
+
+            let plan = parse_ai_action_plan(
+                r#"{"version":1,"summary":"Append","requires_confirmation":true,"actions":[{"type":"append_blocks","page_id":"missing","content_blocks":[{"type":"paragraph","content":[{"type":"text","text":"x","styles":{}}]}]}]}"#,
+            )
+            .expect("plan");
+
+            let error = apply_ai_action_plan_to_db(&db, plan, "2026-06-01T00:00:00.000Z")
+                .await
+                .expect_err("reject missing page");
+
+            assert_eq!(error, "AI target page not found");
+        });
+    }
+
+    #[test]
     fn openrouter_request_includes_model_and_json_instruction() {
         let body = build_openrouter_request_body(
             AI_MODEL_KIMI_FREE,
             "Create exam tracker",
             Some("Current page: Physics"),
+            &[],
             true,
         );
         let serialized = serde_json::to_string(&body).expect("serialize");
@@ -1649,13 +2375,161 @@ mod tests {
 
     #[test]
     fn openrouter_request_can_skip_structured_response_format() {
-        let body = build_openrouter_request_body(AI_MODEL_KIMI_FREE, "Create page", None, false);
+        let body =
+            build_openrouter_request_body(AI_MODEL_KIMI_FREE, "Create page", None, &[], false);
 
         assert!(body.get("response_format").is_none());
         assert_eq!(
             body.get("model").and_then(|value| value.as_str()),
             Some(AI_MODEL_KIMI_FREE)
         );
+    }
+
+    #[test]
+    fn openrouter_request_threads_bounded_chat_history() {
+        let mut history: Vec<AiChatTurn> = (0..15)
+            .map(|index| AiChatTurn {
+                role: if index % 2 == 0 { "user" } else { "assistant" }.to_string(),
+                content: format!("Turn {}", index),
+            })
+            .collect();
+        // noise turns that must be dropped: blank content and a non-chat role
+        history.push(AiChatTurn {
+            role: "user".to_string(),
+            content: "   ".to_string(),
+        });
+        history.push(AiChatTurn {
+            role: "system".to_string(),
+            content: "ignore me".to_string(),
+        });
+
+        let body = build_openrouter_request_body(
+            AI_MODEL_KIMI_FREE,
+            "Make it longer",
+            None,
+            &history,
+            true,
+        );
+        let messages = body
+            .get("messages")
+            .and_then(|value| value.as_array())
+            .expect("messages");
+
+        // system + last 10 valid turns + final user prompt
+        assert_eq!(messages.len(), 12);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[1]["content"], "Turn 5");
+        assert_eq!(messages[10]["content"], "Turn 14");
+        assert_eq!(
+            messages[11]["content"],
+            "Context:\nNo page context.\n\nRequest:\nMake it longer"
+        );
+        let serialized = serde_json::to_string(&body).expect("serialize");
+        assert!(!serialized.contains("ignore me"));
+    }
+
+    #[test]
+    fn parses_sse_content_delta_lines() {
+        assert_eq!(
+            parse_sse_line(r#"data: {"choices":[{"delta":{"content":"Hello"}}]}"#),
+            SseLine::Delta("Hello".to_string())
+        );
+        assert_eq!(parse_sse_line("data: [DONE]"), SseLine::Done);
+        // keep-alive comments and empty deltas carry no content
+        assert_eq!(parse_sse_line(": keep-alive"), SseLine::Other);
+        assert_eq!(
+            parse_sse_line(r#"data: {"choices":[{"delta":{}}]}"#),
+            SseLine::Other
+        );
+        assert_eq!(parse_sse_line("data: not-json"), SseLine::Other);
+    }
+
+    /// Minimal one-shot HTTP/1.1 server that returns `body` as an SSE response.
+    /// Lets the streaming consumer be tested against real reqwest bytes without a
+    /// live OpenRouter key. Returns the URL to hit.
+    fn spawn_sse_server(body: String) -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let addr = listener.local_addr().expect("mock server addr");
+        std::thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                let mut scratch = [0u8; 1024];
+                let _ = socket.read(&mut scratch);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{}",
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes());
+                let _ = socket.flush();
+            }
+        });
+        format!("http://{}/", addr)
+    }
+
+    fn sse_data_line(content: &str) -> String {
+        format!(
+            "data: {}\n\n",
+            serde_json::json!({ "choices": [{ "delta": { "content": content } }] })
+        )
+    }
+
+    #[test]
+    fn consume_plan_stream_assembles_plan_from_sse_chunks() {
+        tauri::async_runtime::block_on(async {
+            // A full plan JSON split across several streamed delta chunks.
+            let body = format!(
+                "{}{}{}data: [DONE]\n\n",
+                sse_data_line("{\"version\":1,\"summary\":\"Streamed plan\","),
+                sse_data_line(
+                    "\"requires_confirmation\":true,\"actions\":[{\"type\":\"create_page\","
+                ),
+                sse_data_line("\"title\":\"Streamed\"}]}"),
+            );
+            let url = spawn_sse_server(body);
+
+            let response = reqwest::Client::new()
+                .get(&url)
+                .send()
+                .await
+                .expect("mock response");
+
+            let captured = std::sync::Mutex::new(String::new());
+            let plan = consume_plan_stream(
+                response,
+                |delta| captured.lock().expect("lock").push_str(delta),
+                std::future::pending::<()>(),
+            )
+            .await
+            .expect("streamed plan");
+
+            assert_eq!(plan.summary, "Streamed plan");
+            assert_eq!(plan.actions.len(), 1);
+            assert!(captured.lock().expect("lock").contains("Streamed"));
+        });
+    }
+
+    #[test]
+    fn consume_plan_stream_aborts_when_cancelled() {
+        tauri::async_runtime::block_on(async {
+            let url = spawn_sse_server(sse_data_line("{\"version\":1,"));
+
+            let response = reqwest::Client::new()
+                .get(&url)
+                .send()
+                .await
+                .expect("mock response");
+
+            let result = consume_plan_stream(
+                response,
+                |_| {},
+                std::future::ready(()), // already-cancelled
+            )
+            .await;
+
+            assert_eq!(result, Err("AI generation cancelled".to_string()));
+        });
     }
 
     #[test]

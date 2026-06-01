@@ -40,6 +40,10 @@ const IMAGE_MAGIC_HEADERS: &[(&str, &[u8])] = &[
 struct AppState {
     db: SqlitePool,
     ai: ai::AiRuntime,
+    /// Notified when the user cancels an in-flight AI generation, so the
+    /// streaming command can drop its HTTP request instead of running to
+    /// completion in the background.
+    ai_cancel: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Debug, FromRow, Serialize)]
@@ -1846,16 +1850,167 @@ async fn generate_ai_action_plan(
     request: ai::AiPlanRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<ai::AiActionPlan, String> {
-    let context = if let Some(page_id) = &request.current_page_id {
-        get_page_record(&state.db, page_id)
-            .await
-            .map_err(|error| error.to_string())?
-            .map(|page| format!("Current page: {} ({})", page.title, page.id))
-    } else {
-        None
-    };
+    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    let context = ai::build_workspace_context_prompt(&workspace);
 
     ai::generate_openrouter_plan(&state.ai, request, context).await
+}
+
+#[tauri::command]
+async fn generate_ai_action_plan_streaming(
+    request: ai::AiPlanRequest,
+    on_event: tauri::ipc::Channel<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<ai::AiActionPlan, String> {
+    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    let context = ai::build_workspace_context_prompt(&workspace);
+
+    // Registers a waiter on the shared cancel signal; cancel_ai_generation wakes
+    // it, which makes stream_openrouter_plan drop the in-flight HTTP request.
+    let cancel = state.ai_cancel.notified();
+
+    ai::stream_openrouter_plan(
+        &state.ai,
+        request,
+        context,
+        move |delta| {
+            // Best-effort progress; a closed channel just means the UI moved on.
+            let _ = on_event.send(delta.to_string());
+        },
+        cancel,
+    )
+    .await
+}
+
+#[tauri::command]
+fn cancel_ai_generation(state: tauri::State<'_, AppState>) {
+    state.ai_cancel.notify_waiters();
+}
+
+/// Bounded workspace snapshot for AI planning: the current page (with a content
+/// snippet), the real pages the model may target as parents, and the databases
+/// it may append rows to. Giving the model live ids is what makes the
+/// create_subpages / create_database_rows actions usable at all.
+async fn build_ai_workspace_context(
+    db: &SqlitePool,
+    current_page_id: Option<&str>,
+) -> Result<ai::AiWorkspaceContext, sqlx::Error> {
+    let records = list_page_records(db).await?;
+
+    let database_ids: std::collections::HashSet<&str> = records
+        .iter()
+        .filter(|page| page.is_database == 1)
+        .map(|page| page.id.as_str())
+        .collect();
+
+    // The current page may be a Studio note (page_kind = 'studio_note'), which
+    // list_page_records excludes, so fall back to a direct lookup before giving
+    // up — otherwise AI run from Studio loses all page context.
+    let current_page = match current_page_id {
+        Some(id) => match records.iter().find(|page| page.id == id) {
+            Some(page) => Some(ai::AiContextPage {
+                id: page.id.clone(),
+                title: page.title.clone(),
+                snippet: page.search_text.clone(),
+            }),
+            None => get_page_record(db, id)
+                .await?
+                .filter(|page| page.is_deleted == 0)
+                .map(|page| ai::AiContextPage {
+                    id: page.id,
+                    title: page.title,
+                    snippet: page.search_text,
+                }),
+        },
+        None => None,
+    };
+
+    let attached_document = match current_page_id {
+        Some(id) => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT title FROM studio_documents WHERE note_page_id = ?",
+            )
+            .bind(id)
+            .fetch_optional(db)
+            .await?
+        }
+        None => None,
+    };
+
+    // Plain pages only: skip databases (listed separately) and database rows
+    // (children of a database) so the page budget stays meaningful.
+    let pages = records
+        .iter()
+        .filter(|page| page.is_database == 0)
+        .filter(|page| {
+            page.parent_id
+                .as_deref()
+                .map(|parent| !database_ids.contains(parent))
+                .unwrap_or(true)
+        })
+        .map(|page| ai::AiContextPage {
+            id: page.id.clone(),
+            title: page.title.clone(),
+            snippet: None,
+        })
+        .collect();
+
+    let databases = records
+        .iter()
+        .filter(|page| page.is_database == 1)
+        .map(|page| ai::AiContextDatabase {
+            id: page.id.clone(),
+            title: page.title.clone(),
+            properties: parse_ai_context_properties(page.database_schema.as_deref()),
+        })
+        .collect();
+
+    Ok(ai::AiWorkspaceContext {
+        current_page,
+        attached_document,
+        pages,
+        databases,
+    })
+}
+
+fn parse_ai_context_properties(schema: Option<&str>) -> Vec<ai::AiContextProperty> {
+    let Some(schema) = schema else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(schema) else {
+        return Vec::new();
+    };
+    value
+        .get("properties")
+        .and_then(|properties| properties.as_array())
+        .map(|properties| {
+            properties
+                .iter()
+                .filter_map(|property| {
+                    let id = property.get("id")?.as_str()?.to_string();
+                    let name = property
+                        .get("name")
+                        .and_then(|name| name.as_str())
+                        .unwrap_or(&id)
+                        .to_string();
+                    let property_type = property
+                        .get("type")
+                        .and_then(|property_type| property_type.as_str())
+                        .unwrap_or("text")
+                        .to_string();
+                    Some(ai::AiContextProperty {
+                        id,
+                        name,
+                        property_type,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -2406,6 +2561,7 @@ pub fn run() {
                 ai: ai::AiRuntime {
                     secret_store: Arc::new(ai::KeyringSecretStore),
                 },
+                ai_cancel: Arc::new(tokio::sync::Notify::new()),
             });
             Ok(())
         })
@@ -2422,6 +2578,8 @@ pub fn run() {
             save_ai_api_key,
             clear_ai_api_key,
             generate_ai_action_plan,
+            generate_ai_action_plan_streaming,
+            cancel_ai_generation,
             apply_ai_action_plan,
             search_pages,
             get_page,

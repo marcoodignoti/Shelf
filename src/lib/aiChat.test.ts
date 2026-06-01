@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { aiAppliedMessage, aiMissingKeyMessage, aiPlanMessages, trimmedAiPrompt } from "./aiChat";
+import {
+  aiAppliedMessage,
+  aiChatHistory,
+  aiMissingKeyMessage,
+  aiPlanMessages,
+  trimmedAiPrompt,
+  type AiChatMessage,
+} from "./aiChat";
 import { type AiActionPlan } from "./ai";
 
 describe("AI chat helpers", () => {
@@ -49,9 +56,25 @@ describe("AI chat helpers", () => {
     expect(aiAppliedMessage(2, "applied")).toEqual({
       id: "applied",
       role: "assistant",
-      content: "Created 2 items.",
+      content: "Applied 2 items.",
       kind: "applied",
     });
-    expect(aiAppliedMessage(1, "applied-one").content).toBe("Created 1 item.");
+    expect(aiAppliedMessage(1, "applied-one").content).toBe("Applied 1 item.");
+  });
+
+  it("builds backend history from the transcript, dropping notices and blanks", () => {
+    const messages: AiChatMessage[] = [
+      { id: "u1", role: "user", content: "Create exams" },
+      { id: "a1", role: "assistant", content: "Create an exam tracker.", kind: "preview" },
+      { id: "n1", role: "assistant", content: "Add an OpenRouter API key.", kind: "notice" },
+      { id: "u2", role: "user", content: "   " },
+      { id: "a2", role: "assistant", content: "Created 1 item.", kind: "applied" },
+    ];
+
+    expect(aiChatHistory(messages)).toEqual([
+      { role: "user", content: "Create exams" },
+      { role: "assistant", content: "Create an exam tracker." },
+      { role: "assistant", content: "Created 1 item." },
+    ]);
   });
 });

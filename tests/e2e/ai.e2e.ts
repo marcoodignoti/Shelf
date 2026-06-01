@@ -90,6 +90,7 @@ test.beforeEach(async ({ page }) => {
 
         if (cmd === "search_pages") return [];
         if (cmd === "show_character_palette") return null;
+        if (cmd === "cancel_ai_generation") return null;
 
         if (cmd === "get_ai_settings") {
           return {
@@ -135,7 +136,7 @@ test.beforeEach(async ({ page }) => {
           };
         }
 
-        if (cmd === "generate_ai_action_plan") {
+        if (cmd === "generate_ai_action_plan" || cmd === "generate_ai_action_plan_streaming") {
           return {
             version: 1,
             summary: "Create a study page.",
@@ -233,9 +234,11 @@ test("generates an AI create-only preview and applies it", async ({ page }) => {
   await page.getByLabel("Send AI prompt").click();
 
   await expect(page.getByText("Create a study page.")).toBeVisible();
-  await expect(page.getByText("Create page: AI Study Plan")).toBeVisible();
-  await page.getByRole("button", { name: /Apply preview/i }).click();
+  await expect(page.locator(".on-ai-chat-body").getByText("Create page: AI Study Plan")).toBeVisible();
+  // Plan preview now lists each action with a checkbox; apply the selected ones.
+  await expect(page.locator(".on-ai-preview-checklist").getByText("Create page: AI Study Plan")).toBeVisible();
+  await page.getByRole("button", { name: /Apply \d+ selected/i }).click();
 
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("AI Study Plan");
-  await expect(page.locator(".on-ai-chat-body").getByText("Created 1 item.", { exact: true })).toBeVisible();
+  await expect(page.locator(".on-ai-chat-body").getByText("Applied 1 item.", { exact: true })).toBeVisible();
 });

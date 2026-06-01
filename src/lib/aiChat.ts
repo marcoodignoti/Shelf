@@ -1,4 +1,4 @@
-import { AiActionPlan, formatAiActionPreview } from "./ai";
+import { AiActionPlan, AiChatTurn, formatAiActionPreview } from "./ai";
 
 export type AiChatMessage = {
   id: string;
@@ -10,6 +10,16 @@ export type AiChatMessage = {
 
 export function trimmedAiPrompt(value: string): string {
   return value.trim();
+}
+
+// Turn the visible chat transcript into role/content turns for the backend so a
+// follow-up prompt ("make it longer", "now add a column") has prior context.
+// "notice" messages (e.g. missing-key warnings) are local UI chatter, not part
+// of the model conversation, so they are dropped.
+export function aiChatHistory(messages: AiChatMessage[]): AiChatTurn[] {
+  return messages
+    .filter((message) => message.kind !== "notice" && message.content.trim().length > 0)
+    .map((message) => ({ role: message.role, content: message.content }));
 }
 
 export function aiPlanMessages(
@@ -43,12 +53,12 @@ export function aiMissingKeyMessage(id: string): AiChatMessage {
   };
 }
 
-export function aiAppliedMessage(createdCount: number, id: string): AiChatMessage {
-  const itemLabel = createdCount === 1 ? "item" : "items";
+export function aiAppliedMessage(changedCount: number, id: string): AiChatMessage {
+  const itemLabel = changedCount === 1 ? "item" : "items";
   return {
     id,
     role: "assistant",
-    content: `Created ${createdCount} ${itemLabel}.`,
+    content: `Applied ${changedCount} ${itemLabel}.`,
     kind: "applied",
   };
 }
