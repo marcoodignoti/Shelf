@@ -140,6 +140,243 @@ pub struct AiApplyResult {
     pub primary_page_id: Option<String>,
 }
 
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, PartialEq)]
+pub struct AiConversationSummary {
+    pub id: String,
+    pub title: String,
+    pub updated_at: String,
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
+pub struct AiChatStoredMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub plan: Option<AiActionPlan>,
+    pub created_at: String,
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
+pub struct AiConversationDetail {
+    pub conversation: AiConversationSummary,
+    pub messages: Vec<AiChatStoredMessage>,
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn insert_ai_conversation(
+    db: &SqlitePool,
+    title: &str,
+    now: &str,
+) -> Result<AiConversationSummary, String> {
+    let id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO ai_conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(title)
+    .bind(now)
+    .bind(now)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(AiConversationSummary {
+        id,
+        title: title.to_string(),
+        updated_at: now.to_string(),
+    })
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn insert_ai_message(
+    db: &SqlitePool,
+    conversation_id: &str,
+    role: &str,
+    content: &str,
+    plan: Option<&AiActionPlan>,
+    now: &str,
+) -> Result<AiChatStoredMessage, String> {
+    let id = Uuid::new_v4().to_string();
+    let seq: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(seq), -1) + 1 FROM ai_messages WHERE conversation_id = ?",
+    )
+    .bind(conversation_id)
+    .fetch_one(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    let plan_json = plan
+        .map(|plan| serde_json::to_string(plan).map_err(|error| error.to_string()))
+        .transpose()?;
+    sqlx::query(
+        "INSERT INTO ai_messages (id, conversation_id, role, content, plan_json, seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(conversation_id)
+    .bind(role)
+    .bind(content)
+    .bind(&plan_json)
+    .bind(seq)
+    .bind(now)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query("UPDATE ai_conversations SET updated_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(conversation_id)
+        .execute(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(AiChatStoredMessage {
+        id,
+        role: role.to_string(),
+        content: content.to_string(),
+        plan: plan.cloned(),
+        created_at: now.to_string(),
+    })
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn list_ai_conversation_records(
+    db: &SqlitePool,
+) -> Result<Vec<AiConversationSummary>, String> {
+    sqlx::query_as::<_, AiConversationSummary>(
+        "SELECT id, title, updated_at FROM ai_conversations ORDER BY updated_at DESC",
+    )
+    .fetch_all(db)
+    .await
+    .map_err(|error| error.to_string())
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn get_ai_conversation_detail(
+    db: &SqlitePool,
+    id: &str,
+) -> Result<AiConversationDetail, String> {
+    let conversation = sqlx::query_as::<_, AiConversationSummary>(
+        "SELECT id, title, updated_at FROM ai_conversations WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| "Conversation not found".to_string())?;
+
+    let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT id, role, content, plan_json, created_at
+         FROM ai_messages WHERE conversation_id = ? ORDER BY seq ASC",
+    )
+    .bind(id)
+    .fetch_all(db)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let messages = rows
+        .into_iter()
+        .map(|(id, role, content, plan_json, created_at)| AiChatStoredMessage {
+            id,
+            role,
+            content,
+            plan: plan_json
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<AiActionPlan>(raw).ok()),
+            created_at,
+        })
+        .collect();
+
+    Ok(AiConversationDetail {
+        conversation,
+        messages,
+    })
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn rename_ai_conversation_record(
+    db: &SqlitePool,
+    id: &str,
+    title: &str,
+    now: &str,
+) -> Result<(), String> {
+    sqlx::query("UPDATE ai_conversations SET title = ?, updated_at = ? WHERE id = ?")
+        .bind(title)
+        .bind(now)
+        .bind(id)
+        .execute(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn delete_ai_conversation_record(db: &SqlitePool, id: &str) -> Result<(), String> {
+    let mut tx = db.begin().await.map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM ai_messages WHERE conversation_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM ai_conversations WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+    tx.commit().await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Last turns of a conversation as bounded chat history for the model.
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn conversation_history(
+    db: &SqlitePool,
+    conversation_id: &str,
+) -> Result<Vec<AiChatTurn>, String> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT role, content FROM ai_messages WHERE conversation_id = ? ORDER BY seq ASC",
+    )
+    .bind(conversation_id)
+    .fetch_all(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(role, content)| AiChatTurn { role, content })
+        .collect())
+}
+
+/// Remove the trailing assistant message (used by regenerate).
+// consumed by chat commands (Task 6)
+#[allow(dead_code)]
+pub async fn delete_last_assistant_message(
+    db: &SqlitePool,
+    conversation_id: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        "DELETE FROM ai_messages
+         WHERE id = (
+            SELECT id FROM ai_messages
+            WHERE conversation_id = ? AND role = 'assistant'
+            ORDER BY seq DESC LIMIT 1
+         )",
+    )
+    .bind(conversation_id)
+    .execute(db)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub trait SecretStore: Send + Sync {
     fn set_secret(&self, provider: &str, value: &str) -> Result<(), String>;
     fn get_secret(&self, provider: &str) -> Result<Option<String>, String>;
@@ -2822,6 +3059,60 @@ mod tests {
         let (prose, plan) = split_chat_actions(raw);
         assert_eq!(prose, "Done.");
         assert!(plan.is_none());
+    }
+
+    #[test]
+    fn conversation_crud_round_trips_with_ordered_messages() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            migrate_ai_chat(&db).await.expect("migrate chat");
+
+            let convo = insert_ai_conversation(&db, "First chat", "2026-06-01T00:00:00.000Z")
+                .await
+                .expect("insert convo");
+            insert_ai_message(&db, &convo.id, "user", "Hi", None, "2026-06-01T00:00:01.000Z")
+                .await
+                .expect("user msg");
+            insert_ai_message(
+                &db,
+                &convo.id,
+                "assistant",
+                "Hello",
+                None,
+                "2026-06-01T00:00:02.000Z",
+            )
+            .await
+            .expect("assistant msg");
+
+            let detail = get_ai_conversation_detail(&db, &convo.id)
+                .await
+                .expect("detail");
+            assert_eq!(detail.messages.len(), 2);
+            assert_eq!(detail.messages[0].role, "user");
+            assert_eq!(detail.messages[1].content, "Hello");
+
+            rename_ai_conversation_record(
+                &db,
+                &convo.id,
+                "Renamed",
+                "2026-06-01T00:01:00.000Z",
+            )
+            .await
+            .expect("rename");
+            let list = list_ai_conversation_records(&db).await.expect("list");
+            assert_eq!(list[0].title, "Renamed");
+
+            delete_ai_conversation_record(&db, &convo.id)
+                .await
+                .expect("delete");
+            let after = list_ai_conversation_records(&db).await.expect("list2");
+            assert!(after.is_empty());
+            let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ai_messages")
+                .fetch_one(&db)
+                .await
+                .expect("count");
+            assert_eq!(remaining, 0);
+        });
     }
 
     #[test]
