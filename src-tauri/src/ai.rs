@@ -1201,6 +1201,52 @@ Set requires_confirmation true unless the request is clearly low-risk create-onl
     body
 }
 
+// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
+#[allow(dead_code)]
+pub const CHAT_ACTIONS_FENCE: &str = "```opennotion-actions";
+
+/// Split a chat completion into visible prose and an optional embedded action
+/// plan. The model is told to append at most one ```opennotion-actions fenced
+/// JSON block (the AiActionPlan schema) at the very end. A malformed or invalid
+/// fence is dropped so the prose still renders.
+#[allow(dead_code)]
+pub fn split_chat_actions(raw: &str) -> (String, Option<AiActionPlan>) {
+    let Some(marker) = raw.find(CHAT_ACTIONS_FENCE) else {
+        return (raw.trim().to_string(), None);
+    };
+
+    let prose = raw[..marker].trim().to_string();
+    let after = &raw[marker + CHAT_ACTIONS_FENCE.len()..];
+    // Body runs from the newline after the opening fence to the closing ```.
+    let body = after
+        .find('\n')
+        .map(|nl| &after[nl + 1..])
+        .and_then(|rest| rest.find("```").map(|end| &rest[..end]))
+        .unwrap_or("");
+
+    let plan = parse_ai_action_plan(body).ok();
+    (prose, plan)
+}
+
+// Used by the chat streaming task (Task 2); allow dead_code until that lands.
+#[allow(dead_code)]
+const CHAT_SYSTEM_PROMPT: &str = r#"You are OpenNotion's in-app assistant.
+Answer the user conversationally in GitHub-flavored Markdown. Be concise.
+You can also create workspace structures. When (and only when) creating
+something helps, append exactly one fenced block at the very end of your reply:
+```opennotion-actions
+{"version":1,"summary":"short summary","requires_confirmation":true,"actions":[...]}
+```
+Action schema and rules:
+- Allowed actions only: create_page, create_subpages, create_database, create_database_rows, append_blocks.
+- Allowed property types only: text, checkbox, select, date.
+- Only use a parent_id, database_page_id, or page_id that appears in the Context. To act on the current page, use its id. Never invent ids.
+- append_blocks adds to the end of an existing page and never removes content.
+- content_blocks is a BlockNote-style JSON array. Keep content concise.
+- Never delete, rename, overwrite, or move existing content.
+- Set requires_confirmation true unless the request is clearly low-risk create-only.
+If no action is needed, do not include the fenced block."#;
+
 #[derive(Debug)]
 struct OpenRouterRequestError {
     status: reqwest::StatusCode,
@@ -2557,5 +2603,29 @@ mod tests {
             message: "No endpoints found for model".to_string(),
         };
         assert!(!should_retry_without_response_format(&unavailable));
+    }
+
+    #[test]
+    fn split_chat_actions_returns_prose_only_when_no_fence() {
+        let (prose, plan) = split_chat_actions("Here is an explanation.\nMore text.");
+        assert_eq!(prose, "Here is an explanation.\nMore text.");
+        assert!(plan.is_none());
+    }
+
+    #[test]
+    fn split_chat_actions_extracts_valid_plan_and_strips_fence() {
+        let raw = "Sure, I'll set that up.\n\n```opennotion-actions\n{\"version\":1,\"summary\":\"Make page\",\"requires_confirmation\":true,\"actions\":[{\"type\":\"create_page\",\"title\":\"Study\"}]}\n```";
+        let (prose, plan) = split_chat_actions(raw);
+        assert_eq!(prose, "Sure, I'll set that up.");
+        let plan = plan.expect("plan");
+        assert_eq!(plan.actions.len(), 1);
+    }
+
+    #[test]
+    fn split_chat_actions_drops_invalid_fence_but_keeps_prose() {
+        let raw = "Done.\n```opennotion-actions\n{ not json }\n```";
+        let (prose, plan) = split_chat_actions(raw);
+        assert_eq!(prose, "Done.");
+        assert!(plan.is_none());
     }
 }
