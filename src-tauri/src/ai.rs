@@ -1205,6 +1205,90 @@ Set requires_confirmation true unless the request is clearly low-risk create-onl
 #[allow(dead_code)]
 pub const CHAT_ACTIONS_FENCE: &str = "```opennotion-actions";
 
+// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AiChatReply {
+    pub content: String,
+    pub plan: Option<AiActionPlan>,
+}
+
+/// Drive an OpenRouter SSE response into a chat reply: accumulate prose, emit
+/// token deltas, race each chunk against `cancel`, then split any embedded
+/// action fence. Returns the prose plus an optional plan.
+// Consumed by the chat streaming task (Task 2); allow dead_code until that lands.
+#[allow(dead_code)]
+async fn consume_chat_stream(
+    response: reqwest::Response,
+    on_delta: impl Fn(&str) + Send,
+    cancel: impl std::future::Future<Output = ()> + Send,
+) -> Result<AiChatReply, String> {
+    use futures_util::StreamExt;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(OpenRouterRequestError {
+            status,
+            message: summarize_openrouter_error(&text),
+        }
+        .to_string());
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut content = String::new();
+    let mut done = false;
+
+    tokio::pin!(cancel);
+
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            _ = &mut cancel => return Err("AI generation cancelled".to_string()),
+            chunk = stream.next() => chunk,
+        };
+        let Some(chunk) = chunk else { break };
+        let chunk = chunk.map_err(|error| format!("AI stream failed: {}", error))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(newline) = buffer.find('\n') {
+            let line: String = buffer.drain(..=newline).collect();
+            match parse_sse_line(&line) {
+                SseLine::Delta(text) => {
+                    on_delta(&text);
+                    content.push_str(&text);
+                }
+                SseLine::Done => {
+                    done = true;
+                    break;
+                }
+                SseLine::Other => {}
+            }
+        }
+        if done {
+            break;
+        }
+    }
+
+    if !done {
+        if let SseLine::Delta(text) = parse_sse_line(&buffer) {
+            on_delta(&text);
+            content.push_str(&text);
+        }
+    }
+
+    if content.trim().is_empty() {
+        return Err("AI response did not include content".to_string());
+    }
+
+    let (prose, plan) = split_chat_actions(&content);
+    Ok(AiChatReply {
+        content: prose,
+        plan,
+    })
+}
+
 /// Split a chat completion into visible prose and an optional embedded action
 /// plan. The model is told to append at most one ```opennotion-actions fenced
 /// JSON block (the AiActionPlan schema) at the very end. A malformed or invalid
@@ -2627,5 +2711,33 @@ mod tests {
         let (prose, plan) = split_chat_actions(raw);
         assert_eq!(prose, "Done.");
         assert!(plan.is_none());
+    }
+
+    #[test]
+    fn consume_chat_stream_returns_prose_and_plan() {
+        tauri::async_runtime::block_on(async {
+            let body = format!(
+                "{}{}{}{}data: [DONE]\n\n",
+                sse_data_line("Here you go.\n\n"),
+                sse_data_line("```opennotion-actions\n"),
+                sse_data_line("{\"version\":1,\"summary\":\"Make page\",\"requires_confirmation\":true,\"actions\":[{\"type\":\"create_page\",\"title\":\"Study\"}]}"),
+                sse_data_line("\n```"),
+            );
+            let url = spawn_sse_server(body);
+            let response = reqwest::Client::new().get(&url).send().await.expect("resp");
+
+            let captured = std::sync::Mutex::new(String::new());
+            let reply = consume_chat_stream(
+                response,
+                |delta| captured.lock().expect("lock").push_str(delta),
+                std::future::pending::<()>(),
+            )
+            .await
+            .expect("reply");
+
+            assert_eq!(reply.content, "Here you go.");
+            assert_eq!(reply.plan.expect("plan").actions.len(), 1);
+            assert!(captured.lock().expect("lock").contains("Here you go."));
+        });
     }
 }
