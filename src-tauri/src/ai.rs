@@ -403,6 +403,16 @@ pub async fn conversation_history(
         .collect())
 }
 
+/// Drop a trailing user turn from conversation history. The live prompt is sent
+/// separately as the final user message, so a trailing user turn would be a
+/// duplicate: a normal turn just persisted it, and a regenerate deleted the
+/// trailing assistant and left the same user turn last.
+pub fn drop_trailing_user_turn(history: &mut Vec<AiChatTurn>) {
+    if history.last().is_some_and(|turn| turn.role == "user") {
+        history.pop();
+    }
+}
+
 /// Remove the trailing assistant message (used by regenerate).
 pub async fn delete_last_assistant_message(
     db: &SqlitePool,
@@ -3165,6 +3175,46 @@ mod tests {
             message: "No endpoints found for model".to_string(),
         };
         assert!(!should_retry_without_response_format(&unavailable));
+    }
+
+    #[test]
+    fn drop_trailing_user_turn_removes_only_a_trailing_user_message() {
+        let turn = |role: &str, content: &str| AiChatTurn {
+            role: role.to_string(),
+            content: content.to_string(),
+        };
+
+        // Normal turn: the just-persisted user prompt is last and must be dropped
+        // so it is not sent twice alongside the live prompt.
+        let mut normal = vec![
+            turn("user", "first"),
+            turn("assistant", "reply"),
+            turn("user", "second"),
+        ];
+        drop_trailing_user_turn(&mut normal);
+        assert_eq!(
+            normal,
+            vec![turn("user", "first"), turn("assistant", "reply")]
+        );
+
+        // Regenerate: the trailing assistant was deleted, leaving the same user
+        // turn last — also dropped.
+        let mut regenerate = vec![turn("user", "first")];
+        drop_trailing_user_turn(&mut regenerate);
+        assert!(regenerate.is_empty());
+
+        // A trailing assistant turn is left untouched.
+        let mut trailing_assistant = vec![turn("user", "first"), turn("assistant", "reply")];
+        drop_trailing_user_turn(&mut trailing_assistant);
+        assert_eq!(
+            trailing_assistant,
+            vec![turn("user", "first"), turn("assistant", "reply")]
+        );
+
+        // Empty history is a no-op.
+        let mut empty: Vec<AiChatTurn> = Vec::new();
+        drop_trailing_user_turn(&mut empty);
+        assert!(empty.is_empty());
     }
 
     #[test]

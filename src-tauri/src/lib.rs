@@ -2125,11 +2125,10 @@ async fn stream_ai_chat_reply(
     };
 
     let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
-    // The current prompt is sent separately as the final user message; drop the
-    // trailing user turn from history so it is not duplicated.
-    if !request.regenerate {
-        history.pop();
-    }
+    // The current prompt is sent separately as the final user message; drop a
+    // trailing user turn from history so it is not duplicated (applies to both
+    // normal turns and regenerate).
+    ai::drop_trailing_user_turn(&mut history);
 
     let cancel = state.ai_cancel.notified();
     let reply = ai::stream_openrouter_chat(
