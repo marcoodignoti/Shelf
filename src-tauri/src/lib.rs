@@ -9,12 +9,9 @@ use std::fs::{
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, Runtime};
 use uuid::Uuid;
-
-mod ai;
 
 const APP_SQLITE_MAX_CONNECTIONS: u32 = 2;
 const COVER_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -39,11 +36,6 @@ const IMAGE_MAGIC_HEADERS: &[(&str, &[u8])] = &[
 #[derive(Clone)]
 struct AppState {
     db: SqlitePool,
-    ai: ai::AiRuntime,
-    /// Notified when the user cancels an in-flight AI generation, so the
-    /// streaming command can drop its HTTP request instead of running to
-    /// completion in the background.
-    ai_cancel: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Debug, FromRow, Serialize)]
@@ -368,9 +360,6 @@ async fn run_migrations(db: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(db)
     .await?;
 
-    ai::migrate_ai_settings(db).await?;
-    ai::migrate_ai_chat(db).await?;
-
     Ok(())
 }
 
@@ -485,6 +474,7 @@ async fn get_page_record(db: &SqlitePool, id: &str) -> Result<Option<Page>, sqlx
     .await
 }
 
+#[cfg(test)]
 async fn update_page_content(
     db: &SqlitePool,
     id: &str,
@@ -1793,377 +1783,6 @@ async fn import_backup(
 }
 
 #[tauri::command]
-async fn get_ai_settings(state: tauri::State<'_, AppState>) -> Result<ai::AiSettings, String> {
-    ai::read_ai_settings(&state.db, &state.ai).await
-}
-
-#[tauri::command]
-async fn get_ai_models(state: tauri::State<'_, AppState>) -> Result<Vec<ai::AiModelInfo>, String> {
-    ai::list_openrouter_models(&state.ai)
-        .await
-        .or_else(|_| Ok(ai::fallback_ai_models()))
-}
-
-#[tauri::command]
-async fn update_ai_settings(
-    settings: ai::AiSettingsUpdate,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiSettings, String> {
-    ai::update_ai_settings_record(&state.db, &state.ai, settings).await
-}
-
-#[tauri::command]
-async fn save_ai_api_key(
-    provider: String,
-    api_key: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiSettings, String> {
-    if api_key.trim().is_empty() {
-        return Err("AI API key cannot be empty".to_string());
-    }
-
-    if provider != ai::AI_PROVIDER_OPENROUTER {
-        return Err("Unsupported AI provider".to_string());
-    }
-
-    state
-        .ai
-        .secret_store
-        .set_secret(&provider, api_key.trim())?;
-    ai::read_ai_settings(&state.db, &state.ai).await
-}
-
-#[tauri::command]
-async fn clear_ai_api_key(
-    provider: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiSettings, String> {
-    if provider != ai::AI_PROVIDER_OPENROUTER {
-        return Err("Unsupported AI provider".to_string());
-    }
-
-    state.ai.secret_store.delete_secret(&provider)?;
-    ai::read_ai_settings(&state.db, &state.ai).await
-}
-
-#[tauri::command]
-async fn generate_ai_action_plan(
-    request: ai::AiPlanRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiActionPlan, String> {
-    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
-        .await
-        .map_err(|error| error.to_string())?;
-    let context = ai::build_workspace_context_prompt(&workspace);
-
-    ai::generate_openrouter_plan(&state.ai, request, context).await
-}
-
-#[tauri::command]
-async fn generate_ai_action_plan_streaming(
-    request: ai::AiPlanRequest,
-    on_event: tauri::ipc::Channel<String>,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiActionPlan, String> {
-    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
-        .await
-        .map_err(|error| error.to_string())?;
-    let context = ai::build_workspace_context_prompt(&workspace);
-
-    // Registers a waiter on the shared cancel signal; cancel_ai_generation wakes
-    // it, which makes stream_openrouter_plan drop the in-flight HTTP request.
-    let cancel = state.ai_cancel.notified();
-
-    ai::stream_openrouter_plan(
-        &state.ai,
-        request,
-        context,
-        move |delta| {
-            // Best-effort progress; a closed channel just means the UI moved on.
-            let _ = on_event.send(delta.to_string());
-        },
-        cancel,
-    )
-    .await
-}
-
-#[tauri::command]
-fn cancel_ai_generation(state: tauri::State<'_, AppState>) {
-    state.ai_cancel.notify_waiters();
-}
-
-/// Bounded workspace snapshot for AI planning: the current page (with a content
-/// snippet), the real pages the model may target as parents, and the databases
-/// it may append rows to. Giving the model live ids is what makes the
-/// create_subpages / create_database_rows actions usable at all.
-async fn build_ai_workspace_context(
-    db: &SqlitePool,
-    current_page_id: Option<&str>,
-) -> Result<ai::AiWorkspaceContext, sqlx::Error> {
-    let records = list_page_records(db).await?;
-
-    let database_ids: std::collections::HashSet<&str> = records
-        .iter()
-        .filter(|page| page.is_database == 1)
-        .map(|page| page.id.as_str())
-        .collect();
-
-    // The current page may be a Studio note (page_kind = 'studio_note'), which
-    // list_page_records excludes, so fall back to a direct lookup before giving
-    // up — otherwise AI run from Studio loses all page context.
-    let current_page = match current_page_id {
-        Some(id) => match records.iter().find(|page| page.id == id) {
-            Some(page) => Some(ai::AiContextPage {
-                id: page.id.clone(),
-                title: page.title.clone(),
-                snippet: page.search_text.clone(),
-            }),
-            None => get_page_record(db, id)
-                .await?
-                .filter(|page| page.is_deleted == 0)
-                .map(|page| ai::AiContextPage {
-                    id: page.id,
-                    title: page.title,
-                    snippet: page.search_text,
-                }),
-        },
-        None => None,
-    };
-
-    let attached_document = match current_page_id {
-        Some(id) => {
-            sqlx::query_scalar::<_, String>(
-                "SELECT title FROM studio_documents WHERE note_page_id = ?",
-            )
-            .bind(id)
-            .fetch_optional(db)
-            .await?
-        }
-        None => None,
-    };
-
-    // Plain pages only: skip databases (listed separately) and database rows
-    // (children of a database) so the page budget stays meaningful.
-    let pages = records
-        .iter()
-        .filter(|page| page.is_database == 0)
-        .filter(|page| {
-            page.parent_id
-                .as_deref()
-                .map(|parent| !database_ids.contains(parent))
-                .unwrap_or(true)
-        })
-        .map(|page| ai::AiContextPage {
-            id: page.id.clone(),
-            title: page.title.clone(),
-            snippet: None,
-        })
-        .collect();
-
-    let databases = records
-        .iter()
-        .filter(|page| page.is_database == 1)
-        .map(|page| ai::AiContextDatabase {
-            id: page.id.clone(),
-            title: page.title.clone(),
-            properties: parse_ai_context_properties(page.database_schema.as_deref()),
-        })
-        .collect();
-
-    Ok(ai::AiWorkspaceContext {
-        current_page,
-        attached_document,
-        pages,
-        databases,
-    })
-}
-
-fn parse_ai_context_properties(schema: Option<&str>) -> Vec<ai::AiContextProperty> {
-    let Some(schema) = schema else {
-        return Vec::new();
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(schema) else {
-        return Vec::new();
-    };
-    value
-        .get("properties")
-        .and_then(|properties| properties.as_array())
-        .map(|properties| {
-            properties
-                .iter()
-                .filter_map(|property| {
-                    let id = property.get("id")?.as_str()?.to_string();
-                    let name = property
-                        .get("name")
-                        .and_then(|name| name.as_str())
-                        .unwrap_or(&id)
-                        .to_string();
-                    let property_type = property
-                        .get("type")
-                        .and_then(|property_type| property_type.as_str())
-                        .unwrap_or("text")
-                        .to_string();
-                    Some(ai::AiContextProperty {
-                        id,
-                        name,
-                        property_type,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-#[tauri::command]
-async fn apply_ai_action_plan(
-    plan: ai::AiActionPlan,
-    created_at: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiApplyResult, String> {
-    ai::apply_ai_action_plan_to_db(&state.db, plan, &created_at).await
-}
-
-#[tauri::command]
-async fn list_ai_conversations(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<ai::AiConversationSummary>, String> {
-    ai::list_ai_conversation_records(&state.db).await
-}
-
-#[tauri::command]
-async fn get_ai_conversation(
-    id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiConversationDetail, String> {
-    ai::get_ai_conversation_detail(&state.db, &id).await
-}
-
-#[tauri::command]
-async fn create_ai_conversation(
-    created_at: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiConversationSummary, String> {
-    ai::insert_ai_conversation(&state.db, "New chat", &created_at).await
-}
-
-#[tauri::command]
-async fn rename_ai_conversation(
-    id: String,
-    title: String,
-    updated_at: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    ai::rename_ai_conversation_record(&state.db, &id, &title, &updated_at).await
-}
-
-#[tauri::command]
-async fn delete_ai_conversation(
-    id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    ai::delete_ai_conversation_record(&state.db, &id).await
-}
-
-#[tauri::command]
-async fn stream_ai_chat_reply(
-    request: ai::AiChatRequest,
-    created_at: String,
-    on_event: tauri::ipc::Channel<String>,
-    state: tauri::State<'_, AppState>,
-) -> Result<ai::AiChatStoredMessage, String> {
-    // Regenerate drops the trailing assistant turn and reuses the existing last
-    // user message. A normal turn persists its new user message only AFTER the
-    // reply succeeds (below), so a cancelled or failed turn leaves no orphan user
-    // row that would resurface on reopening the conversation.
-    if request.regenerate {
-        ai::delete_last_assistant_message(&state.db, &request.conversation_id).await?;
-    }
-
-    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
-        .await
-        .map_err(|error| error.to_string())?;
-    let context = match (
-        ai::build_workspace_context_prompt(&workspace),
-        request.composer_context_prompt(),
-    ) {
-        (Some(workspace_context), Some(composer_context)) => Some(format!(
-            "{}\n\nComposer state:\n{}",
-            workspace_context, composer_context
-        )),
-        (None, Some(composer_context)) => Some(format!("Composer state:\n{}", composer_context)),
-        (workspace_context, None) => workspace_context,
-    };
-
-    let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
-    // The current prompt is sent separately as the final user message; drop a
-    // trailing user turn from history so it is not duplicated. A normal turn has
-    // not persisted its user message yet, so history ends with the prior assistant
-    // turn; a regenerate left the reused user turn last, which this removes.
-    ai::drop_trailing_user_turn(&mut history);
-
-    let cancel = state.ai_cancel.notified();
-    let reply = ai::stream_openrouter_chat(
-        &state.ai,
-        &request.provider,
-        &request.model,
-        &request.prompt,
-        context,
-        history,
-        move |delta| {
-            let _ = on_event.send(delta.to_string());
-        },
-        cancel,
-    )
-    .await?;
-
-    // Persist the turn now that the reply succeeded. For a normal turn this records
-    // the user message (naming the conversation from the first prompt) before the
-    // assistant reply so they keep their order.
-    if !request.regenerate {
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?")
-                .bind(&request.conversation_id)
-                .fetch_one(&state.db)
-                .await
-                .map_err(|error| error.to_string())?;
-        if count == 0 {
-            let title: String = request.prompt.trim().chars().take(40).collect();
-            let title = if title.is_empty() {
-                "New chat".to_string()
-            } else {
-                title
-            };
-            ai::rename_ai_conversation_record(
-                &state.db,
-                &request.conversation_id,
-                &title,
-                &created_at,
-            )
-            .await?;
-        }
-        ai::insert_ai_message(
-            &state.db,
-            &request.conversation_id,
-            "user",
-            &request.prompt,
-            None,
-            &created_at,
-        )
-        .await?;
-    }
-
-    ai::insert_ai_message(
-        &state.db,
-        &request.conversation_id,
-        "assistant",
-        &reply.content,
-        reply.plan.as_ref(),
-        &created_at,
-    )
-    .await
-}
-
-#[tauri::command]
 async fn search_pages(
     query: String,
     state: tauri::State<'_, AppState>,
@@ -2710,13 +2329,7 @@ pub fn run() {
                 Ok::<_, sqlx::Error>(db)
             })?;
 
-            app.manage(AppState {
-                db,
-                ai: ai::AiRuntime {
-                    secret_store: Arc::new(ai::KeyringSecretStore),
-                },
-                ai_cancel: Arc::new(tokio::sync::Notify::new()),
-            });
+            app.manage(AppState { db });
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -2726,21 +2339,6 @@ pub fn run() {
             list_all_pages,
             export_backup,
             import_backup,
-            get_ai_settings,
-            get_ai_models,
-            update_ai_settings,
-            save_ai_api_key,
-            clear_ai_api_key,
-            generate_ai_action_plan,
-            generate_ai_action_plan_streaming,
-            cancel_ai_generation,
-            apply_ai_action_plan,
-            list_ai_conversations,
-            get_ai_conversation,
-            create_ai_conversation,
-            rename_ai_conversation,
-            delete_ai_conversation,
-            stream_ai_chat_reply,
             search_pages,
             get_page,
             create_page,

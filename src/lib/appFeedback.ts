@@ -14,31 +14,6 @@ export function userMessageForError(error: unknown): string {
   if (message === "Backup file is not valid JSON") return "That backup file is not valid JSON.";
   if (message === "Backup file has invalid pages") return "That backup file does not contain valid pages.";
   if (message === "Backup file version is not supported") return "That backup file version is not supported.";
-  if (
-    message === "Missing AI API key" ||
-    message === "Add an OpenRouter API key in Settings before using AI."
-  ) {
-    return "Add an OpenRouter API key in Settings before using AI.";
-  }
-  if (lower.includes("ai provider returned")) {
-    if (
-      lower.includes("no endpoints found") ||
-      lower.includes("model") && lower.includes("not found") ||
-      lower.includes("unsupported model")
-    ) {
-      return "The selected AI model is not available right now. Choose another free model in Settings.";
-    }
-    if (lower.includes("401") || lower.includes("403") || lower.includes("api key")) {
-      return "OpenRouter rejected the API key. Check or replace it in Settings.";
-    }
-    if (lower.includes("rate limit") || lower.includes("429")) {
-      return "OpenRouter rate-limited this request. Try again shortly or choose another free model.";
-    }
-    return "OpenRouter could not complete the request. Try again or choose another free model in Settings.";
-  }
-  if (lower.includes("ai response was invalid") || lower.includes("ai response did not include content")) {
-    return "The AI model returned an invalid response. Try again or choose another free model in Settings.";
-  }
   if (message === "page cannot be moved under itself") return "A page cannot be moved under itself.";
   if (message === "page cannot be moved under one of its descendants") {
     return "A page cannot be moved under one of its subpages.";
