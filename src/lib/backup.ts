@@ -60,7 +60,9 @@ function isPage(value: unknown): value is Page {
 }
 
 export function parseBackup(raw: string): WorkspaceBackup {
-  if (raw.length > BACKUP_MAX_BYTES) {
+  // Measure UTF-8 bytes, not UTF-16 code units, so the limit matches the on-disk
+  // size for non-ASCII content.
+  if (new TextEncoder().encode(raw).length > BACKUP_MAX_BYTES) {
     throw new Error("Backup file is too large");
   }
 

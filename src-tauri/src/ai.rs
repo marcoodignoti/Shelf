@@ -1696,11 +1696,13 @@ pub fn split_chat_actions(raw: &str) -> (String, Option<AiActionPlan>) {
 
     let prose = raw[..marker].trim().to_string();
     let after = &raw[marker + CHAT_ACTIONS_FENCE.len()..];
-    // Body runs from the newline after the opening fence to the closing ```.
+    // Body runs from the newline after the opening fence to the closing ```. Use
+    // the LAST ``` so a fenced code block inside content_blocks does not truncate
+    // the JSON (the action fence is appended at the very end of the reply).
     let body = after
         .find('\n')
         .map(|nl| &after[nl + 1..])
-        .and_then(|rest| rest.find("```").map(|end| &rest[..end]))
+        .and_then(|rest| rest.rfind("```").map(|end| &rest[..end]))
         .unwrap_or("");
 
     let plan = parse_ai_action_plan(body).ok();
@@ -3239,6 +3241,19 @@ mod tests {
         let (prose, plan) = split_chat_actions(raw);
         assert_eq!(prose, "Done.");
         assert!(plan.is_none());
+    }
+
+    #[test]
+    fn split_chat_actions_keeps_plan_when_body_contains_inner_code_fence() {
+        // The JSON body itself contains ``` (here inside the summary). Closing the
+        // body on the LAST ``` keeps the JSON intact; closing on the first would
+        // truncate it and drop an otherwise-valid plan.
+        let raw = "Done.\n\n```opennotion-actions\n{\"version\":1,\"summary\":\"Use ```js``` here\",\"requires_confirmation\":true,\"actions\":[{\"type\":\"create_page\",\"title\":\"Snippet\"}]}\n```";
+        let (prose, plan) = split_chat_actions(raw);
+        assert_eq!(prose, "Done.");
+        let plan = plan.expect("plan parses despite inner code fence");
+        assert_eq!(plan.actions.len(), 1);
+        assert_eq!(plan.summary, "Use ```js``` here");
     }
 
     #[test]
