@@ -3,6 +3,7 @@ import {
   blocksFromPastedMathText,
   formulaFromBlockContent,
   formulaSlashMenuItem,
+  MAX_FORMULA_LENGTH,
   normalizeMathInlineContent,
   normalizeMathInlineContentInEditor,
   openNotionEditorSchema,
@@ -345,6 +346,13 @@ describe("renderFormulaHtml", () => {
 
       expect(html).not.toContain("color:#cc0000");
     }
+  });
+
+  it("rejects formulas above the render length cap", () => {
+    const html = renderFormulaHtml("x".repeat(MAX_FORMULA_LENGTH + 1), true);
+
+    expect(html).toContain("Formula too long");
+    expect(html).not.toContain("x".repeat(128));
   });
 });
 

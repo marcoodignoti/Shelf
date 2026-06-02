@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildBackup, parseBackup, prepareImportedPages } from "./backup";
+import {
+  BACKUP_MAX_PAGES,
+  BACKUP_MAX_TEXT_LENGTH,
+  BACKUP_MAX_TITLE_LENGTH,
+  buildBackup,
+  parseBackup,
+  prepareImportedPages,
+} from "./backup";
 import { Page } from "./db";
 
 function page(id: string, parent_id: string | null = null): Page {
@@ -31,6 +38,14 @@ describe("buildBackup", () => {
       pages: [page("one")],
     });
   });
+
+  it("does not include AI settings or API keys", () => {
+    const backup = buildBackup([page("one")], "2026-05-18T10:00:00.000Z") as unknown as Record<string, unknown>;
+
+    expect(backup.ai_settings).toBeUndefined();
+    expect(backup.api_key).toBeUndefined();
+    expect(backup.openrouter_api_key).toBeUndefined();
+  });
 });
 
 describe("parseBackup", () => {
@@ -54,6 +69,20 @@ describe("parseBackup", () => {
 
     expect(() =>
       parseBackup(JSON.stringify(buildBackup([{ ...page("one"), database_schema: { properties: [] } as never }])))
+    ).toThrow("Backup file has invalid pages");
+  });
+
+  it("rejects oversized backup page arrays and fields", () => {
+    expect(() =>
+      parseBackup(JSON.stringify(buildBackup(Array.from({ length: BACKUP_MAX_PAGES + 1 }, (_, index) => page(`page-${index}`)))))
+    ).toThrow("Backup file has invalid pages");
+
+    expect(() =>
+      parseBackup(JSON.stringify(buildBackup([{ ...page("one"), title: "x".repeat(BACKUP_MAX_TITLE_LENGTH + 1) }])))
+    ).toThrow("Backup file has invalid pages");
+
+    expect(() =>
+      parseBackup(JSON.stringify(buildBackup([{ ...page("one"), content: "x".repeat(BACKUP_MAX_TEXT_LENGTH + 1) }])))
     ).toThrow("Backup file has invalid pages");
   });
 });

@@ -1,6 +1,26 @@
 import { create } from 'zustand';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
+import {
+  AiChatStoredMessage,
+  AiConversationSummary,
+  AiChatRequestOptions,
+  AiModelInfo,
+  AiSettings,
+  AI_MODELS,
+  AI_PROVIDER_OPENROUTER,
+  clearAiApiKey,
+  createAiConversation,
+  deleteAiConversation,
+  getAiConversation,
+  getAiModels,
+  getAiSettings,
+  listAiConversations,
+  renameAiConversation,
+  saveAiApiKey,
+  streamAiChatReply,
+  updateAiSettings
+} from '../lib/ai';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
 import {
@@ -32,6 +52,9 @@ interface AppState {
   error: string | null;
   notice: AppNotice | null;
   isCommandPaletteOpen: boolean;
+  isAiActionModalOpen: boolean;
+  aiSettings: AiSettings | null;
+  aiModels: AiModelInfo[];
   workspaceMode: WorkspaceMode;
   studioDocuments: StudioDocument[];
   studioProjects: StudioProject[];
@@ -69,6 +92,24 @@ interface AppState {
   showError: (error: unknown) => void;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
+  openAiActionModal: () => void;
+  closeAiActionModal: () => void;
+  aiConversations: AiConversationSummary[];
+  activeConversationId: string | null;
+  aiMessages: AiChatStoredMessage[];
+  streamingMessageId: string | null;
+  fetchAiConversations: () => Promise<void>;
+  openAiConversation: (id: string) => Promise<void>;
+  newAiConversation: () => Promise<string>;
+  renameAiConversationAction: (id: string, title: string) => Promise<void>;
+  deleteAiConversationAction: (id: string) => Promise<void>;
+  sendAiChatMessage: (prompt: string, currentPageId: string | null, options?: AiChatRequestOptions) => Promise<AiChatStoredMessage | null>;
+  regenerateAiChat: (currentPageId: string | null, options?: AiChatRequestOptions) => Promise<AiChatStoredMessage | null>;
+  fetchAiSettings: () => Promise<void>;
+  fetchAiModels: () => Promise<void>;
+  updateAiSettingsAction: (settings: Pick<AiSettings, 'provider' | 'model' | 'trusted_mode_enabled'>) => Promise<void>;
+  saveAiApiKeyAction: (apiKey: string) => Promise<void>;
+  clearAiApiKeyAction: () => Promise<void>;
   isSidebarOpen: boolean;
   sidebarWidth: number;
   theme: Theme;
@@ -124,10 +165,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   notice: null,
   isCommandPaletteOpen: false,
+  isAiActionModalOpen: false,
+  aiSettings: null,
+  aiModels: [...AI_MODELS],
   workspaceMode: getStoredWorkspaceMode(),
   studioDocuments: [],
   studioProjects: [],
   currentStudioDocumentId: getStoredStudioDocumentId(),
+  aiConversations: [],
+  activeConversationId: null,
+  aiMessages: [],
+  streamingMessageId: null,
   isSidebarOpen: true,
   sidebarWidth: getStoredSidebarWidth(),
   theme: getStoredTheme(),
@@ -206,6 +254,47 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
+  openAiActionModal: () => set({ isAiActionModalOpen: true, isCommandPaletteOpen: false }),
+  closeAiActionModal: () => set({ isAiActionModalOpen: false }),
+  fetchAiSettings: async () => {
+    try {
+      set({ aiSettings: await getAiSettings() });
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  fetchAiModels: async () => {
+    try {
+      set({ aiModels: await getAiModels() });
+    } catch (error: unknown) {
+      logStoreError(error);
+      set({ aiModels: [...AI_MODELS] });
+    }
+  },
+  updateAiSettingsAction: async (settings) => {
+    try {
+      set({ aiSettings: await updateAiSettings(settings) });
+      get().showSuccess('AI settings updated.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  saveAiApiKeyAction: async (apiKey) => {
+    try {
+      set({ aiSettings: await saveAiApiKey(AI_PROVIDER_OPENROUTER, apiKey) });
+      get().showSuccess('AI API key saved.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  clearAiApiKeyAction: async () => {
+    try {
+      set({ aiSettings: await clearAiApiKey(AI_PROVIDER_OPENROUTER) });
+      get().showSuccess('AI API key removed.');
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
   importStudioPdfAction: async (projectId = null) => {
     try {
       const path = await open({
@@ -596,6 +685,196 @@ export const useAppStore = create<AppState>((set, get) => ({
       logStoreError(error);
       const message = userMessageForError(error);
       set({ error: message, notice: { kind: 'error', message } });
+      return null;
+    }
+  },
+
+  fetchAiConversations: async () => {
+    try {
+      set({ aiConversations: await listAiConversations() });
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+
+  openAiConversation: async (id) => {
+    try {
+      const detail = await getAiConversation(id);
+      set({ activeConversationId: id, aiMessages: detail.messages, streamingMessageId: null });
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+
+  newAiConversation: async () => {
+    const convo = await createAiConversation();
+    set((state) => ({
+      aiConversations: [convo, ...state.aiConversations],
+      activeConversationId: convo.id,
+      aiMessages: [],
+      streamingMessageId: null,
+    }));
+    return convo.id;
+  },
+
+  renameAiConversationAction: async (id, title) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+    const previous = get().aiConversations;
+    const updated_at = new Date().toISOString();
+    set({ aiConversations: previous.map((c) => (c.id === id ? { ...c, title: trimmedTitle, updated_at } : c)) });
+    try {
+      await renameAiConversation(id, trimmedTitle);
+    } catch (error: unknown) {
+      set({ aiConversations: previous });
+      get().showError(error);
+    }
+  },
+
+  deleteAiConversationAction: async (id) => {
+    const previous = get().aiConversations;
+    const previousActiveId = get().activeConversationId;
+    const previousMessages = get().aiMessages;
+    set((state) => ({
+      aiConversations: previous.filter((c) => c.id !== id),
+      activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
+      aiMessages: state.activeConversationId === id ? [] : state.aiMessages,
+      streamingMessageId: state.activeConversationId === id ? null : state.streamingMessageId,
+    }));
+    try {
+      await deleteAiConversation(id);
+    } catch (error: unknown) {
+      set({ aiConversations: previous, activeConversationId: previousActiveId, aiMessages: previousMessages });
+      get().showError(error);
+    }
+  },
+
+  sendAiChatMessage: async (prompt, currentPageId, options = {}) => {
+    const settings = get().aiSettings;
+    if (!settings) {
+      get().showError(new Error('AI settings are still loading.'));
+      return null;
+    }
+    if (!settings.has_api_key) {
+      get().showError(new Error('Missing AI API key'));
+      return null;
+    }
+    let conversationId = get().activeConversationId;
+    if (!conversationId) conversationId = await get().newAiConversation();
+
+    const userId = `local-user-${Date.now()}`;
+    const assistantId = `local-assistant-${Date.now()}`;
+    const created_at = new Date().toISOString();
+    set((state) => ({
+      aiMessages: [
+        ...state.aiMessages,
+        { id: userId, role: "user" as const, content: prompt, created_at },
+        { id: assistantId, role: "assistant" as const, content: "", created_at },
+      ],
+      streamingMessageId: assistantId,
+    }));
+
+    try {
+      const saved = await streamAiChatReply(
+        {
+          conversation_id: conversationId,
+          prompt,
+          provider: settings.provider,
+          model: settings.model,
+          current_page_id: currentPageId,
+          ...options,
+        },
+        (delta) => {
+          set((state) => ({
+            aiMessages: state.aiMessages.map((m) =>
+              m.id === assistantId ? { ...m, content: m.content + delta } : m
+            ),
+          }));
+        }
+      );
+      const detail = await getAiConversation(conversationId);
+      const persistedAssistant = detail.messages.find((message) => message.id === saved.id) ?? saved;
+      set((state) => ({
+        activeConversationId: conversationId,
+        aiMessages: detail.messages.length > 0
+          ? detail.messages
+          : state.aiMessages.map((m) => (m.id === assistantId ? saved : m)),
+        streamingMessageId: null,
+      }));
+      void get().fetchAiConversations();
+      return persistedAssistant;
+    } catch (error: unknown) {
+      const cancelled = String(error).toLowerCase().includes('cancelled');
+      set((state) => ({
+        aiMessages: state.aiMessages.filter((m) => m.id !== assistantId),
+        streamingMessageId: null,
+      }));
+      if (!cancelled) get().showError(error);
+      return null;
+    }
+  },
+
+  regenerateAiChat: async (currentPageId, options = {}) => {
+    const settings = get().aiSettings;
+    const conversationId = get().activeConversationId;
+    if (!settings || !conversationId) return null;
+    if (!settings.has_api_key) {
+      get().showError(new Error('Missing AI API key'));
+      return null;
+    }
+    const messages = get().aiMessages;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return null;
+
+    const assistantId = `local-assistant-${Date.now()}`;
+    const created_at = new Date().toISOString();
+    set((state) => {
+      const lastId = state.aiMessages[state.aiMessages.length - 1]?.id;
+      return {
+        aiMessages: [
+          ...state.aiMessages.filter((m) => !(m.role === "assistant" && m.id === lastId)),
+          { id: assistantId, role: "assistant" as const, content: "", created_at },
+        ],
+        streamingMessageId: assistantId,
+      };
+    });
+
+    try {
+      const saved = await streamAiChatReply(
+        {
+          conversation_id: conversationId,
+          prompt: lastUser.content,
+          provider: settings.provider,
+          model: settings.model,
+          current_page_id: currentPageId,
+          regenerate: true,
+          ...options,
+        },
+        (delta) => {
+          set((state) => ({
+            aiMessages: state.aiMessages.map((m) =>
+              m.id === assistantId ? { ...m, content: m.content + delta } : m
+            ),
+          }));
+        }
+      );
+      const detail = await getAiConversation(conversationId);
+      const persistedAssistant = detail.messages.find((message) => message.id === saved.id) ?? saved;
+      set((state) => ({
+        aiMessages: detail.messages.length > 0
+          ? detail.messages
+          : state.aiMessages.map((m) => (m.id === assistantId ? saved : m)),
+        streamingMessageId: null,
+      }));
+      void get().fetchAiConversations();
+      return persistedAssistant;
+    } catch (error: unknown) {
+      const cancelled = String(error).toLowerCase().includes('cancelled');
+      set((state) => ({
+        aiMessages: state.aiMessages.filter((m) => m.id !== assistantId),
+        streamingMessageId: null,
+      }));
+      if (!cancelled) get().showError(error);
       return null;
     }
   },

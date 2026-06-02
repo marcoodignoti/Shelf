@@ -2,6 +2,8 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
 export type StudioPanelLayout = "pdf-left" | "note-left";
 
+export const MAX_STUDIO_PDF_PAGES = 1000;
+
 export interface StudioDocument {
   id: string;
   title: string;
@@ -122,6 +124,14 @@ export async function deleteStudioDocument(id: string): Promise<void> {
   await invoke("delete_studio_document", { id });
 }
 
+export async function openStudioDocumentFile(id: string): Promise<void> {
+  await invoke("open_studio_document_file", { id });
+}
+
+export async function revealStudioDocumentFile(id: string): Promise<void> {
+  await invoke("reveal_studio_document_file", { id });
+}
+
 export function clampStudioZoom(zoom: number): number {
   return Math.max(25, Math.min(300, Math.round(zoom)));
 }
@@ -129,6 +139,10 @@ export function clampStudioZoom(zoom: number): number {
 export function clampStudioPage(page: number): number {
   if (!Number.isFinite(page)) return 1;
   return Math.max(1, Math.round(page));
+}
+
+export function isStudioPdfPageCountAllowed(pageCount: number): boolean {
+  return Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= MAX_STUDIO_PDF_PAGES;
 }
 
 export function buildStudioPdfHash({ page, zoom }: { page: number; zoom: number }): string {

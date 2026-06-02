@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import type { ComponentType } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Search, FileText, Star } from 'lucide-react';
+import { Bot, FileText, PlusCircle, Search, Star } from 'lucide-react';
 import { SearchResult, searchPages } from '../lib/db';
 import { pageContentPreview } from '../lib/pageContent';
 import { splitSearchMatch } from '../lib/searchDisplay';
@@ -30,6 +31,15 @@ function HighlightedText({
   );
 }
 
+type CommandItem = {
+  id: string;
+  label: string;
+  detail?: string;
+  shortcut?: string;
+  icon: ComponentType<{ className?: string }>;
+  action: () => Promise<void>;
+};
+
 export function CommandPalette() {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -38,18 +48,7 @@ export function CommandPalette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { pages, setCurrentPageId, isCommandPaletteOpen, openCommandPalette, closeCommandPalette } = useAppStore();
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        openCommandPalette();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openCommandPalette]);
+  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, openAiActionModal, addPage } = useAppStore();
 
   useEffect(() => {
     if (isCommandPaletteOpen) {
@@ -106,10 +105,42 @@ export function CommandPalette() {
 
   const sections = commandPaletteSections({ query, pages, searchResults });
   const flattenedPages: CommandPalettePage[] = sections.flatMap((section) => section.pages);
+  const showCommands = !query.trim();
+  const commandItems: CommandItem[] = showCommands
+    ? [
+        {
+          id: 'new-page',
+          label: 'New page',
+          shortcut: '⌘N',
+          icon: PlusCircle,
+          action: async () => {
+            const page = await addPage();
+            if (page) setCurrentPageId(page.id);
+          },
+        },
+        {
+          id: 'ask-ai',
+          label: 'Ask AI',
+          shortcut: '',
+          icon: Bot,
+          action: async () => {
+            openAiActionModal();
+          },
+        },
+      ]
+    : [];
+  const totalItems = commandItems.length + flattenedPages.length;
 
   const handleSelect = (id: string) => {
     setCurrentPageId(id);
     closeCommandPalette();
+  };
+
+  const handleCommandSelect = async (index: number) => {
+    const command = commandItems[index];
+    if (!command) return;
+    closeCommandPalette();
+    await command.action();
   };
 
   const handleModalKeyDown = (e: React.KeyboardEvent) => {
@@ -117,15 +148,20 @@ export function CommandPalette() {
       closeCommandPalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (flattenedPages.length === 0) return;
-      setSelectedIndex(prev => (prev + 1) % flattenedPages.length);
+      if (totalItems === 0) return;
+      setSelectedIndex(prev => (prev + 1) % totalItems);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (flattenedPages.length === 0) return;
-      setSelectedIndex(prev => (prev - 1 + flattenedPages.length) % flattenedPages.length);
-    } else if (e.key === 'Enter' && flattenedPages.length > 0) {
+      if (totalItems === 0) return;
+      setSelectedIndex(prev => (prev - 1 + totalItems) % totalItems);
+    } else if (e.key === 'Enter' && totalItems > 0) {
       e.preventDefault();
-      handleSelect(flattenedPages[selectedIndex].id);
+      if (selectedIndex < commandItems.length) {
+        void handleCommandSelect(selectedIndex);
+        return;
+      }
+      const page = flattenedPages[selectedIndex - commandItems.length];
+      if (page) handleSelect(page.id);
     }
   };
 
@@ -133,19 +169,19 @@ export function CommandPalette() {
 
   return (
     <div 
-      className="on-modal-overlay items-start justify-center pt-[20vh]"
+      className="on-modal-overlay on-command-overlay items-start justify-center"
       onClick={closeCommandPalette}
     >
       <div 
-        className="on-modal-panel flex w-[500px] max-w-[90vw] flex-col"
+        className="on-modal-panel on-command-panel"
         onClick={e => e.stopPropagation()}
         onKeyDown={handleModalKeyDown}
       >
-        <div className="flex items-center border-b border-border px-4 py-3">
-          <Search className="w-5 h-5 text-muted-foreground mr-3" />
+        <div className="on-command-input-row">
+          <Search className="h-5 w-5 text-muted-foreground" />
           <input 
             ref={inputRef}
-            className="flex-1 border-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none"
+            className="min-w-0 flex-1 border-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none"
             placeholder="Search pages..."
             value={query}
             onChange={(e) => {
@@ -153,24 +189,52 @@ export function CommandPalette() {
               setSelectedIndex(0);
             }}
           />
-          <div className="on-kbd">ESC</div>
+          <div className="on-command-kbd">ESC</div>
         </div>
         
-        <div className="on-scroll-fade on-scroll-fade-popover max-h-[380px] overflow-y-auto p-2">
+        <div className="on-scroll-fade on-scroll-fade-popover on-command-results">
           {isSearching ? (
-            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               Searching...
             </div>
           ) : searchError ? (
-            <div className="px-3 py-6 text-center text-sm text-destructive">
+            <div className="px-4 py-8 text-center text-sm text-destructive">
               {searchError}
             </div>
-          ) : flattenedPages.length === 0 ? (
-            <div className="text-center py-6 text-sm text-muted-foreground">
+          ) : totalItems === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               {query.trim() ? 'No results.' : 'No pages yet.'}
             </div>
           ) : (
-            sections.map((section) => {
+            <>
+            {commandItems.length > 0 && (
+              <div className="on-command-section">
+                <div className="on-command-section-title">Suggested</div>
+                {commandItems.map((command, index) => {
+                  const Icon = command.icon;
+                  const isSelected = selectedIndex === index;
+                  return (
+                    <button
+                      key={command.id}
+                      type="button"
+                      className={`on-command-item ${isSelected ? 'on-command-item-selected' : ''}`}
+                      onClick={() => void handleCommandSelect(index)}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{command.label}</span>
+                        {command.detail && (
+                          <span className="block truncate text-xs text-muted-foreground">{command.detail}</span>
+                        )}
+                      </span>
+                      {command.shortcut && <span className="on-command-shortcut">{command.shortcut}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {sections.map((section) => {
               let sectionStartIndex = 0;
               for (const previousSection of sections) {
                 if (previousSection === section) break;
@@ -178,13 +242,13 @@ export function CommandPalette() {
               }
 
               return (
-                <div key={section.title} className="mb-2 last:mb-0">
-                  <div className="on-section-label flex items-center gap-1.5 pb-1 pt-1">
+                <div key={section.title} className="on-command-section">
+                  <div className="on-command-section-title flex items-center gap-1.5">
                     {section.title === 'Favorites' && <Star className="h-3 w-3 fill-current" />}
                     {section.title}
                   </div>
                   {section.pages.map((page, index) => {
-                    const absoluteIndex = sectionStartIndex + index;
+                    const absoluteIndex = sectionStartIndex + index + commandItems.length;
                     const preview = page.matched_content
                       ? pageContentPreview(page.matched_content, query)
                       : null;
@@ -192,33 +256,35 @@ export function CommandPalette() {
                     const isSelected = absoluteIndex === selectedIndex;
 
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${section.title}-${page.id}`}
-                        className={`flex cursor-pointer items-start rounded-md px-3 py-2 text-sm transition-colors ${isSelected ? 'bg-accent text-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
+                        className={`on-command-item ${isSelected ? 'on-command-item-selected' : ''}`}
                         onClick={() => handleSelect(page.id)}
                         onMouseEnter={() => setSelectedIndex(absoluteIndex)}
                       >
                         {page.icon ? (
-                          <span className="w-4 h-4 mr-3 mt-0.5 flex items-center justify-center text-xs">{page.icon}</span>
+                          <span className="flex h-4 w-4 items-center justify-center text-xs">{page.icon}</span>
                         ) : (
-                          <FileText className="w-4 h-4 mr-3 mt-0.5 flex-shrink-0 opacity-50" />
+                          <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                         )}
-                        <div className="min-w-0">
-                          <div className="truncate">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">
                             <HighlightedText text={title} query={query} selected={isSelected} />
-                          </div>
+                          </span>
                           {preview && (
-                            <div className="truncate text-xs text-muted-foreground">
+                            <span className="block truncate text-xs text-muted-foreground">
                               <HighlightedText text={preview} query={query} selected={isSelected} />
-                            </div>
+                            </span>
                           )}
-                        </div>
-                      </div>
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
               );
-            })
+            })}
+            </>
           )}
         </div>
       </div>

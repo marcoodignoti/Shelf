@@ -1,8 +1,8 @@
 import { ArrowLeftRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, PanelLeft, RotateCcw, Square, ZoomIn, ZoomOut } from "lucide-react";
 import type { TouchEvent, WheelEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Page } from "../lib/db";
 import { useAppStore } from "../store/useAppStore";
 import {
@@ -10,6 +10,8 @@ import {
   clampStudioPage,
   clampStudioPanelRatio,
   clampStudioZoom,
+  isStudioPdfPageCountAllowed,
+  MAX_STUDIO_PDF_PAGES,
   StudioDocument,
   studioPanelRatioFromPointer,
   studioPdfSrc,
@@ -68,6 +70,7 @@ export function StudioWorkspace({
   const [isPdfViewMenuOpen, setIsPdfViewMenuOpen] = useState(false);
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+  const [pdfLoadError, setPdfLoadError] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const zoomPersistTimeoutRef = useRef<number | null>(null);
@@ -82,6 +85,7 @@ export function StudioWorkspace({
   useEffect(() => {
     setPageDraft(String(currentPage));
     setPdfLoadFailed(false);
+    setPdfLoadError(null);
   }, [currentPage, pdfSrc, document.updated_at]);
 
   useEffect(() => {
@@ -122,18 +126,21 @@ export function StudioWorkspace({
 
   const handlePdfLoad = useCallback((pageCount: number) => {
     setPdfLoadFailed(false);
+    setPdfLoadError(null);
     setPdfPageCount(pageCount);
     if (currentPage > pageCount) {
       updatePage(pageCount);
     }
   }, [currentPage, updatePage]);
 
-  const handlePdfError = useCallback(() => {
+  const handlePdfError = useCallback((message?: string) => {
     setPdfLoadFailed(true);
+    setPdfLoadError(message ?? null);
   }, []);
 
   const handleReplacePdfFile = useCallback(() => {
     setPdfLoadFailed(false);
+    setPdfLoadError(null);
     onReplacePdfFile(document.id);
   }, [document.id, onReplacePdfFile]);
 
@@ -221,7 +228,7 @@ export function StudioWorkspace({
           <div className="max-w-sm">
             <div className="font-medium text-foreground">PDF preview unavailable</div>
             <div className="mt-2">
-              The imported PDF file is missing or cannot be rendered.
+              {pdfLoadError ?? "The imported PDF file is missing or cannot be rendered."}
             </div>
             <button
               className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -482,7 +489,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   zoom: number;
   displayMode: StudioPdfDisplayMode;
   onLoad: (pageCount: number) => void;
-  onError: () => void;
+  onError: (message?: string) => void;
   onZoomChange: (zoom: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -562,6 +569,11 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       loadingTask = pdfjsLib.getDocument(src);
       const pdf = await loadingTask.promise;
       pdfDocument = pdf;
+      if (!isStudioPdfPageCountAllowed(pdf.numPages)) {
+        await pdf.destroy();
+        pdfDocument = null;
+        throw new Error(`PDF has ${pdf.numPages} pages. OpenNotion supports up to ${MAX_STUDIO_PDF_PAGES} pages.`);
+      }
       if (isCancelled) {
         await pdfDocument.destroy();
         pdfDocument = null;
@@ -576,10 +588,10 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       }
     })();
 
-    loadTask.catch(() => {
+    loadTask.catch((error: unknown) => {
       if (!isCancelled) {
         setIsLoading(false);
-        onError();
+        onError(error instanceof Error ? error.message : undefined);
       }
     });
 

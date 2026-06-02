@@ -6,6 +6,9 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
 
 const DEFAULT_FORMULA = "\\nabla \\cdot \\vec{E}";
+export const MAX_FORMULA_LENGTH = 4000;
+export const KATEX_MAX_SIZE = 12;
+export const KATEX_MAX_EXPAND = 1000;
 const KATEX_MACROS = {
   "\\zigzag": "\\mathrel{\\diagup\\!\\diagdown\\!\\diagup\\!\\diagdown}",
 };
@@ -1187,13 +1190,37 @@ function isMathInlineContent(item: InlineContent): item is InlineMath {
 }
 
 export function renderFormulaHtml(formula: string, displayMode = false): string {
-  return katex.renderToString(normalizeFormulaForKatex(formula || "\\?"), {
-    throwOnError: false,
-    strict: false,
-    output: "html",
-    displayMode,
-    macros: KATEX_MACROS,
-  });
+  const normalizedFormula = normalizeFormulaForKatex(formula || "\\?");
+  if (normalizedFormula.length > MAX_FORMULA_LENGTH) {
+    return renderFormulaErrorHtml("Formula too long");
+  }
+
+  try {
+    return katex.renderToString(normalizedFormula, {
+      throwOnError: false,
+      strict: false,
+      output: "html",
+      displayMode,
+      macros: KATEX_MACROS,
+      maxSize: KATEX_MAX_SIZE,
+      maxExpand: KATEX_MAX_EXPAND,
+      trust: false,
+    });
+  } catch {
+    return renderFormulaErrorHtml("Formula cannot be rendered");
+  }
+}
+
+function renderFormulaErrorHtml(message: string): string {
+  return `<span class="katex-error" title="${escapeFormulaHtml(message)}">${escapeFormulaHtml(message)}</span>`;
+}
+
+function escapeFormulaHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function normalizeFormulaForKatex(formula: string): string {

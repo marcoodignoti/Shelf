@@ -1,4 +1,14 @@
+import { invoke } from "@tauri-apps/api/core";
 import { Page } from "./db";
+
+export const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
+export const BACKUP_MAX_PAGES = 5000;
+export const BACKUP_MAX_ID_LENGTH = 512;
+export const BACKUP_MAX_TITLE_LENGTH = 512;
+export const BACKUP_MAX_TEXT_LENGTH = 1024 * 1024;
+export const BACKUP_MAX_METADATA_LENGTH = 1024 * 1024;
+export const BACKUP_MAX_ICON_LENGTH = 512;
+export const BACKUP_MAX_COVER_URL_LENGTH = 4096;
 
 export interface WorkspaceBackup {
   version: 1;
@@ -8,6 +18,14 @@ export interface WorkspaceBackup {
 
 type Clock = () => string;
 type IdFactory = () => string;
+
+function isSizedString(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.length <= maxLength;
+}
+
+function isOptionalSizedString(value: unknown, maxLength: number): value is string | null | undefined {
+  return value === null || value === undefined || isSizedString(value, maxLength);
+}
 
 export function buildBackup(pages: Page[], exportedAt = new Date().toISOString()): WorkspaceBackup {
   return {
@@ -22,15 +40,15 @@ function isPage(value: unknown): value is Page {
   const page = value as Record<string, unknown>;
 
   return (
-    typeof page.id === "string" &&
-    typeof page.title === "string" &&
-    (typeof page.parent_id === "string" || page.parent_id === null) &&
-    (typeof page.content === "string" || page.content === null) &&
-    (typeof page.search_text === "string" || page.search_text === null || page.search_text === undefined) &&
-    (typeof page.icon === "string" || page.icon === null) &&
-    (typeof page.cover_url === "string" || page.cover_url === null) &&
-    (typeof page.properties === "string" || page.properties === null || page.properties === undefined) &&
-    (typeof page.database_schema === "string" || page.database_schema === null || page.database_schema === undefined) &&
+    isSizedString(page.id, BACKUP_MAX_ID_LENGTH) &&
+    isSizedString(page.title, BACKUP_MAX_TITLE_LENGTH) &&
+    (isSizedString(page.parent_id, BACKUP_MAX_ID_LENGTH) || page.parent_id === null) &&
+    isOptionalSizedString(page.content, BACKUP_MAX_TEXT_LENGTH) &&
+    isOptionalSizedString(page.search_text, BACKUP_MAX_TEXT_LENGTH) &&
+    isOptionalSizedString(page.icon, BACKUP_MAX_ICON_LENGTH) &&
+    isOptionalSizedString(page.cover_url, BACKUP_MAX_COVER_URL_LENGTH) &&
+    isOptionalSizedString(page.properties, BACKUP_MAX_METADATA_LENGTH) &&
+    isOptionalSizedString(page.database_schema, BACKUP_MAX_METADATA_LENGTH) &&
     typeof page.is_deleted === "number" &&
     typeof page.is_favorite === "number" &&
     (typeof page.is_template === "number" || page.is_template === undefined) &&
@@ -42,6 +60,12 @@ function isPage(value: unknown): value is Page {
 }
 
 export function parseBackup(raw: string): WorkspaceBackup {
+  // Measure UTF-8 bytes, not UTF-16 code units, so the limit matches the on-disk
+  // size for non-ASCII content.
+  if (new TextEncoder().encode(raw).length > BACKUP_MAX_BYTES) {
+    throw new Error("Backup file is too large");
+  }
+
   let parsed: unknown;
 
   try {
@@ -64,7 +88,7 @@ export function parseBackup(raw: string): WorkspaceBackup {
     throw new Error("Backup file has invalid export timestamp");
   }
 
-  if (!Array.isArray(backup.pages) || !backup.pages.every(isPage)) {
+  if (!Array.isArray(backup.pages) || backup.pages.length > BACKUP_MAX_PAGES || !backup.pages.every(isPage)) {
     throw new Error("Backup file has invalid pages");
   }
 
@@ -78,6 +102,14 @@ export function parseBackup(raw: string): WorkspaceBackup {
       sort_order: page.sort_order ?? 0,
     })),
   };
+}
+
+export async function exportWorkspaceBackup(path: string, exportedAt = new Date().toISOString()): Promise<number> {
+  return await invoke<number>("export_backup", { path, exportedAt });
+}
+
+export async function importWorkspaceBackup(path: string, importedAt = new Date().toISOString()): Promise<number> {
+  return await invoke<number>("import_backup", { path, importedAt });
 }
 
 export function prepareImportedPages(
