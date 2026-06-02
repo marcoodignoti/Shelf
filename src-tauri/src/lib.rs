@@ -2071,12 +2071,55 @@ async fn stream_ai_chat_reply(
     on_event: tauri::ipc::Channel<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<ai::AiChatStoredMessage, String> {
-    // Regenerate drops the trailing assistant turn and reuses the last user
-    // message; a normal turn persists the new user message first (and names the
-    // conversation from the first prompt).
+    // Regenerate drops the trailing assistant turn and reuses the existing last
+    // user message. A normal turn persists its new user message only AFTER the
+    // reply succeeds (below), so a cancelled or failed turn leaves no orphan user
+    // row that would resurface on reopening the conversation.
     if request.regenerate {
         ai::delete_last_assistant_message(&state.db, &request.conversation_id).await?;
-    } else {
+    }
+
+    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    let context = match (
+        ai::build_workspace_context_prompt(&workspace),
+        request.composer_context_prompt(),
+    ) {
+        (Some(workspace_context), Some(composer_context)) => Some(format!(
+            "{}\n\nComposer state:\n{}",
+            workspace_context, composer_context
+        )),
+        (None, Some(composer_context)) => Some(format!("Composer state:\n{}", composer_context)),
+        (workspace_context, None) => workspace_context,
+    };
+
+    let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
+    // The current prompt is sent separately as the final user message; drop a
+    // trailing user turn from history so it is not duplicated. A normal turn has
+    // not persisted its user message yet, so history ends with the prior assistant
+    // turn; a regenerate left the reused user turn last, which this removes.
+    ai::drop_trailing_user_turn(&mut history);
+
+    let cancel = state.ai_cancel.notified();
+    let reply = ai::stream_openrouter_chat(
+        &state.ai,
+        &request.provider,
+        &request.model,
+        &request.prompt,
+        context,
+        history,
+        move |delta| {
+            let _ = on_event.send(delta.to_string());
+        },
+        cancel,
+    )
+    .await?;
+
+    // Persist the turn now that the reply succeeded. For a normal turn this records
+    // the user message (naming the conversation from the first prompt) before the
+    // assistant reply so they keep their order.
+    if !request.regenerate {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?")
                 .bind(&request.conversation_id)
@@ -2108,42 +2151,6 @@ async fn stream_ai_chat_reply(
         )
         .await?;
     }
-
-    let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
-        .await
-        .map_err(|error| error.to_string())?;
-    let context = match (
-        ai::build_workspace_context_prompt(&workspace),
-        request.composer_context_prompt(),
-    ) {
-        (Some(workspace_context), Some(composer_context)) => Some(format!(
-            "{}\n\nComposer state:\n{}",
-            workspace_context, composer_context
-        )),
-        (None, Some(composer_context)) => Some(format!("Composer state:\n{}", composer_context)),
-        (workspace_context, None) => workspace_context,
-    };
-
-    let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
-    // The current prompt is sent separately as the final user message; drop a
-    // trailing user turn from history so it is not duplicated (applies to both
-    // normal turns and regenerate).
-    ai::drop_trailing_user_turn(&mut history);
-
-    let cancel = state.ai_cancel.notified();
-    let reply = ai::stream_openrouter_chat(
-        &state.ai,
-        &request.provider,
-        &request.model,
-        &request.prompt,
-        context,
-        history,
-        move |delta| {
-            let _ = on_event.send(delta.to_string());
-        },
-        cancel,
-    )
-    .await?;
 
     ai::insert_ai_message(
         &state.db,

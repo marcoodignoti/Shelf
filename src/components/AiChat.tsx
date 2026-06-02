@@ -253,7 +253,7 @@ export function AiChat() {
   const [personaInstructionsAdded, setPersonaInstructionsAdded] = useState(false);
   const [attachedSources, setAttachedSources] = useState<string[]>([]);
   const [feedbackByMessageId, setFeedbackByMessageId] = useState<Record<string, 'up' | 'down'>>({});
-  const [stepsOpen, setStepsOpen] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const streamingRef = useRef(false);
 
   const selectedModel: AiModelId = aiSettings?.model ?? AI_MODELS[0].id;
@@ -351,7 +351,7 @@ export function AiChat() {
     setAttachMenuOpen(false);
     setModeMenuOpen(false);
     setHistoryOpen(false);
-    setStepsOpen(false);
+    setExpandedSteps(new Set());
     const requestOptions = currentChatOptions();
     const saved = await sendAiChatMessage(cleanPrompt, currentPageId, requestOptions);
     if (saved) setAttachedSources([]);
@@ -695,13 +695,18 @@ export function AiChat() {
                                 <button
                                   type="button"
                                   className="on-ai-steps-toggle"
-                                  aria-expanded={stepsOpen}
-                                  onClick={() => setStepsOpen((open) => !open)}
+                                  aria-expanded={expandedSteps.has(message.id)}
+                                  onClick={() => setExpandedSteps((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(message.id)) next.delete(message.id);
+                                    else next.add(message.id);
+                                    return next;
+                                  })}
                                 >
                                   <span>4 steps</span>
                                   <ChevronDown className="h-4 w-4" />
                                 </button>
-                                {stepsOpen && (
+                                {expandedSteps.has(message.id) && (
                                   <ol className="on-ai-steps-list">
                                     <li>Thought</li>
                                     <li>Loaded OpenNotion tools</li>
