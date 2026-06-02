@@ -39,13 +39,6 @@ describe("buildBackup", () => {
     });
   });
 
-  it("does not include AI settings or API keys", () => {
-    const backup = buildBackup([page("one")], "2026-05-18T10:00:00.000Z") as unknown as Record<string, unknown>;
-
-    expect(backup.ai_settings).toBeUndefined();
-    expect(backup.api_key).toBeUndefined();
-    expect(backup.openrouter_api_key).toBeUndefined();
-  });
 });
 
 describe("parseBackup", () => {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentType } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Bot, FileText, PlusCircle, Search, Star } from 'lucide-react';
+import { FileText, PlusCircle, Search, Star } from 'lucide-react';
 import { SearchResult, searchPages } from '../lib/db';
 import { pageContentPreview } from '../lib/pageContent';
 import { splitSearchMatch } from '../lib/searchDisplay';
@@ -48,7 +48,7 @@ export function CommandPalette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, openAiActionModal, addPage } = useAppStore();
+  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
 
   useEffect(() => {
     if (isCommandPaletteOpen) {
@@ -116,15 +116,6 @@ export function CommandPalette() {
           action: async () => {
             const page = await addPage();
             if (page) setCurrentPageId(page.id);
-          },
-        },
-        {
-          id: 'ask-ai',
-          label: 'Ask AI',
-          shortcut: '',
-          icon: Bot,
-          action: async () => {
-            openAiActionModal();
           },
         },
       ]
