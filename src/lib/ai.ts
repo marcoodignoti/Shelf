@@ -22,6 +22,7 @@ export interface AiSettings {
   model: AiModelId;
   trusted_mode_enabled: boolean;
   has_api_key: boolean;
+  api_key_source?: "keychain" | "OPENROUTER_API_KEY" | "OPENNOTION_OPENROUTER_API_KEY" | string | null;
 }
 
 export interface AiCreatePageAction {
@@ -208,7 +209,15 @@ export interface AiConversationDetail {
   messages: AiChatStoredMessage[];
 }
 
-export interface AiChatRequest {
+export interface AiChatRequestOptions {
+  mode?: "default" | "ask" | "plan";
+  web_access_enabled?: boolean;
+  persona_name?: string | null;
+  persona_instructions_added?: boolean;
+  attached_sources?: string[];
+}
+
+export interface AiChatRequest extends AiChatRequestOptions {
   conversation_id: string;
   prompt: string;
   provider: AiProviderId;

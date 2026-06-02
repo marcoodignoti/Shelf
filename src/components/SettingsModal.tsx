@@ -95,6 +95,13 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
     setApiKeyDraft('');
   };
 
+  const apiKeySourceLabel =
+    aiSettings?.api_key_source === 'keychain'
+      ? 'Keychain'
+      : aiSettings?.api_key_source
+        ? `Environment: ${aiSettings.api_key_source}`
+        : null;
+
   return createPortal(
     <div className="on-modal-overlay on-settings-overlay items-center justify-center" onMouseDown={onClose}>
       <div className="on-modal-panel on-settings-panel" onMouseDown={(event) => event.stopPropagation()}>
@@ -204,9 +211,13 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
                   <div className="on-settings-row">
                     <div className="on-settings-row-copy">
                       <div>OpenRouter</div>
-                      <p>API key is stored in the system keychain and excluded from backups.</p>
+                      <p>
+                        Use an environment key to avoid system password prompts, or save a key in the system keychain.
+                      </p>
                     </div>
-                    <span className="on-settings-pill">{aiSettings?.has_api_key ? 'Connected' : 'No key'}</span>
+                    <span className="on-settings-pill">
+                      {aiSettings?.has_api_key ? apiKeySourceLabel ?? 'Connected' : 'No key'}
+                    </span>
                   </div>
                   <div className="on-settings-row">
                     <div className="on-settings-row-copy">
@@ -233,7 +244,10 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
                   <div className="on-settings-row on-settings-row-stack">
                     <div className="on-settings-row-copy">
                       <div className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> API key</div>
-                      <p>Paste an OpenRouter key. Existing keys are never shown again.</p>
+                      <p>
+                        Preferred no-prompt method: launch OpenNotion with OPENROUTER_API_KEY or
+                        OPENNOTION_OPENROUTER_API_KEY set. Existing saved keys are never shown again.
+                      </p>
                     </div>
                     <div className="on-ai-key-actions">
                       <input

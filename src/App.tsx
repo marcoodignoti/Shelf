@@ -10,7 +10,7 @@ import { HomeView } from "./components/HomeView";
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
 const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
-const AiActionModal = lazy(() => import("./components/AiActionModal").then((module) => ({ default: module.AiActionModal })));
+const AiChat = lazy(() => import("./components/AiChat").then((module) => ({ default: module.AiChat })));
 
 function WorkspaceLoadingFallback() {
   return (
@@ -157,7 +157,7 @@ export default function App() {
       )}
       <Suspense fallback={null}>
         <CommandPalette />
-        <AiActionModal />
+        <AiChat />
       </Suspense>
       <AppNotice />
     </Layout>

@@ -25,6 +25,7 @@ pub struct AiSettings {
     pub model: String,
     pub trusted_mode_enabled: bool,
     pub has_api_key: bool,
+    pub api_key_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,12 +61,79 @@ pub struct AiChatRequest {
     pub current_page_id: Option<String>,
     #[serde(default)]
     pub regenerate: bool,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub web_access_enabled: Option<bool>,
+    #[serde(default)]
+    pub persona_name: Option<String>,
+    #[serde(default)]
+    pub persona_instructions_added: bool,
+    #[serde(default)]
+    pub attached_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct AiChatTurn {
     pub role: String,
     pub content: String,
+}
+
+impl AiChatRequest {
+    pub fn composer_context_prompt(&self) -> Option<String> {
+        let mut lines = Vec::new();
+
+        match self.mode.as_deref() {
+            Some("ask") => lines
+                .push("Mode: Ask. Answer only; do not include OpenNotion action JSON.".to_string()),
+            Some("plan") => lines.push(
+                "Mode: Plan. Explain the plan first and keep any action plan confirmable."
+                    .to_string(),
+            ),
+            Some("default") | None => {}
+            Some(other) => lines.push(format!("Mode: {}.", other.trim())),
+        }
+
+        if self.web_access_enabled == Some(false) {
+            lines.push(
+                "Web access toggle: Off. Do not claim to browse or search the web.".to_string(),
+            );
+        }
+
+        let persona = self.persona_name.as_deref().unwrap_or("").trim();
+        if !persona.is_empty() {
+            lines.push(format!(
+                "Assistant persona/name requested by user: {}.",
+                persona
+            ));
+        }
+        if self.persona_instructions_added {
+            lines.push(
+                "Personal instructions control is enabled, but no instruction page content is attached."
+                    .to_string(),
+            );
+        }
+
+        let sources = self
+            .attached_sources
+            .iter()
+            .map(|source| source.trim())
+            .filter(|source| !source.is_empty())
+            .take(12)
+            .collect::<Vec<_>>();
+        if !sources.is_empty() {
+            lines.push(format!(
+                "User selected source files by name: {}. File contents are not available unless pasted in the chat.",
+                sources.join(", ")
+            ));
+        }
+
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -361,6 +429,31 @@ pub trait SecretStore: Send + Sync {
     fn delete_secret(&self, provider: &str) -> Result<(), String>;
 }
 
+pub const OPENROUTER_API_KEY_ENV: &str = "OPENROUTER_API_KEY";
+pub const OPENNOTION_OPENROUTER_API_KEY_ENV: &str = "OPENNOTION_OPENROUTER_API_KEY";
+
+fn env_secret_from(
+    provider: &str,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Option<(String, String)> {
+    if provider != AI_PROVIDER_OPENROUTER {
+        return None;
+    }
+
+    [OPENNOTION_OPENROUTER_API_KEY_ENV, OPENROUTER_API_KEY_ENV]
+        .into_iter()
+        .find_map(|name| {
+            lookup(name)
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .map(|value| (name.to_string(), value))
+        })
+}
+
+fn env_secret(provider: &str) -> Option<(String, String)> {
+    env_secret_from(provider, |name| std::env::var(name).ok())
+}
+
 #[cfg(test)]
 #[derive(Default)]
 pub struct MemorySecretStore {
@@ -405,6 +498,10 @@ impl SecretStore for KeyringSecretStore {
     }
 
     fn get_secret(&self, provider: &str) -> Result<Option<String>, String> {
+        if let Some((_, value)) = env_secret(provider) {
+            return Ok(Some(value));
+        }
+
         let entry =
             keyring::Entry::new("OpenNotion AI", provider).map_err(|error| error.to_string())?;
         match entry.get_password() {
@@ -532,13 +629,21 @@ pub async fn read_ai_settings(db: &SqlitePool, runtime: &AiRuntime) -> Result<Ai
     .map_err(|error| error.to_string())?;
 
     validate_provider_model(&row.0, &row.1)?;
-    let has_api_key = runtime.secret_store.get_secret(&row.0)?.is_some();
+    let env_key_source = env_secret(&row.0).map(|(name, _)| name);
+    let keychain_key = if env_key_source.is_none() {
+        runtime.secret_store.get_secret(&row.0)?
+    } else {
+        None
+    };
+    let has_api_key = env_key_source.is_some() || keychain_key.is_some();
+    let api_key_source = env_key_source.or_else(|| keychain_key.map(|_| "keychain".to_string()));
 
     Ok(AiSettings {
         provider: row.0,
         model: row.1,
         trusted_mode_enabled: row.2 == 1,
         has_api_key,
+        api_key_source,
     })
 }
 
@@ -2207,6 +2312,65 @@ mod tests {
             store.get_secret(AI_PROVIDER_OPENROUTER).expect("read"),
             None
         );
+    }
+
+    #[test]
+    fn env_secret_prefers_opennotion_specific_openrouter_key() {
+        let lookup = |name: &str| match name {
+            OPENROUTER_API_KEY_ENV => Some("sk-or-generic".to_string()),
+            OPENNOTION_OPENROUTER_API_KEY_ENV => Some("sk-or-specific".to_string()),
+            _ => None,
+        };
+
+        assert_eq!(
+            env_secret_from(AI_PROVIDER_OPENROUTER, lookup),
+            Some((
+                OPENNOTION_OPENROUTER_API_KEY_ENV.to_string(),
+                "sk-or-specific".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn env_secret_ignores_empty_values_and_unknown_provider() {
+        let lookup = |name: &str| match name {
+            OPENNOTION_OPENROUTER_API_KEY_ENV => Some("  ".to_string()),
+            OPENROUTER_API_KEY_ENV => Some("  sk-or-generic  ".to_string()),
+            _ => None,
+        };
+
+        assert_eq!(
+            env_secret_from(AI_PROVIDER_OPENROUTER, lookup),
+            Some((
+                OPENROUTER_API_KEY_ENV.to_string(),
+                "sk-or-generic".to_string()
+            ))
+        );
+        assert_eq!(env_secret_from("openai", lookup), None);
+    }
+
+    #[test]
+    fn chat_request_composer_context_summarizes_enabled_controls() {
+        let request = AiChatRequest {
+            conversation_id: "conversation".to_string(),
+            prompt: "Create a tracker".to_string(),
+            provider: AI_PROVIDER_OPENROUTER.to_string(),
+            model: AI_MODEL_KIMI_FREE.to_string(),
+            current_page_id: None,
+            regenerate: false,
+            mode: Some("ask".to_string()),
+            web_access_enabled: Some(false),
+            persona_name: Some("Workspace Helper".to_string()),
+            persona_instructions_added: true,
+            attached_sources: vec!["requirements.csv".to_string()],
+        };
+
+        let context = request.composer_context_prompt().expect("context");
+
+        assert!(context.contains("Mode: Ask"));
+        assert!(context.contains("Web access toggle: Off"));
+        assert!(context.contains("Workspace Helper"));
+        assert!(context.contains("requirements.csv"));
     }
 
     #[test]

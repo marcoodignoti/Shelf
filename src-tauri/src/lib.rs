@@ -2112,7 +2112,17 @@ async fn stream_ai_chat_reply(
     let workspace = build_ai_workspace_context(&state.db, request.current_page_id.as_deref())
         .await
         .map_err(|error| error.to_string())?;
-    let context = ai::build_workspace_context_prompt(&workspace);
+    let context = match (
+        ai::build_workspace_context_prompt(&workspace),
+        request.composer_context_prompt(),
+    ) {
+        (Some(workspace_context), Some(composer_context)) => Some(format!(
+            "{}\n\nComposer state:\n{}",
+            workspace_context, composer_context
+        )),
+        (None, Some(composer_context)) => Some(format!("Composer state:\n{}", composer_context)),
+        (workspace_context, None) => workspace_context,
+    };
 
     let mut history = ai::conversation_history(&state.db, &request.conversation_id).await?;
     // The current prompt is sent separately as the final user message; drop the
