@@ -53,8 +53,8 @@ function createMainWindow() {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
-  mainWindow.webContents.on("console-message", (_event, level, message) => {
-    console.log(`[renderer:${level}] ${message}`);
+  mainWindow.webContents.on("console-message", (details) => {
+    console.log(`[renderer:${details.level}] ${details.message}`);
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error(`[renderer-gone] ${details.reason}`);
