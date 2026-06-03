@@ -1,5 +1,5 @@
 const path = require("node:path");
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const { OpenNotionBackend } = require("./backend.cjs");
 
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
@@ -24,6 +24,64 @@ function createBackend() {
     revealPath: (filePath) => shell.showItemInFolder(filePath),
   });
   return backend;
+}
+
+function configureApplicationMenu() {
+  const template = [
+    ...(process.platform === "darwin" ? [{
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    }] : []),
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        ...(process.platform === "darwin" ? [
+          { type: "separator" },
+          { role: "front" },
+        ] : [
+          { role: "close" },
+        ]),
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createMainWindow() {
@@ -54,6 +112,7 @@ function createMainWindow() {
   }
 
   mainWindow.webContents.on("console-message", (details) => {
+    if (details.message.includes("Download the React DevTools")) return;
     console.log(`[renderer:${details.level}] ${details.message}`);
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -151,6 +210,7 @@ configureAppIdentity();
 registerIpc();
 
 app.whenReady().then(() => {
+  configureApplicationMenu();
   createBackend();
   createMainWindow();
 
