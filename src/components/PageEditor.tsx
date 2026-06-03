@@ -1155,7 +1155,9 @@ export function Editor({
   };
 
   const handleOpenNativeIconPicker = () => {
-    iconInputRef.current?.focus();
+    const input = iconInputRef.current;
+    input?.focus();
+    input?.setSelectionRange(0, input.value.length);
     void invoke("show_character_palette").catch((error: unknown) => {
       console.error("Failed to open character palette:", error);
     });

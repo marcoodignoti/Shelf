@@ -247,7 +247,7 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
   await expect(menu.getByText("Delete")).toBeVisible();
 });
 
-test("keeps custom icon input focused when opening the native picker", async ({ page }) => {
+test("keeps custom icon input focused and selected when opening the native picker", async ({ page }) => {
   await page.goto("/");
 
   await page.getByText("Create first page").click();
@@ -257,10 +257,16 @@ test("keeps custom icon input focused when opening the native picker", async ({ 
   const iconInput = page.getByLabel("Custom page icon");
   await expect(iconInput).toBeFocused();
 
-  await page.getByRole("button", { name: "Open native picker" }).click();
+  await page.getByText("📄").click();
+  await expect(page.getByRole("button", { name: "Change page icon" })).toHaveText("📄");
+  await page.getByRole("button", { name: "Change page icon" }).click();
   await expect(iconInput).toBeFocused();
 
-  await iconInput.fill("🧪");
+  await page.getByRole("button", { name: "Open native picker" }).click();
+  await expect(iconInput).toBeFocused();
+  await expect.poll(async () => iconInput.evaluate((input) => `${input.selectionStart}:${input.selectionEnd}`)).toBe("0:2");
+
+  await page.keyboard.insertText("🧪");
   await expect(page.getByRole("button", { name: "Change page icon" })).toHaveText("🧪");
 });
 
