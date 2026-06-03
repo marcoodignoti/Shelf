@@ -1,5 +1,4 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const { pathToFileURL } = require("node:url");
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -7,6 +6,12 @@ function isRecord(value) {
 
 function normalizeArgs(args) {
   return isRecord(args) ? args : {};
+}
+
+function filePathToUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, "/");
+  const encodedPath = normalized.split("/").map((part) => encodeURIComponent(part)).join("/");
+  return normalized.startsWith("/") ? `file://${encodedPath}` : `file:///${encodedPath}`;
 }
 
 contextBridge.exposeInMainWorld("openNotion", {
@@ -22,6 +27,6 @@ contextBridge.exposeInMainWorld("openNotion", {
   },
   fileSrc(filePath) {
     if (typeof filePath !== "string") throw new Error("file path must be a string");
-    return pathToFileURL(filePath).toString();
+    return filePathToUrl(filePath);
   },
 });

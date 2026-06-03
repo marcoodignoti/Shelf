@@ -34,6 +34,10 @@ async function launchApp(userDataDir) {
   return { app, window, consoleMessages };
 }
 
+function relevantConsoleMessages(messages) {
+  return messages.filter((message) => !message.includes("ExperimentalWarning"));
+}
+
 async function waitForBodyText(window, expectedText) {
   await window.waitForFunction((text) => document.body.innerText.includes(text), expectedText, { timeout: 15000 });
 }
@@ -140,12 +144,24 @@ async function main() {
     await waitForBodyText(second.window, pageBody);
     await second.window.keyboard.press("Escape");
 
-    await second.window.getByRole("button", { name: "Studio" }).click();
+    await second.window.getByRole("button", { name: "Studio", exact: true }).click();
     await waitForBodyText(second.window, "parity-doc");
+    await second.window.locator("canvas[aria-label='parity-doc']").waitFor({ state: "visible", timeout: 15000 });
+    const errorBoundaryVisible = await second.window.getByText("Something went wrong.").isVisible().catch(() => false);
+    assert(!errorBoundaryVisible, "Studio rendered error boundary");
     await second.window.screenshot({ path: path.join(os.tmpdir(), "opennotion-electron-parity-smoke.png"), fullPage: true });
   } finally {
     await second.app.close();
   }
+
+  assert(
+    relevantConsoleMessages(first.consoleMessages).length === 0,
+    `First launch console errors: ${relevantConsoleMessages(first.consoleMessages).join("\n")}`
+  );
+  assert(
+    relevantConsoleMessages(second.consoleMessages).length === 0,
+    `Second launch console errors: ${relevantConsoleMessages(second.consoleMessages).join("\n")}`
+  );
 
   const dbState = readDb(userDataDir);
   assert(dbState.schemaVersion === "1", "Unexpected schema version");
