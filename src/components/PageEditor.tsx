@@ -18,8 +18,6 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -27,6 +25,7 @@ import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableVi
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
+import { invoke, openDialog } from "../lib/desktop";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
@@ -1085,7 +1084,7 @@ export function Editor({
 
   const handlePickCoverImage = async () => {
     try {
-      const path = await open({
+      const path = await openDialog({
         multiple: false,
         filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
       });

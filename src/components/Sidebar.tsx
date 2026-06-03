@@ -925,7 +925,7 @@ export function Sidebar() {
         aria-label="Resize sidebar"
         onPointerDown={handleResizePointerDown}
       />
-      <div className="on-sidebar-header-spacer flex-shrink-0" data-tauri-drag-region />
+      <div className="on-sidebar-header-spacer flex-shrink-0" />
 
       <div className="on-sidebar-mode-row">
         <SidebarModeSwitch mode={workspaceMode} onChange={setWorkspaceMode} />

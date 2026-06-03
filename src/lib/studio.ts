@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { fileSrc, invoke } from "./desktop";
 
 export type StudioPanelLayout = "pdf-left" | "note-left";
 
@@ -173,7 +173,7 @@ export function studioPanelRatioFromPointer(
 }
 
 export function studioPdfSrc(document: StudioDocument): string {
-  return `${convertFileSrc(document.stored_file_path)}${buildStudioPdfHash({
+  return `${fileSrc(document.stored_file_path)}${buildStudioPdfHash({
     page: document.viewer_page,
     zoom: document.viewer_zoom,
   })}`;

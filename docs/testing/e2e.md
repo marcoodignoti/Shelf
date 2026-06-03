@@ -1,29 +1,24 @@
 # E2E Testing
 
-OpenNotion has a Playwright smoke test for the most important user path:
+OpenNotion has browser-level Playwright coverage for common workflows and packaged Electron smoke tests for the real desktop bridge.
 
-- create a page
-- edit title and body
-- wait for autosave
-- reload the app
-- verify title and body survive
-- search persisted content
+## Browser E2E
 
-Run it locally:
+Run locally:
 
 ```sh
 npm run e2e:install
 npm run e2e
 ```
 
-The test runs the Vite app with a deterministic mock of Tauri commands. It does not touch the real local SQLite database.
+Browser tests run the Vite app with a deterministic mock of `window.openNotion`. They do not touch the real local SQLite database.
 
-## Native Tauri Driver Status
+## Packaged Electron Smoke
 
-`tauri-driver` was checked on macOS during setup, but it currently exits with:
+Run the Electron gate:
 
-```text
-tauri-driver is not supported on this platform
+```sh
+npm run check:electron
 ```
 
-Because of that, this pass adds browser-level E2E coverage for the app workflow and keeps real packaged-app automation as a remaining production task. Real packaged-app E2E should be added when a supported macOS driver path is available, for example an embedded WebDriver plugin or another maintained Tauri automation route.
+This builds the app, packages `dist-electron/mac-arm64/OpenNotion.app`, launches it with Playwright Electron, checks the rendered UI is nonblank, runs a parity workflow, and verifies the real SQLite database state.

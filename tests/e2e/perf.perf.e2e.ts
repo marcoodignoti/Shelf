@@ -11,10 +11,10 @@ const STARTUP_BUDGET_MS = 700; // baseline ~428 ms on ref machine; ×1.5 headroo
 const HEAP_DELTA_BUDGET_BYTES = 7 * 1024 * 1024; // baseline ~4.5 MB on ref machine; ×1.3 = ~7 MB
 const EDIT_CYCLES = 200;
 
-// Minimal Tauri IPC mock mirroring tests/e2e/persistence.e2e.ts: persistence
+// Minimal desktop bridge mock mirroring tests/e2e/persistence.e2e.ts: persistence
 // is backed by localStorage so React + BlockNote render for real while the
 // native backend is absent. This measures FRONTEND cost only.
-async function installTauriMock(page: Page) {
+async function installDesktopMock(page: Page) {
   await page.addInitScript(() => {
     const storageKey = "opennotion-perf-pages";
 
@@ -28,19 +28,7 @@ async function installTauriMock(page: Page) {
     window.localStorage.removeItem(storageKey);
     window.localStorage.removeItem("opennotion-current-page-id");
 
-    let callbackCounter = 0;
-
-    // @ts-expect-error injected global
-    window.__TAURI_INTERNALS__ = {
-      metadata: {
-        currentWindow: { label: "main" },
-      },
-      transformCallback: () => {
-        callbackCounter += 1;
-        return callbackCounter;
-      },
-      unregisterCallback: () => undefined,
-      convertFileSrc: (filePath: string) => filePath,
+    window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         const now = new Date().toISOString();
         const pages = loadPages();
@@ -94,6 +82,9 @@ async function installTauriMock(page: Page) {
         // Permissive default so unmodeled commands don't reject and skew timing.
         return null;
       },
+      open: async () => null,
+      save: async () => null,
+      fileSrc: (filePath: string) => filePath,
     };
   });
 }
@@ -114,7 +105,7 @@ async function jsHeapUsedBytes(
 test("startup to first interactive render is within budget", async ({
   page,
 }) => {
-  await installTauriMock(page);
+  await installDesktopMock(page);
   const start = Date.now();
   await page.goto("/");
   await page.getByText("Create first page").waitFor({ state: "visible" });
@@ -124,7 +115,7 @@ test("startup to first interactive render is within budget", async ({
 });
 
 test("editing churn does not leak JS heap", async ({ page }) => {
-  await installTauriMock(page);
+  await installDesktopMock(page);
   const client = await page.context().newCDPSession(page);
   await client.send("Performance.enable");
 

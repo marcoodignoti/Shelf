@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tauri:
-    name: Tauri build, test, audit
+  electron:
+    name: Electron build, test, audit
     runs-on: macos-14
     steps:
       - name: Checkout
@@ -40,24 +40,8 @@ jobs:
             playwright-${{ runner.os }}-node-${{ env.NODE_VERSION }}-
             playwright-${{ runner.os }}-
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
       - name: Install dependencies
         run: npm ci
-
-      - name: Frontend build
-        run: npm run build
-
-      - name: Frontend tests
-        run: npm run test
 
       - name: Install Playwright browsers
         if: steps.cache-playwright.outputs.cache-hit != 'true'
@@ -66,17 +50,5 @@ jobs:
       - name: E2E tests
         run: npm run e2e
 
-      - name: Dependency audit
-        run: npm audit --audit-level=moderate
-
-      - name: Rust format
-        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
-
-      - name: Rust clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-
-      - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
-      - name: Build Tauri bundle
-        run: npm run tauri build
+      - name: Electron check
+        run: npm run check:electron

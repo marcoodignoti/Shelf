@@ -1,8 +1,8 @@
 # Data Location
 
-OpenNotion stores local app data in the Tauri Application Support directory.
+OpenNotion stores local app data in the Electron Application Support directory.
 
-## Tauri Desktop App
+## Electron Desktop App
 
 Bundle identifier:
 

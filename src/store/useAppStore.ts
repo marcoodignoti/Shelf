@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { open } from '@tauri-apps/plugin-dialog';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
+import { openDialog } from '../lib/desktop';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
 import {
@@ -208,7 +208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
   importStudioPdfAction: async (projectId = null) => {
     try {
-      const path = await open({
+      const path = await openDialog({
         multiple: false,
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });
@@ -240,7 +240,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   replaceStudioPdfAction: async (documentId) => {
     try {
-      const path = await open({
+      const path = await openDialog({
         multiple: false,
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });

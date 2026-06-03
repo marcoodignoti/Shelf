@@ -19,7 +19,6 @@ test.beforeEach(async ({ page }) => {
     const pagesKey = "opennotion-e2e-pages";
     const load = <T,>(key: string): T[] => JSON.parse(window.localStorage.getItem(key) ?? "[]");
     const save = <T,>(key: string, value: T[]) => window.localStorage.setItem(key, JSON.stringify(value));
-    let callbackCounter = 0;
 
     window.localStorage.removeItem(documentsKey);
     window.localStorage.removeItem(projectsKey);
@@ -28,19 +27,11 @@ test.beforeEach(async ({ page }) => {
     window.localStorage.removeItem("opennotion-current-studio-document-id");
     window.localStorage.removeItem("opennotion-workspace-mode");
 
-    window.__TAURI_INTERNALS__ = {
-      metadata: { currentWindow: { label: "main" } },
-      transformCallback: () => {
-        callbackCounter += 1;
-        return callbackCounter;
-      },
-      unregisterCallback: () => undefined,
-      convertFileSrc: (filePath: string) => filePath,
+    window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         if (cmd === "list_pages") return load(pagesKey).filter((item: any) => item.page_kind === "note");
         if (cmd === "list_studio_documents") return load(documentsKey);
         if (cmd === "list_studio_projects") return load(projectsKey);
-        if (cmd === "plugin:dialog|open") return "/tmp/civil-law.pdf";
         if (cmd === "import_studio_document") {
           const document = {
             id: args.documentId as string,
@@ -177,6 +168,9 @@ test.beforeEach(async ({ page }) => {
         if (cmd === "search_pages") return [];
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
+      open: async () => "/tmp/civil-law.pdf",
+      save: async () => null,
+      fileSrc: (filePath: string) => filePath,
     };
   });
 });
