@@ -4,6 +4,15 @@
   "version": "0.1.0",
   "description": "Local-first Notion-style workspace.",
   "author": "Marco Dignoti",
+  "license": "MIT",
+  "homepage": "https://github.com/marcoodignoti/OpenNotion#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcoodignoti/OpenNotion.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marcoodignoti/OpenNotion/issues"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
