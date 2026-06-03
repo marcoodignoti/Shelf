@@ -160,7 +160,7 @@ export function CommandPalette() {
 
   return (
     <div 
-      className="on-modal-overlay on-command-overlay items-start justify-center"
+      className="on-modal-overlay on-command-overlay items-center justify-center"
       onClick={closeCommandPalette}
     >
       <div 
@@ -183,7 +183,7 @@ export function CommandPalette() {
           <div className="on-command-kbd">ESC</div>
         </div>
         
-        <div className="on-scroll-fade on-scroll-fade-popover on-command-results">
+        <div className="on-command-results">
           {isSearching ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               Searching...

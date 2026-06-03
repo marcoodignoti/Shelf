@@ -933,7 +933,6 @@
   }
 
   .on-command-overlay {
-    padding-top: min(16vh, 8rem);
     background: hsl(var(--background) / 0.72);
   }
 
@@ -962,13 +961,19 @@
   }
 
   .on-command-input-row input {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 0 !important;
+    box-shadow: none !important;
     font-size: 1.05rem;
+    outline: 0 !important;
   }
 
   .on-command-input-row input:focus,
   .on-command-input-row input:focus-visible {
-    outline: none;
-    box-shadow: none;
+    border: 0 !important;
+    box-shadow: none !important;
+    outline: 0 !important;
   }
 
   .on-command-results {
@@ -1507,7 +1512,7 @@
     }
 
     .on-command-overlay {
-      padding-top: 5rem;
+      align-items: center;
     }
 
     .on-command-panel {
