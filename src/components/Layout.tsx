@@ -23,7 +23,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             : closedSidebarToggleLeft,
           top: isSidebarOpen ? sidebarGap + sidebarToggleTopInset : closedSidebarToggleTop,
         }}
-        data-tauri-drag-region
       >
         <button
           onClick={toggleSidebar}

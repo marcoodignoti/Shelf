@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { open, save } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../store/useAppStore';
 import { exportWorkspaceBackup, importWorkspaceBackup } from '../lib/backup';
+import { openDialog, saveDialog } from '../lib/desktop';
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
 import {
   Download,
@@ -37,7 +37,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
 
   const handleExport = async () => {
     try {
-      const path = await save({
+      const path = await saveDialog({
         defaultPath: `opennotion-backup-${new Date().toISOString().slice(0, 10)}.json`,
         filters: [{ name: 'OpenNotion Backup', extensions: ['json'] }],
       });
@@ -55,7 +55,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
   };
 
   const handleImport = async () => {
-    const path = await open({
+    const path = await openDialog({
       multiple: false,
       filters: [{ name: 'OpenNotion Backup', extensions: ['json'] }],
     });

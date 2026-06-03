@@ -75,18 +75,7 @@ test.beforeEach(async ({ page }) => {
       window.localStorage.setItem(resetKey, "done");
     }
 
-    let callbackCounter = 0;
-
-    window.__TAURI_INTERNALS__ = {
-      metadata: {
-        currentWindow: { label: "main" },
-      },
-      transformCallback: () => {
-        callbackCounter += 1;
-        return callbackCounter;
-      },
-      unregisterCallback: () => undefined,
-      convertFileSrc: (filePath: string) => filePath,
+    window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         const pages = loadPages();
 
@@ -151,6 +140,9 @@ test.beforeEach(async ({ page }) => {
 
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
+      open: async () => null,
+      save: async () => null,
+      fileSrc: (filePath: string) => filePath,
     };
   });
 });

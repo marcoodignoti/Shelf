@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Measure peak resident set size (RSS) and startup wall time of the built
-# release binary. macOS only (uses /usr/bin/time -l). Run after a release
-# build: `npm run tauri build`. The binary is launched, held for a few
+# Electron binary. macOS only (uses /usr/bin/time -l). Run after packaging:
+# `npm run electron:package:dir`. The binary is launched, held for a few
 # seconds so it reaches steady state, then terminated.
 set -euo pipefail
 
 RSS_BUDGET_MB="${RSS_BUDGET_MB:-400}"   # documented budget; tune after baseline
 HOLD_SECONDS="${HOLD_SECONDS:-8}"
 
-BIN="$(find src-tauri/target/release/bundle/macos -maxdepth 3 -name 'OpenNotion' -type f 2>/dev/null | head -1)"
+BIN="dist-electron/mac-arm64/OpenNotion.app/Contents/MacOS/OpenNotion"
 if [ -z "${BIN}" ]; then
-  BIN="$(find src-tauri/target/release -maxdepth 1 -name 'opennotion' -type f 2>/dev/null | head -1)"
+  echo "ERROR: no Electron binary configured." >&2
+  exit 1
 fi
-if [ -z "${BIN}" ]; then
-  echo "ERROR: no release binary found. Run 'npm run tauri build' first." >&2
+if [ ! -x "${BIN}" ]; then
+  echo "ERROR: no packaged Electron binary found. Run 'npm run electron:package:dir' first." >&2
   exit 1
 fi
 echo "Profiling: ${BIN}"

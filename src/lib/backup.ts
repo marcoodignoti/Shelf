@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktop";
 import { Page } from "./db";
 
 export const BACKUP_MAX_BYTES = 50 * 1024 * 1024;

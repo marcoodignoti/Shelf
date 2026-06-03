@@ -10,13 +10,12 @@ before tagging a release, on a quiet machine, on both macOS and Windows.
 ## Run
 
 ```sh
-npm run perf            # automatable subset: backend + frontend
-npm run perf:backend    # Rust file-backed-pool timing + disk-size tests
+npm run perf            # automatable subset: frontend
 npm run perf:frontend   # Playwright startup + JS-heap leak guard
 npm run perf:native     # macOS only: built-binary peak RSS + startup wall time
 ```
 
-`npm run perf:native` requires a release build first: `npm run tauri build`.
+`npm run perf:native` requires a packaged Electron app first: `npm run electron:package:dir`.
 
 ## Budgets
 
@@ -26,9 +25,6 @@ Record the machine in the baseline table below.
 
 | Dimension          | Check                                | Budget          | Source constant                                  |
 |--------------------|--------------------------------------|-----------------|--------------------------------------------------|
-| Disk (cold insert) | 5,000 empty pages, main .db after checkpoint | <= 1.2 MB | `perf_tests.rs` `DISK_BUDGET_BYTES`              |
-| Throughput         | insert 5,000 pages                   | <= 2,200 ms     | `perf_tests.rs` `INSERT_BUDGET_MS`               |
-| Long-session DB    | 2,000 content-update cycles + VACUUM | <= 640 KB       | `perf_tests.rs` `CHURN_DISK_BUDGET_BYTES`        |
 | Startup            | dev server "/" to first render       | <= 700 ms       | `perf.perf.e2e.ts` `STARTUP_BUDGET_MS`           |
 | Frontend leak      | heap delta over 200 edit cycles      | <= 7 MB         | `perf.perf.e2e.ts` `HEAP_DELTA_BUDGET_BYTES`     |
 | Native RSS         | built binary peak resident set       | document only   | `profile-macos.sh` `RSS_BUDGET_MB`               |
@@ -49,10 +45,9 @@ Record the machine in the baseline table below.
 
 ## Manual runbook (native shell + PDF import + soak)
 
-PDF import and the full native shell cannot be exercised by the browser
-mock or the in-process Rust tests — run these by hand in the built app:
+PDF import and long-session soak should be checked by hand in the built app:
 
-1. **PDF import** — `npm run tauri build`, open the app, Studio mode, import a
+1. **PDF import** — `npm run electron:package:dir`, open the app, Studio mode, import a
    ~50 MB PDF. Time from file-picker confirmation to first page rendered.
    Watch peak RSS in Activity Monitor (macOS) / Task Manager (Windows).
    Record in Baselines. Repeat with a 5-page PDF as a fast-path reference.

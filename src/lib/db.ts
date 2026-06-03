@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { fileSrc, invoke } from './desktop';
 
 export type PageKind = 'note' | 'studio_note';
 
@@ -173,5 +173,5 @@ export function coverImageSrc(coverUrl: string): string {
     return coverUrl;
   }
 
-  return convertFileSrc(coverUrl);
+  return fileSrc(coverUrl);
 }

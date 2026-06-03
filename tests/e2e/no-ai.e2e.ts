@@ -3,16 +3,8 @@ import { expect, test } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const invokedCommands: string[] = [];
-    let callbackCounter = 0;
 
-    window.__TAURI_INTERNALS__ = {
-      metadata: { currentWindow: { label: "main" } },
-      transformCallback: () => {
-        callbackCounter += 1;
-        return callbackCounter;
-      },
-      unregisterCallback: () => undefined,
-      convertFileSrc: (filePath: string) => filePath,
+    window.openNotion = {
       invoke: async (cmd: string) => {
         invokedCommands.push(cmd);
 
@@ -22,6 +14,9 @@ test.beforeEach(async ({ page }) => {
 
         throw new Error(`Unhandled no-ai e2e command: ${cmd}`);
       },
+      open: async () => null,
+      save: async () => null,
+      fileSrc: (filePath: string) => filePath,
     };
 
     window.localStorage.removeItem("opennotion-current-page-id");

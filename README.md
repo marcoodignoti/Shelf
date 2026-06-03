@@ -2,7 +2,7 @@
 
 OpenNotion is a local-first desktop workspace for notes, study, and research. It keeps your pages, PDFs, images, and working context on your machine, with a Notion-inspired editor and a focused Studio flow for reading sources while writing notes.
 
-OpenNotion is built with Tauri, React, TypeScript, Tailwind CSS, BlockNote, Rust, and SQLite.
+OpenNotion is built with Electron, React, TypeScript, Tailwind CSS, BlockNote, and SQLite.
 
 ![OpenNotion home dashboard](docs/assets/opennotion-home.png)
 
@@ -13,7 +13,7 @@ OpenNotion is built with Tauri, React, TypeScript, Tailwind CSS, BlockNote, Rust
 - Study mode: import a PDF, keep the document on one side, and write the linked note on the other.
 - Local images: add images from file picker or paste them into the editor.
 - Search and recents: jump through pages without losing writing context.
-- Cross-platform path: macOS DMG and Windows builds come from the same Tauri app.
+- Desktop path: Electron hosts the same local-first app and backend surface.
 
 ## Study Mode
 
@@ -62,8 +62,8 @@ Open search from the sidebar to jump through recent pages and find workspace con
 ## Architecture
 
 - Frontend: React, TypeScript, Vite, Tailwind CSS, BlockNote.
-- Desktop shell: Tauri 2.
-- Storage: SQLite through Rust `sqlx`.
+- Desktop shell: Electron.
+- Storage: SQLite through Electron's Node runtime.
 - Data path: `~/Library/Application Support/org.opennotion.desktop/opennotion.db`.
 
 ## Development
@@ -74,16 +74,22 @@ Install dependencies:
 npm install
 ```
 
+Run the Electron dev app:
+
+```sh
+npm run electron:dev
+```
+
 Run checks:
 
 ```sh
-npm run check:tauri
+npm run check:electron
 ```
 
 Build the desktop app:
 
 ```sh
-npm run tauri build
+npm run electron:package:dir
 ```
 
 Run all checks:
@@ -100,7 +106,7 @@ Generated artifacts are ignored:
 
 - `node_modules`
 - `dist`
-- `src-tauri/target`
+- `dist-electron`
 - local SQLite databases
 
 Keep source, config, lockfiles, screenshots, docs, and tests under version control.
