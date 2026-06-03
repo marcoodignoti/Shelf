@@ -913,7 +913,7 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="on-glass-sidebar relative m-3 flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="on-glass-sidebar relative m-2 flex h-[calc(100vh-1rem)] flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
       style={{ width: sidebarWidth }}
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}

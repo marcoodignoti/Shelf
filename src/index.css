@@ -104,11 +104,30 @@
 
   .on-glass-sidebar {
     border: 1px solid hsl(var(--border) / 0.62);
-    border-radius: 1.65rem;
+    border-radius: 0.75rem;
     background: hsl(var(--secondary) / 0.82);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: 0 16px 42px hsl(222 28% 12% / 0.08);
+    transform: translateX(0);
+    opacity: 1;
+    transition: opacity 180ms ease-out, transform 220ms ease-out;
+  }
+
+  .on-sidebar-shell {
+    flex: 0 0 auto;
+    overflow: hidden;
+    transition: width 220ms ease-out;
+    will-change: width;
+  }
+
+  .on-sidebar-shell-closed {
+    pointer-events: none;
+  }
+
+  .on-sidebar-shell-closed .on-glass-sidebar {
+    transform: translateX(-0.75rem);
+    opacity: 0;
   }
 
   .dark .on-glass-sidebar {
@@ -162,7 +181,7 @@
   }
 
   .on-sidebar-header-spacer {
-    height: 4rem;
+    height: 2rem;
   }
 
   .on-sidebar-mode-row {
