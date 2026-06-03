@@ -29,11 +29,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("does not expose AI features or call AI backend commands", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("button", { name: /ask ai/i })).toHaveCount(0);
 
-  await page.keyboard.press("Meta+K");
+  await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByPlaceholder("Search pages...")).toBeFocused();
   await expect(page.locator(".on-command-panel").getByText(/AI/i)).toHaveCount(0);
   await page.keyboard.press("Escape");

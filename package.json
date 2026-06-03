@@ -11,7 +11,7 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "e2e:install": "playwright install chromium",
-    "e2e": "playwright test",
+    "e2e": "npm run build && playwright test",
     "perf": "npm run perf:frontend",
     "perf:frontend": "playwright test --config playwright.perf.config.ts --reporter=list",
     "perf:native": "bash perf/profile-macos.sh",
@@ -27,10 +27,14 @@
     "electron:smoke:stability": "node electron/stability-smoke.cjs",
     "electron:clean": "node -e \"require('node:fs').rmSync('dist-electron', { recursive: true, force: true })\"",
     "electron:package:dir": "npm run build && node scripts/electron-package-dir.cjs",
-    "electron:build": "npm run electron:package:dir",
-    "release:package:electron": "npm run electron:package:dir",
-    "release:package:desktop": "npm run electron:package:dir",
-    "release:package:macos": "npm run electron:package:dir"
+    "electron:package:dmg": "npm run electron:package:dir && node scripts/electron-package-dmg.cjs",
+    "electron:package:win": "npm run build && node scripts/electron-package-win.cjs",
+    "electron:build": "npm run electron:package:dmg",
+    "release:package:electron": "npm run electron:package:dmg",
+    "release:package:desktop": "npm run electron:package:dmg",
+    "release:package:macos": "npm run electron:package:dmg",
+    "release:package:windows": "npm run electron:package:win",
+    "release:verify:macos": "node scripts/electron-verify-macos.cjs"
   },
   "dependencies": {
     "@blocknote/core": "0.51.0",

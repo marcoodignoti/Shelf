@@ -20,6 +20,7 @@ interface OpenNotionDesktopBridge {
   open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
   save(options?: SaveDialogOptions): Promise<string | null>;
   fileSrc(filePath: string): string;
+  studioPdfSrc?(documentId: string): string;
 }
 
 declare global {
@@ -49,4 +50,9 @@ export async function saveDialog(options?: SaveDialogOptions): Promise<string | 
 
 export function fileSrc(filePath: string): string {
   return bridge().fileSrc(filePath);
+}
+
+export function studioDocumentPdfSrc(documentId: string, filePath: string): string {
+  const desktop = bridge();
+  return desktop.studioPdfSrc ? desktop.studioPdfSrc(documentId) : desktop.fileSrc(filePath);
 }

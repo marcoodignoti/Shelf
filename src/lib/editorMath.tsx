@@ -351,11 +351,16 @@ export function formulaInputFromBlockContent(content: unknown): string {
 
 export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
   const normalizedText = text.replace(/\r\n?/g, "\n");
-  if (!normalizedText.split("\n").some((line) => {
+  const lines = normalizedText.split("\n");
+  const hasMathFence = lines.some((line) => {
     const trimmed = line.trim();
     return isOpenMathFence(trimmed) || trimmed.startsWith("$$") || trimmed.startsWith("\\[");
-  })) {
-    return null;
+  });
+
+  if (!hasMathFence) {
+    if (!isStructuredPlainTextPaste(lines)) return null;
+    const blocks = blocksFromMarkdownLikeLines(lines);
+    return blocks.length > 1 ? blocks : null;
   }
 
   const blocks: PartialBlock[] = [];
@@ -382,7 +387,7 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
     return true;
   };
 
-  for (const line of normalizedText.split("\n")) {
+  for (const line of lines) {
     const trimmed = line.trim();
 
     if (formulaLines) {
@@ -423,6 +428,34 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
 
   flushParagraph();
   return blocks.length > 0 ? blocks : null;
+}
+
+function isStructuredPlainTextPaste(lines: string[]): boolean {
+  const nonEmptyLines = lines.map((line) => line.trim()).filter(Boolean);
+  if (nonEmptyLines.length < 2) return false;
+  if (nonEmptyLines.some((line) => isDocumentSectionHeading(line) || isArrowListLine(line) || isMarkdownLikeLine(line))) {
+    return true;
+  }
+  return nonEmptyLines.length >= 4;
+}
+
+function isMarkdownLikeLine(line: string): boolean {
+  return /^(#{1,6})\s+/.test(line) ||
+    /^[-*]\s+/.test(line) ||
+    /^[-*]\s+\[[ xX]\]\s+/.test(line) ||
+    /^\d+[.)]\s+/.test(line) ||
+    /^>\s+/.test(line) ||
+    /^```/.test(line);
+}
+
+function isDocumentSectionHeading(line: string): boolean {
+  return /^(Pagina|Page)\s+\d+\s+[—-]\s+\S/.test(line) || /^Sintesi finale\b/i.test(line);
+}
+
+function isArrowListLine(line: string): boolean {
+  const arrowIndex = line.indexOf("→");
+  if (arrowIndex <= 0) return false;
+  return line.slice(0, arrowIndex).trim().length <= 48 && line.slice(arrowIndex + 1).trim().length > 0;
 }
 
 export function normalizeMathInlineContent(content: InlineContent[]): {
@@ -665,6 +698,23 @@ function blocksFromMarkdownLikeLines(lines: string[]): PartialBlock[] {
     }
 
     if (!trimmed) continue;
+
+    if (isDocumentSectionHeading(trimmed)) {
+      blocks.push({
+        type: "heading",
+        props: { level: 2 },
+        content: contentFromMarkdownLikeLine(trimmed),
+      } as unknown as PartialBlock);
+      continue;
+    }
+
+    if (isArrowListLine(trimmed)) {
+      blocks.push({
+        type: "bulletListItem",
+        content: contentFromMarkdownLikeLine(trimmed),
+      } as unknown as PartialBlock);
+      continue;
+    }
 
     const codeFenceMatch = trimmed.match(/^```([A-Za-z0-9_-]+)?$/);
     if (codeFenceMatch) {

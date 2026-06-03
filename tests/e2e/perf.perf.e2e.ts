@@ -4,7 +4,7 @@ import { expect, test, type CDPSession, type Page } from "@playwright/test";
 // (measured * ~1.5). Record values in perf/README.md.
 //
 // STARTUP_BUDGET_MS is a coarse Node-side Date.now() measure wrapping
-// page.goto("/") + waitFor(CTA visible). It includes Playwright IPC overhead,
+// page.goto("/", { waitUntil: "domcontentloaded" }) + waitFor(CTA visible). It includes Playwright IPC overhead,
 // navigation latency, and poll interval — it is NOT a pure browser
 // navigationStart→DCL timing. Used as a manual pre-release gate only (not CI).
 const STARTUP_BUDGET_MS = 700; // baseline ~428 ms on ref machine; ×1.5 headroom for noise
@@ -107,7 +107,7 @@ test("startup to first interactive render is within budget", async ({
 }) => {
   await installDesktopMock(page);
   const start = Date.now();
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByText("Create first page").waitFor({ state: "visible" });
   const elapsed = Date.now() - start;
   console.log(`PERF startup: ${elapsed} ms`);
@@ -119,7 +119,7 @@ test("editing churn does not leak JS heap", async ({ page }) => {
   const client = await page.context().newCDPSession(page);
   await client.send("Performance.enable");
 
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByText("Create first page").click();
   const titleInput = page.locator("textarea[placeholder='Untitled']");
   await expect(titleInput).toBeVisible();

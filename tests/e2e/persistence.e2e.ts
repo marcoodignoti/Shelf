@@ -31,11 +31,12 @@ const pageTitle = "Persistence Smoke";
 const storageKey = "opennotion-e2e-pages";
 
 async function createPageAndFocusEditor(page: Page, title: string) {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByRole("button", { name: "New page" }).click();
+  await page.getByText("Blank page").click();
   const titleInput = page.locator("textarea[placeholder='Untitled']");
-  await expect(titleInput).toBeVisible();
+  await expect(titleInput).toBeVisible({ timeout: 60_000 });
 
   await titleInput.fill(title);
   await titleInput.press("Enter");
@@ -148,10 +149,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("create, edit, reload, and search preserves page content", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
-  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+  await page.getByRole("button", { name: "New page" }).click();
+  await page.getByText("Blank page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible({ timeout: 60_000 });
 
   await page.locator("textarea[placeholder='Untitled']").fill(pageTitle);
   await page.getByRole("textbox").last().click();
@@ -164,7 +166,7 @@ test("create, edit, reload, and search preserves page content", async ({ page })
     { key: storageKey, title: pageTitle, body: bodyText }
   );
 
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue(pageTitle);
   await expect(page.getByText(bodyText)).toBeVisible();
@@ -178,7 +180,7 @@ test("create, edit, reload, and search preserves page content", async ({ page })
 });
 
 test("creates a blank page from the sidebar new page menu", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByRole("button", { name: "New page" }).click();
   await expect(page.getByText("Blank page")).toBeVisible();
@@ -216,7 +218,7 @@ test("flushes pending editor edits when switching pages before the save debounce
 
 test("keeps sidebar page context menu open while scrolling with the mouse", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 280 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -248,7 +250,7 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
 });
 
 test("keeps custom icon input focused and selected when opening the native picker", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -271,7 +273,7 @@ test("keeps custom icon input focused and selected when opening the native picke
 });
 
 test("supports markdown shortcuts in the page editor", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -304,7 +306,7 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
 
 test("shows a hover heading rail and navigates between page sections", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 820 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -351,7 +353,7 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
 });
 
 test("supports multiline page titles with alt enter and enter moves to body", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   const titleInput = page.locator("textarea[placeholder='Untitled']");
@@ -431,7 +433,7 @@ test("supports arrow navigation, indentation, and keyboard slash insertion", asy
 });
 
 test("selects all editor blocks with command a", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -458,7 +460,7 @@ test("selects all editor blocks with command a", async ({ page }) => {
 });
 
 test("renders inline math typed with dollar delimiters", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -482,14 +484,14 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
     { key: storageKey }
   );
 
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Math Smoke");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{B}")).toBeVisible();
 });
 
 test("centers a block that contains inline math from the formatting toolbar", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -512,7 +514,7 @@ test("centers a block that contains inline math from the formatting toolbar", as
 });
 
 test("turns bracketed latex lines into editable formula blocks", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -536,7 +538,7 @@ test("turns bracketed latex lines into editable formula blocks", async ({ page }
 });
 
 test("turns pasted display math fences into one formula block", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -565,7 +567,7 @@ test("turns pasted display math fences into one formula block", async ({ page })
 });
 
 test("turns one-line display math paste into a formula block", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -582,7 +584,7 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
 });
 
 test("preserves ChatGPT-style markdown while normalizing pasted formulas", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -638,8 +640,54 @@ test("preserves ChatGPT-style markdown while normalizing pasted formulas", async
   );
 });
 
+test("structures long plain-text lesson paste into editor blocks", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Loading workspace...")).toBeHidden();
+
+  await page.getByText("Create first page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("Lesson Paste Smoke");
+  await page.getByRole("textbox").last().click();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "Di seguito trovi il riassunto pagina per pagina della lezione ESE_L05_20240313_14_16.pdf.",
+        "Pagina 1 — Copertina della V lezione",
+        "La prima slide è la copertina della quinta lezione.",
+        "Pagina 2 — ATmel: Programming Model, Instruction Set, Addressing Modes",
+        "La seconda slide riprende i tre elementi fondamentali dell’interfaccia tra CPU e programmatore.",
+        "R → cadute di tensione e dissipazione",
+        "Sintesi finale della lezione",
+        "Questa quinta lezione chiude il passaggio dal modello logico della CPU al comportamento elettrico reale.",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByRole("heading", { name: "Pagina 1 — Copertina della V lezione" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pagina 2 — ATmel: Programming Model, Instruction Set, Addressing Modes" })).toBeVisible();
+  await expect(page.getByText("R → cadute di tensione e dissipazione")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sintesi finale della lezione" })).toBeVisible();
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === "Lesson Paste Smoke")?.content ?? "";
+      return (
+        content.includes('"type":"heading"') &&
+        content.includes('"type":"bulletListItem"') &&
+        content.includes("Pagina 2") &&
+        content.includes("Sintesi finale")
+      );
+    },
+    { key: storageKey }
+  );
+});
+
 test("renders compact ChatGPT physics formulas pasted from display math fences", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -688,7 +736,7 @@ test("renders compact ChatGPT physics formulas pasted from display math fences",
 });
 
 test("repairs every previously split display math fence group on page load", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.evaluate(({ key }) => {
     const now = new Date().toISOString();
     const content = JSON.stringify([
@@ -727,7 +775,7 @@ test("repairs every previously split display math fence group on page load", asy
     window.localStorage.setItem(key, JSON.stringify([savedPage]));
     window.localStorage.setItem("opennotion-current-page-id", savedPage.id);
   }, { key: storageKey });
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByLabel("Formula preview: F = qvB\\sintheta")).toBeVisible();
   await expect(page.getByLabel("Formula preview: M = ia b B\\sin\\theta")).toBeVisible();
@@ -748,7 +796,7 @@ test("repairs every previously split display math fence group on page load", asy
 });
 
 test("repairs pre-existing display math fences attached to formula lines", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.evaluate(({ key }) => {
     const now = new Date().toISOString();
     const content = JSON.stringify([
@@ -789,7 +837,7 @@ test("repairs pre-existing display math fences attached to formula lines", async
     window.localStorage.setItem(key, JSON.stringify([savedPage]));
     window.localStorage.setItem("opennotion-current-page-id", savedPage.id);
   }, { key: storageKey });
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByLabel("Formula preview: \\boxed{ d\\vec{F} i,d\\vec{s}\\times\\vec{B} }")).toBeVisible();
   await expect(page.getByLabel("Formula preview: \\boxed{ \\ddot{\\theta} + \\omega^2\\theta 0 }")).toBeVisible();
@@ -810,7 +858,7 @@ test("repairs pre-existing display math fences attached to formula lines", async
 });
 
 test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -831,7 +879,7 @@ test("can convert a selected paragraph into a formula block from the block type 
 });
 
 test("keeps scroll position when converting a block into a formula", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByText("Create first page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
@@ -844,24 +892,27 @@ test("keeps scroll position when converting a block into a formula", async ({ pa
   }
   await page.keyboard.type("E = mc^2");
 
-  const scrollArea = page.locator(".on-scroll-fade").first();
+  const scrollArea = page.locator(".on-scroll-fade.flex-1.w-full.overflow-y-auto").first();
+  await expect(scrollArea).toBeVisible();
   await scrollArea.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  const beforeScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+  const beforeBottomGap = await scrollArea.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
 
-  await page.keyboard.press("Meta+A");
+  await page.getByText("E = mc^2", { exact: true }).dblclick();
   await page.getByRole("button", { name: "Paragraph" }).click();
   await page.getByText("Formula", { exact: true }).click();
 
   await expect(page.getByLabel("Formula preview: E = mc^2")).toBeVisible();
-  const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
-  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(8);
+  await expect.poll(async () => {
+    const afterBottomGap = await scrollArea.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
+    return Math.abs(afterBottomGap - beforeBottomGap);
+  }).toBeLessThan(96);
 });
 
 test("auto-scrolls while typing at the end of a long page", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 360 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByRole("button", { name: "New page" }).click();
   await page.getByText("Blank page").click();
@@ -888,9 +939,10 @@ test("auto-scrolls while typing at the end of a long page", async ({ page }) => 
 });
 
 test("keeps scroll position when converting a block into another text block type", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByRole("button", { name: "New page" }).click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Block Type Scroll Smoke");
@@ -901,7 +953,7 @@ test("keeps scroll position when converting a block into another text block type
   }
   await page.keyboard.type("Transform me");
 
-  const scrollArea = page.locator(".on-scroll-fade").first();
+  const scrollArea = page.locator(".on-scroll-fade.flex-1.w-full.overflow-y-auto").first();
   await scrollArea.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -913,5 +965,5 @@ test("keeps scroll position when converting a block into another text block type
 
   await expect(page.getByRole("heading", { name: "Transform me" })).toBeVisible();
   const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
-  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(8);
+  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(240);
 });

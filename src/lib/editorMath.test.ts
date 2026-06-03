@@ -218,6 +218,32 @@ describe("blocksFromPastedMathText", () => {
     ]);
   });
 
+  it("structures long plain-text lesson summaries into headings and paragraphs", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "Di seguito trovi il riassunto pagina per pagina della lezione ESE_L05_20240313_14_16.pdf.",
+          "Pagina 1 — Copertina della V lezione",
+          "La prima slide è la copertina della quinta lezione.",
+          "Pagina 2 — ATmel: Programming Model, Instruction Set, Addressing Modes",
+          "La seconda slide riprende i tre elementi fondamentali dell’interfaccia tra CPU e programmatore.",
+          "R → cadute di tensione e dissipazione",
+          "Sintesi finale della lezione",
+          "Questa quinta lezione chiude il passaggio dal modello logico della CPU al comportamento elettrico reale.",
+        ].join("\n")
+      )
+    ).toEqual([
+      { type: "paragraph", content: "Di seguito trovi il riassunto pagina per pagina della lezione ESE_L05_20240313_14_16.pdf." },
+      { type: "heading", props: { level: 2 }, content: "Pagina 1 — Copertina della V lezione" },
+      { type: "paragraph", content: "La prima slide è la copertina della quinta lezione." },
+      { type: "heading", props: { level: 2 }, content: "Pagina 2 — ATmel: Programming Model, Instruction Set, Addressing Modes" },
+      { type: "paragraph", content: "La seconda slide riprende i tre elementi fondamentali dell’interfaccia tra CPU e programmatore." },
+      { type: "bulletListItem", content: "R → cadute di tensione e dissipazione" },
+      { type: "heading", props: { level: 2 }, content: "Sintesi finale della lezione" },
+      { type: "paragraph", content: "Questa quinta lezione chiude il passaggio dal modello logico della CPU al comportamento elettrico reale." },
+    ]);
+  });
+
   it("keeps compact product symbols inside display math fences", () => {
     expect(
       blocksFromPastedMathText(

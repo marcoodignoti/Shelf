@@ -96,7 +96,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("reorders subpages from the page subpage list", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Parent");
   await expect(page.getByText("Subpages")).toBeVisible();

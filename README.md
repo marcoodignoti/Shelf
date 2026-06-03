@@ -89,8 +89,12 @@ npm run check:electron
 Build the desktop app:
 
 ```sh
-npm run electron:package:dir
+npm run release:package:macos
+npm run release:verify:macos
 ```
+
+Windows release zips are built by the GitHub Actions `Windows package` job as
+`OpenNotion_0.1.0_win-x64.zip`.
 
 Run all checks:
 

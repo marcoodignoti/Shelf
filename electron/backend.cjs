@@ -755,14 +755,18 @@ class OpenNotionBackend {
     return path.join(this.appConfigDir, "studio-documents");
   }
 
+  resolveStudioDocumentPdfPath(id) {
+    return validateManagedStudioDocumentPath(this.getStudioDocumentStoredFilePath(id), this.studioDocumentsRoot());
+  }
+
   async openStudioDocumentFile({ id }) {
-    const storedPath = validateManagedStudioDocumentPath(this.getStudioDocumentStoredFilePath(id), this.studioDocumentsRoot());
+    const storedPath = this.resolveStudioDocumentPdfPath(id);
     const error = await this.openPath(storedPath);
     if (error) throw new Error(error);
   }
 
   revealStudioDocumentFile({ id }) {
-    const storedPath = validateManagedStudioDocumentPath(this.getStudioDocumentStoredFilePath(id), this.studioDocumentsRoot());
+    const storedPath = this.resolveStudioDocumentPdfPath(id);
     this.revealPath(storedPath);
   }
 
