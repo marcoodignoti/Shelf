@@ -853,6 +853,34 @@ test("keeps scroll position when converting a block into a formula", async ({ pa
   expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(8);
 });
 
+test("auto-scrolls while typing at the end of a long page", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 360 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "New page" }).click();
+  await page.getByText("Blank page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
+
+  await page.locator("textarea[placeholder='Untitled']").fill("Auto Scroll Smoke");
+  await page.locator("textarea[placeholder='Untitled']").press("Enter");
+
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toBeFocused();
+
+  const scrollArea = page.locator(".on-scroll-fade.flex-1.w-full.overflow-y-auto").first();
+  const initialScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+
+  for (let index = 0; index < 70; index += 1) {
+    await page.keyboard.type(`Auto scroll line ${index}`);
+    await page.keyboard.press("Enter");
+  }
+  await page.keyboard.type("Auto scroll final line");
+
+  await expect(page.getByText("Auto scroll final line")).toBeVisible();
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(initialScrollTop);
+});
+
 test("keeps scroll position when converting a block into another text block type", async ({ page }) => {
   await page.goto("/");
 

@@ -218,6 +218,52 @@ function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
   };
 }
 
+function selectionRectInsideEditor(editor: BlockNoteEditor<any, any, any>): DOMRect | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+
+  const range = selection.getRangeAt(0);
+  if (!editor.domElement?.contains(range.commonAncestorContainer)) return null;
+
+  const rect = range.getBoundingClientRect();
+  if (rect.height > 0 || rect.width > 0) return rect;
+
+  const block = editor.getTextCursorPosition().block;
+  const blockElement = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(block.id));
+  return blockElement?.getBoundingClientRect() ?? null;
+}
+
+function keepEditorCaretInView(editor: BlockNoteEditor<any, any, any>, scrollContainer: HTMLElement | null) {
+  if (!scrollContainer) return;
+
+  const scroll = () => {
+    const caretRect = selectionRectInsideEditor(editor);
+    if (!caretRect) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const bottomPadding = 96;
+    const topPadding = 72;
+    const caretBottom = caretRect.bottom;
+    const caretTop = caretRect.top;
+    const visibleBottom = containerRect.bottom - bottomPadding;
+    const visibleTop = containerRect.top + topPadding;
+
+    if (caretBottom > visibleBottom) {
+      scrollContainer.scrollTop += caretBottom - visibleBottom;
+      return;
+    }
+
+    if (caretTop < visibleTop) {
+      scrollContainer.scrollTop -= visibleTop - caretTop;
+    }
+  };
+
+  requestAnimationFrame(() => {
+    scroll();
+    requestAnimationFrame(scroll);
+  });
+}
+
 function isEmptyEditorBlock(block: Block<any, any, any>): boolean {
   if (block.children.length > 0) return false;
   const content = block.content as unknown;
@@ -1052,6 +1098,7 @@ export function Editor({
 
     const content = JSON.stringify(editor.document as Block[]);
     queueSave({ content, search_text: pageContentToSearchText(content) });
+    keepEditorCaretInView(editor, scrollContainerRef.current);
   };
 
   useEffect(() => {
