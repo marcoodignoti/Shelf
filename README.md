@@ -108,11 +108,12 @@ another computer starts with that computer's own empty app data directory.
 
 ## Installation
 
-OpenNotion is currently in release-candidate stage.
+OpenNotion `v0.1.0` is the first public desktop release.
 
 ### macOS
 
-Download the unsigned DMG from a release artifact or build it locally:
+Download `OpenNotion_0.1.0_arm64.dmg` from the latest GitHub release or build it
+locally:
 
 ```sh
 npm ci
@@ -136,12 +137,10 @@ xattr -dr com.apple.quarantine /Applications/OpenNotion.app
 
 ### Windows
 
-Windows builds are produced by GitHub Actions.
+Download `OpenNotion_0.1.0_win-x64.zip` from the latest GitHub release.
 
-1. Open the latest CI run.
-2. Download artifact `OpenNotion_0.1.0_win-x64`.
-3. Extract the zip.
-4. Run `OpenNotion.exe`.
+1. Extract the zip.
+2. Run `OpenNotion.exe`.
 
 This is a portable unsigned build, not an installer. Windows SmartScreen may
 show an untrusted app warning.
@@ -219,8 +218,8 @@ Key implementation areas:
 
 Current public-readiness level:
 
-- macOS private RC: supported as unsigned DMG
-- Windows private RC: supported as unsigned portable zip from GitHub Actions
+- macOS public release: supported as unsigned DMG
+- Windows public release: supported as unsigned portable zip
 - Public notarized macOS release: not yet supported
 - Signed Windows installer: not yet supported
 - Hosted sync/account service: intentionally not present
