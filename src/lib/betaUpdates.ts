@@ -13,6 +13,7 @@ export const DEFAULT_UPDATE_MANIFEST_URLS = [
 export type BetaUpdateDownload = {
   url: string;
   label: string;
+  sha256: string;
   size?: string;
 };
 
@@ -35,6 +36,9 @@ export type BetaUpdateState =
   | { status: "error"; message: string };
 
 const MAX_CHANGE_ITEMS = 5;
+const DOWNLOAD_URL_PATTERN =
+  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip)$/i;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 function manifestUrls(): string[] {
   const configuredUrl = import.meta.env.VITE_OPENNOTION_UPDATE_MANIFEST_URL;
@@ -84,12 +88,14 @@ function isString(value: unknown): value is string {
 function parseDownload(value: unknown): BetaUpdateDownload | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
-  if (!isString(record.url) || !record.url.startsWith("https://")) return undefined;
+  if (!isString(record.url) || !DOWNLOAD_URL_PATTERN.test(record.url)) return undefined;
   if (!isString(record.label)) return undefined;
+  if (!isString(record.sha256) || !SHA256_PATTERN.test(record.sha256)) return undefined;
 
   return {
     url: record.url,
     label: record.label,
+    sha256: record.sha256.toLowerCase(),
     ...(isString(record.size) ? { size: record.size } : {}),
   };
 }

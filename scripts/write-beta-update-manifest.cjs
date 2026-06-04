@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
@@ -32,6 +33,13 @@ function fileSizeLabel(filePath) {
   return `${Math.max(1, Math.round(megabytes))} MB`;
 }
 
+function requiredFileSha256(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Missing release artifact for manifest: ${filePath}`);
+  }
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
 const version = env("OPENNOTION_UPDATE_VERSION", packageJson.version);
 const tag = env("OPENNOTION_UPDATE_TAG", `v${version}`);
 const owner = env("OPENNOTION_GITHUB_OWNER", "marcoodignoti");
@@ -39,6 +47,8 @@ const repo = env("OPENNOTION_GITHUB_REPO", "OpenNotion");
 const baseUrl = `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(tag)}`;
 const macArtifact = `OpenNotion_${version}_arm64.dmg`;
 const winArtifact = `OpenNotion_${version}_win-x64.zip`;
+const macArtifactPath = path.join(root, "dist-electron", macArtifact);
+const winArtifactPath = path.join(root, "dist-electron", winArtifact);
 const outputPath = path.resolve(root, env("OPENNOTION_UPDATE_MANIFEST_OUT", "dist-electron/beta-update.json"));
 
 const manifest = {
@@ -52,12 +62,14 @@ const manifest = {
     macosArm64: {
       url: `${baseUrl}/${macArtifact}`,
       label: "macOS Apple Silicon",
-      ...(fileSizeLabel(path.join(root, "dist-electron", macArtifact)) ? { size: fileSizeLabel(path.join(root, "dist-electron", macArtifact)) } : {}),
+      sha256: requiredFileSha256(macArtifactPath),
+      ...(fileSizeLabel(macArtifactPath) ? { size: fileSizeLabel(macArtifactPath) } : {}),
     },
     windowsX64: {
       url: `${baseUrl}/${winArtifact}`,
       label: "Windows x64 portable zip",
-      ...(fileSizeLabel(path.join(root, "dist-electron", winArtifact)) ? { size: fileSizeLabel(path.join(root, "dist-electron", winArtifact)) } : {}),
+      sha256: requiredFileSha256(winArtifactPath),
+      ...(fileSizeLabel(winArtifactPath) ? { size: fileSizeLabel(winArtifactPath) } : {}),
     },
   },
 };

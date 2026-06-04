@@ -6,6 +6,10 @@ import {
   parseBetaUpdateManifest,
 } from "./betaUpdates";
 
+const VALID_SHA = "a".repeat(64);
+const VALID_MAC_URL = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_arm64.dmg";
+const VALID_WIN_URL = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_win-x64.zip";
+
 describe("beta update manifest", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -26,9 +30,9 @@ describe("beta update manifest", () => {
       summary: "Studio links and update flow.",
       changes: ["Studio bookmarks", "Shared search", "Inline page links", "Slash search", "Update notice", "Hidden"],
       downloads: {
-        macosArm64: { url: "https://example.com/OpenNotion.dmg", label: "macOS Apple Silicon", size: "120 MB" },
-        windowsX64: { url: "https://example.com/OpenNotion.zip", label: "Windows x64" },
-        ignored: { url: "http://example.com/bad.zip", label: "Bad" },
+        macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA, size: "120 MB" },
+        windowsX64: { url: VALID_WIN_URL, label: "Windows x64", sha256: VALID_SHA },
+        ignored: { url: "http://example.com/bad.zip", label: "Bad", sha256: VALID_SHA },
       },
     });
 
@@ -41,6 +45,24 @@ describe("beta update manifest", () => {
     ]);
     expect(manifest.downloads.macosArm64?.size).toBe("120 MB");
     expect(manifest.downloads.windowsX64?.label).toBe("Windows x64");
+    expect(manifest.downloads.windowsX64?.sha256).toBe(VALID_SHA);
+  });
+
+  it("drops downloads without trusted host or checksum", () => {
+    const manifest = parseBetaUpdateManifest({
+      version: "0.1.1",
+      channel: "beta",
+      publishedAt: "2026-06-04T00:00:00.000Z",
+      title: "OpenNotion 0.1.1",
+      summary: "Bad downloads.",
+      downloads: {
+        macosArm64: { url: "https://example.com/OpenNotion.dmg", label: "macOS Apple Silicon", sha256: VALID_SHA },
+        windowsX64: { url: VALID_WIN_URL, label: "Windows x64", sha256: "bad" },
+      },
+    });
+
+    expect(manifest.downloads.macosArm64).toBeUndefined();
+    expect(manifest.downloads.windowsX64).toBeUndefined();
   });
 
   it("rejects invalid channels", () => {
@@ -62,7 +84,7 @@ describe("beta update manifest", () => {
       title: "OpenNotion 0.1.1",
       summary: "Windows test.",
       downloads: {
-        windowsX64: { url: "https://example.com/OpenNotion.zip", label: "Windows x64" },
+        windowsX64: { url: VALID_WIN_URL, label: "Windows x64", sha256: VALID_SHA },
       },
     });
 
@@ -84,7 +106,7 @@ describe("beta update manifest", () => {
           title: "OpenNotion 99.0.0",
           summary: "Fallback test.",
           downloads: {
-            macosArm64: { url: "https://example.com/OpenNotion.dmg", label: "macOS Apple Silicon" },
+            macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA },
           },
         }),
       };
@@ -110,7 +132,7 @@ describe("beta update manifest", () => {
         title: "OpenNotion",
         summary: "Newest manifest test.",
         downloads: {
-          macosArm64: { url: "https://example.com/OpenNotion.dmg", label: "macOS Apple Silicon" },
+          macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA },
         },
       }),
     }));

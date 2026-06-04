@@ -16,6 +16,10 @@ const BACKUP_MAX_TEXT_LENGTH = 1024 * 1024;
 const BACKUP_MAX_METADATA_LENGTH = 1024 * 1024;
 const BACKUP_MAX_ICON_LENGTH = 512;
 const BACKUP_MAX_COVER_URL_LENGTH = 4096;
+const UPDATE_MANIFEST_URLS = new Set([
+  "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json",
+  "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json",
+]);
 
 const PAGE_COLUMNS =
   "id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at";
@@ -509,6 +513,9 @@ class OpenNotionBackend {
   async fetchUpdateManifest({ url }) {
     const parsed = new URL(String(url ?? ""));
     if (parsed.protocol !== "https:") throw new Error("update manifest URL must use HTTPS");
+    if (!UPDATE_MANIFEST_URLS.has(parsed.toString())) {
+      throw new Error("update manifest URL is not trusted");
+    }
 
     const response = await fetch(parsed.toString(), {
       headers: { accept: "application/json" },
