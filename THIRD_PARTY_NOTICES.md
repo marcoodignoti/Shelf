@@ -41,6 +41,7 @@ corresponding packages and review transitive dependency obligations.
 | `cross-env` | 10.1.0 | MIT |
 | `electron` | 40.10.2 | MIT |
 | `postcss` | 8.5.14 | MIT |
+| `rcedit` | 5.0.2 | MIT |
 | `tailwindcss` | 4.3.0 | MIT |
 | `typescript` | 5.8.3 | Apache-2.0 |
 | `vite` | 7.3.3 | MIT |
@@ -57,6 +58,8 @@ corresponding packages and review transitive dependency obligations.
 - Electron includes Chromium and other components with their own notices. The
   packaged Electron runtime contains upstream license files from Electron's
   distribution.
+- Windows packaging uses `rcedit` to set executable metadata and the application
+  icon.
 - The generated OpenNotion app icon and repository screenshots are project
   assets and are included for use with OpenNotion.
 
