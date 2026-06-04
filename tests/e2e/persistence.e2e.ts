@@ -90,6 +90,10 @@ async function seedPage(page: Page, title: string, content: unknown[]) {
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue(title);
 }
 
+function editorScrollContainer(page: Page) {
+  return page.locator(".on-scroll-fade").filter({ has: page.locator(".on-page-editor-blocks") }).first();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const storageKey = "opennotion-e2e-pages";
@@ -474,6 +478,93 @@ test("supports arrow navigation, indentation, and keyboard slash insertion", asy
     lastType: "codeBlock",
     lastText: "const value = 1;",
   });
+});
+
+test("keeps slash command menu compact and visible near the bottom of the viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 360 });
+  await createPageAndFocusEditor(page, "Slash Menu Viewport Smoke");
+
+  for (let index = 0; index < 34; index += 1) {
+    await page.keyboard.type(`Slash viewport line ${index}`);
+    await page.keyboard.press("Enter");
+  }
+
+  const scrollArea = editorScrollContainer(page);
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.keyboard.type("/");
+
+  const menu = page.locator(".bn-suggestion-menu");
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText("Code Block");
+
+  const menuBox = await menu.boundingBox();
+  const viewport = page.viewportSize();
+  expect(menuBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (!menuBox || !viewport) return;
+
+  expect(menuBox.width).toBeLessThanOrEqual(290);
+  expect(menuBox.height).toBeLessThanOrEqual(290);
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height + 1);
+});
+
+test("keeps page wheel locked while the slash command menu scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 920, height: 360 });
+  await createPageAndFocusEditor(page, "Slash Menu Wheel Smoke");
+
+  for (let index = 0; index < 40; index += 1) {
+    await page.keyboard.type(`Wheel lock line ${index}`);
+    await page.keyboard.press("Enter");
+  }
+
+  const scrollArea = editorScrollContainer(page);
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.getByText("Wheel lock line 0", { exact: true }).click();
+  await page.keyboard.press("Home");
+  await page.keyboard.type("/");
+
+  const menu = page.locator(".bn-suggestion-menu");
+  await expect(menu).toBeVisible();
+  await page.waitForTimeout(100);
+
+  const scrollAreaBox = await scrollArea.boundingBox();
+  expect(scrollAreaBox).not.toBeNull();
+  if (!scrollAreaBox) return;
+
+  const pageScrollBefore = await scrollArea.evaluate((element) => element.scrollTop);
+  await page.mouse.move(scrollAreaBox.x + scrollAreaBox.width - 24, scrollAreaBox.y + scrollAreaBox.height - 24);
+  await page.mouse.wheel(0, 600);
+  await page.waitForTimeout(50);
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollTop)).toBe(pageScrollBefore);
+
+  const menuScrollBefore = await menu.evaluate((element) => element.scrollTop);
+  await menu.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(async () => menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(menuScrollBefore);
+});
+
+test("navigates slash command menu with arrows and enter", async ({ page }) => {
+  await createPageAndFocusEditor(page, "Slash Menu Keyboard Smoke");
+
+  await page.keyboard.type("/heading");
+  const menu = page.locator(".bn-suggestion-menu");
+  const selectedMenuItem = page.locator('.bn-suggestion-menu-item[aria-selected="true"]');
+  await expect(menu).toContainText("Heading 2");
+  await expect(selectedMenuItem).toContainText("Heading 1");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(selectedMenuItem).toContainText("Heading 2");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Arrow selected heading");
+
+  await expect(page.getByRole("heading", { name: "Arrow selected heading", level: 2 })).toBeVisible();
 });
 
 test("selects all editor blocks with command a", async ({ page }) => {

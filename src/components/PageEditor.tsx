@@ -434,6 +434,16 @@ function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
     );
 }
 
+function eventPathIncludesSelector(event: Event, selector: string): boolean {
+  return event
+    .composedPath()
+    .some((target) => target instanceof Element && (target.matches(selector) || Boolean(target.closest(selector))));
+}
+
+function slashMenuElement(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".bn-suggestion-menu");
+}
+
 function OpenNotionBlockTypeSelect() {
   const editor = useBlockNoteEditor<any, any, any>();
   const [isOpen, setIsOpen] = useState(false);
@@ -757,6 +767,7 @@ export function Editor({
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const slashMenuLockedScrollTopRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const titleEnterModifierRef = useRef(false);
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -773,6 +784,7 @@ export function Editor({
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState("");
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
   const [draggedSubpageId, setDraggedSubpageId] = useState<string | null>(null);
   const [subpageDropTarget, setSubpageDropTarget] = useState<SubpageDropTarget | null>(null);
   const [saveState, dispatchSaveState] = useReducer(editorSaveReducer, { status: "saved" });
@@ -864,6 +876,17 @@ export function Editor({
   const slashMenuItems = useMemo(
     () => openNotionSlashMenuItems(editor),
     [editor]
+  );
+  const slashMenuFloatingOptions = useMemo(
+    () => ({
+      useFloatingOptions: {
+        strategy: "fixed" as const,
+      },
+      elementProps: {
+        className: "on-slash-menu-popover",
+      },
+    }),
+    []
   );
   const headingItems = useEditorState({
     editor,
@@ -1109,6 +1132,63 @@ export function Editor({
       window.removeEventListener("resize", queueUpdate);
     };
   }, [editor, headingItems]);
+
+  useEffect(() => {
+    const handleWheel = (event: WheelEvent) => {
+      const slashMenu = slashMenuElement();
+      if (!slashMenu || eventPathIncludesSelector(event, ".bn-suggestion-menu")) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    return () => document.removeEventListener("wheel", handleWheel, { capture: true });
+  }, []);
+
+  useEffect(() => {
+    const updateSlashMenuOpen = () => {
+      const isOpen = Boolean(slashMenuElement());
+      setIsSlashMenuOpen(isOpen);
+
+      if (!isOpen) {
+        slashMenuLockedScrollTopRef.current = null;
+        return;
+      }
+
+      if (slashMenuLockedScrollTopRef.current === null) {
+        slashMenuLockedScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? null;
+      }
+    };
+
+    updateSlashMenuOpen();
+    const observer = new MutationObserver(updateSlashMenuOpen);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return undefined;
+
+    const keepSlashMenuScrollLocked = () => {
+      if (!slashMenuElement()) return;
+
+      const lockedScrollTop = slashMenuLockedScrollTopRef.current;
+      if (lockedScrollTop === null) {
+        slashMenuLockedScrollTopRef.current = scrollContainer.scrollTop;
+        return;
+      }
+
+      if (Math.abs(scrollContainer.scrollTop - lockedScrollTop) >= 1) {
+        scrollContainer.scrollTop = lockedScrollTop;
+      }
+    };
+
+    scrollContainer.addEventListener("scroll", keepSlashMenuScrollLocked, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", keepSlashMenuScrollLocked);
+  }, []);
 
   const handleEditorChange = () => {
     if (!isNormalizingMathRef.current) {
@@ -1377,7 +1457,10 @@ export function Editor({
           onSelect={scrollToHeading}
         />
       )}
-      <div ref={scrollContainerRef} className="on-scroll-fade flex-1 w-full overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        className={`on-scroll-fade flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
+      >
         <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
         {!isStudioVariant && (
         <div className="on-page-breadcrumb-sticky mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
@@ -1819,7 +1902,12 @@ export function Editor({
             onChange={handleEditorChange}
           >
             <FormattingToolbarController formattingToolbar={OpenNotionFormattingToolbar} />
-            <SuggestionMenuController triggerCharacter="/" getItems={slashMenuItems} />
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={slashMenuItems}
+              portalElement={null}
+              floatingUIOptions={slashMenuFloatingOptions}
+            />
             <SideMenuController sideMenu={OpenNotionSideMenu} />
           </BlockNoteView>
         </div>
