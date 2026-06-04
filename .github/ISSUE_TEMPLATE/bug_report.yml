@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a reproducible OpenNotion problem.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing OpenNotion. Please include enough detail to reproduce the issue.
+  - type: input
+    id: version
+    attributes:
+      label: OpenNotion version
+      description: "Example: v0.1.0"
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: macOS 15.5 / Windows 11 24H2
+  - type: dropdown
+    id: artifact
+    attributes:
+      label: Install artifact
+      options:
+        - macOS DMG
+        - Windows portable zip
+        - Local development build
+        - Other
+  - type: textarea
+    id: current
+    attributes:
+      label: What happened?
+      description: Describe the visible problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. See...
+    validations:
+      required: true
+  - type: dropdown
+    id: repeatability
+    attributes:
+      label: Repeatability
+      options:
+        - Always
+        - Often
+        - Sometimes
+        - Once
+        - Not sure
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots or logs
+      description: Drag screenshots, short videos, or logs here if useful. Remove private data first.
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed personal notes, PDFs, or private data from attachments.

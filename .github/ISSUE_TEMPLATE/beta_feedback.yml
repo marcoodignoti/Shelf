@@ -1,0 +1,45 @@
+name: Beta feedback
+description: Share quick feedback after testing a release.
+title: "[Beta]: "
+labels: ["beta-feedback", "needs-triage"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version tested
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Both
+  - type: textarea
+    id: tested
+    attributes:
+      label: What did you test?
+      placeholder: Notes, formulas, PDF Studio, install/open, reopen app...
+    validations:
+      required: true
+  - type: textarea
+    id: good
+    attributes:
+      label: What worked well?
+  - type: textarea
+    id: problems
+    attributes:
+      label: Problems or rough edges
+      description: Include screenshots if helpful.
+  - type: dropdown
+    id: release-confidence
+    attributes:
+      label: Release confidence
+      options:
+        - Looks good
+        - Minor issues only
+        - Found blocking issue
+        - Not enough time tested

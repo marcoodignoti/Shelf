@@ -2,8 +2,7 @@
 
 ## Supported Versions
 
-OpenNotion is currently pre-1.0. Security fixes target the latest `main` branch
-and active release-candidate branches.
+Security fixes target the latest public release and the `main` branch.
 
 ## Reporting a Vulnerability
 
@@ -41,7 +40,7 @@ Default macOS app data path:
 
 ## Current Distribution Caveats
 
-- macOS private builds are unsigned/ad-hoc and not notarized.
+- macOS builds are unsigned/ad-hoc and not notarized.
 - Windows builds are unsigned portable zips.
 - OS trust warnings are expected until Developer ID signing, notarization, and
   Windows code signing are implemented.

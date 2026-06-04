@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download latest release
+    url: https://github.com/marcoodignoti/OpenNotion/releases/latest
+    about: Use the latest build before reporting a bug.
+  - name: Security report
+    url: https://github.com/marcoodignoti/OpenNotion/security
+    about: Report vulnerabilities privately when possible.

@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement or new workflow.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is hard or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: local-first
+    attributes:
+      label: Local-first fit
+      options:
+        - label: This can work without a required cloud account.

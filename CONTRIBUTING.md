@@ -13,6 +13,12 @@ npm ci
 npm run electron:dev
 ```
 
+## Opening Issues
+
+Use the bug report template for reproducible app problems, beta feedback for
+release testing notes, and feature requests for new workflows. Remove private
+notes, PDFs, screenshots, databases, and local app data before attaching files.
+
 ## Quality Gate
 
 Run the main gate before opening a pull request:
@@ -37,6 +43,7 @@ npm run release:verify:macos
 ## Pull Request Guidelines
 
 - Keep changes focused.
+- Link the issue or release task when one exists.
 - Add tests for persistence, destructive actions, editor behavior, and release
   packaging changes.
 - Do not commit generated build output such as `dist/`, `dist-electron/`, local
