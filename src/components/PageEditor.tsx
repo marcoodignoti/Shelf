@@ -200,7 +200,7 @@ function isNativeTextInput(target: EventTarget | null): boolean {
 }
 
 function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
-  const scrollContainer = editor.domElement?.closest(".on-scroll-fade");
+  const scrollContainer = editor.domElement?.closest(".on-scroll-fade.flex-1.w-full.overflow-y-auto");
   if (!(scrollContainer instanceof HTMLElement)) return () => {};
 
   const scrollTop = scrollContainer.scrollTop;
@@ -212,9 +212,15 @@ function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
     restore();
     requestAnimationFrame(() => {
       restore();
-      requestAnimationFrame(restore);
+      requestAnimationFrame(() => {
+        restore();
+        requestAnimationFrame(restore);
+      });
     });
     window.setTimeout(restore, 0);
+    window.setTimeout(restore, 50);
+    window.setTimeout(restore, 150);
+    window.setTimeout(restore, 300);
   };
 }
 

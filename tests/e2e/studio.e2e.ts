@@ -183,7 +183,7 @@ async function submitProjectDialog(page: Page, title: string, name: string) {
 }
 
 test("auto-dismisses Studio success notices", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
 
   await page.getByRole("button", { name: "New Studio project" }).click();
@@ -195,7 +195,7 @@ test("auto-dismisses Studio success notices", async ({ page }) => {
 });
 
 test("imports PDF and opens Studio split view", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -210,7 +210,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 });
 
 test("organizes Studio documents into projects with inline rename and drag drop", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
 
   await page.getByRole("button", { name: "New Studio project" }).click();
@@ -261,7 +261,7 @@ test("organizes Studio documents into projects with inline rename and drag drop"
 });
 
 test("creates nested Studio project folders and moves projects into folders", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
 
   await page.getByRole("button", { name: "New Studio project" }).click();
@@ -328,7 +328,7 @@ test("creates nested Studio project folders and moves projects into folders", as
 });
 
 test("navigates Studio folders and creates content in the current folder", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
 
   await page.getByRole("button", { name: "New Studio project" }).click();
@@ -385,7 +385,7 @@ test("navigates Studio folders and creates content in the current folder", async
 });
 
 test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -410,7 +410,7 @@ test("auto-creates a missing Studio note from the notes panel fallback", async (
     window.localStorage.setItem("opennotion-e2e-missing-studio-note", "1");
   });
 
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -465,7 +465,7 @@ test("reimports a Studio PDF when the stored copy is missing", async ({ page }) 
     }]));
   });
 
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByText("PDF preview unavailable")).toBeVisible();
   await page.getByRole("button", { name: "Reimport PDF" }).click();
@@ -490,7 +490,7 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
   await page.addInitScript(() => {
     window.localStorage.setItem("opennotion-theme", "dark");
   });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -541,7 +541,7 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
     }
   });
 
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -572,14 +572,15 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
 });
 
 test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" })).toBeVisible({ timeout: 60_000 });
 
   await page.getByTitle("Toggle sidebar").click();
 
   const toggleBox = await page.getByTitle("Toggle sidebar").boundingBox();
-  const filenameBox = await page.getByText("civil-law.pdf").boundingBox();
+  const filenameBox = await page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" }).boundingBox();
 
   expect(toggleBox).not.toBeNull();
   expect(filenameBox).not.toBeNull();
@@ -588,7 +589,7 @@ test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", 
 
 test("stacks Studio panels when resized below usable split width", async ({ page }) => {
   await page.setViewportSize({ width: 760, height: 720 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
@@ -602,7 +603,7 @@ test("stacks Studio panels when resized below usable split width", async ({ page
 
 test("keeps Studio panels side by side at ordinary desktop widths", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 

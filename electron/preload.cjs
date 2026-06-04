@@ -14,6 +14,14 @@ function filePathToUrl(filePath) {
   return normalized.startsWith("/") ? `file://${encodedPath}` : `file:///${encodedPath}`;
 }
 
+function studioPdfUrl(documentId) {
+  const result = ipcRenderer.sendSync("opennotion:studio-pdf-src", documentId);
+  if (!result || result.ok !== true || typeof result.value !== "string") {
+    throw new Error(result?.error || "failed to create Studio PDF URL");
+  }
+  return result.value;
+}
+
 contextBridge.exposeInMainWorld("openNotion", {
   invoke(command, args) {
     if (typeof command !== "string") throw new Error("command must be a string");
@@ -28,5 +36,11 @@ contextBridge.exposeInMainWorld("openNotion", {
   fileSrc(filePath) {
     if (typeof filePath !== "string") throw new Error("file path must be a string");
     return filePathToUrl(filePath);
+  },
+  studioPdfSrc(documentId) {
+    if (typeof documentId !== "string" || documentId.trim() === "") {
+      throw new Error("document id must be a string");
+    }
+    return studioPdfUrl(documentId);
   },
 });

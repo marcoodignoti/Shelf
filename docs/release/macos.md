@@ -1,8 +1,8 @@
 # macOS Electron Release Checklist
 
-OpenNotion's macOS build is the Electron desktop app packaged under `dist-electron`.
-Public distribution needs Developer ID signing, hardened runtime, notarization,
-stapling, and Gatekeeper verification.
+OpenNotion's current macOS release candidate is an unsigned private Electron DMG
+under `dist-electron`. Public distribution still needs Developer ID signing,
+hardened runtime, notarization, stapling, and Gatekeeper verification.
 
 ## Local Release Gate
 
@@ -12,12 +12,14 @@ Run these commands before any macOS build is considered ready for distribution:
 npm ci
 npm run check:electron
 npm run release:package:macos
+npm run release:verify:macos
 ```
 
-The current unsigned app bundle is generated at:
+The current unsigned artifacts are generated at:
 
 ```text
 dist-electron/mac-arm64/OpenNotion.app
+dist-electron/OpenNotion_0.1.0_arm64.dmg
 ```
 
 ## Acceptance Criteria
@@ -25,7 +27,8 @@ dist-electron/mac-arm64/OpenNotion.app
 - The app launches cleanly on a clean macOS user account.
 - Notes, images, Studio documents, and settings persist after relaunch.
 - `npm run check:electron` passes.
-- The packaged app opens normally.
+- `npm run release:verify:macos` passes.
+- The packaged app opens normally after copying it from the DMG.
 - For public releases, Gatekeeper accepts the app after signing and notarization.
 - Large local PDFs are handled with clear errors or acceptable performance.
 

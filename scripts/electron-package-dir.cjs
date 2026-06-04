@@ -1,13 +1,18 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const electronApp = path.join(root, "node_modules", "electron", "dist", "Electron.app");
 const outputDir = path.join(root, "dist-electron", "mac-arm64");
-const appDir = path.join(outputDir, "OpenNotion.app");
+const workingOutputDir =
+  process.platform === "darwin" ? fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-package-")) : outputDir;
+const appDir = path.join(workingOutputDir, "OpenNotion.app");
+const finalAppDir = path.join(outputDir, "OpenNotion.app");
 const resourcesDir = path.join(appDir, "Contents", "Resources");
 const appResourcesDir = path.join(resourcesDir, "app");
+const appIcon = path.join(root, "assets", "app-icon.icns");
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: "inherit" });
@@ -30,7 +35,7 @@ function copyAppBundle(source, destination) {
 }
 
 fs.rmSync(path.join(root, "dist-electron"), { recursive: true, force: true });
-fs.mkdirSync(outputDir, { recursive: true });
+fs.mkdirSync(workingOutputDir, { recursive: true });
 copyAppBundle(electronApp, appDir);
 
 const macOsDir = path.join(appDir, "Contents", "MacOS");
@@ -40,6 +45,8 @@ fs.rmSync(appResourcesDir, { recursive: true, force: true });
 fs.mkdirSync(appResourcesDir, { recursive: true });
 copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
 copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
+copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
+fs.copyFileSync(appIcon, path.join(resourcesDir, "app-icon.icns"));
 fs.writeFileSync(
   path.join(appResourcesDir, "package.json"),
   JSON.stringify(
@@ -62,9 +69,16 @@ run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier org.opennotion.de
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable OpenNotion", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleShortVersionString 0.1.0", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleVersion 0.1.0", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);
 
 if (process.platform === "darwin") {
   run("xattr", ["-cr", appDir]);
+  run("codesign", ["--force", "--deep", "--sign", "-", appDir]);
+  run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appDir]);
+  fs.mkdirSync(path.dirname(outputDir), { recursive: true });
+  run("ditto", ["--norsrc", appDir, finalAppDir]);
+  fs.rmSync(workingOutputDir, { recursive: true, force: true });
+  run("xattr", ["-cr", finalAppDir]);
 }
 
-console.log(`Packaged ${appDir}`);
+console.log(`Packaged ${finalAppDir}`);

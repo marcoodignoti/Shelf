@@ -52,3 +52,42 @@ jobs:
 
       - name: Electron check
         run: npm run check:electron
+
+  windows-package:
+    name: Windows package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Electron backend smoke
+        run: npm run electron:smoke
+
+      - name: Electron runtime smoke
+        run: npm run electron:smoke:runtime
+
+      - name: Package Windows app
+        run: npm run release:package:windows
+
+      - name: Zip Windows package
+        shell: pwsh
+        run: Compress-Archive -Path dist-electron/win-x64/OpenNotion/* -DestinationPath dist-electron/OpenNotion_0.1.0_win-x64.zip -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenNotion_0.1.0_win-x64
+          path: dist-electron/OpenNotion_0.1.0_win-x64.zip
+          if-no-files-found: error
