@@ -1,6 +1,6 @@
 cask "opennotion-beta" do
   version "0.1.2"
-  sha256 "b505dc668a58c750d8db54bdd7f87c4dced835d3e3ac2a3b9fb813dcc30cee46"
+  sha256 "588fbabe6dbd45efc87a1e7c58952b21b6b43f17c799f25e55ad4de1348793c4"
 
   url "https://github.com/marcoodignoti/OpenNotion/releases/download/v#{version}/OpenNotion_#{version}_arm64.dmg",
       verified: "github.com/marcoodignoti/OpenNotion/"
