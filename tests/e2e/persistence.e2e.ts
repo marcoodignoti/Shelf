@@ -57,6 +57,39 @@ async function storedEditorBlocks(page: Page, title: string): Promise<StoredEdit
   );
 }
 
+async function seedPage(page: Page, title: string, content: unknown[]) {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.evaluate(
+    ({ key, title, content }) => {
+      const now = new Date().toISOString();
+      const seededPage: MockPage = {
+        id: "seeded-page",
+        title,
+        parent_id: null,
+        content: JSON.stringify(content),
+        search_text: "",
+        icon: null,
+        cover_url: null,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: null,
+        properties: null,
+        sort_order: 0,
+        page_kind: "note",
+        created_at: now,
+        updated_at: now,
+      };
+      window.localStorage.setItem(key, JSON.stringify([seededPage]));
+      window.localStorage.setItem("opennotion-current-page-id", seededPage.id);
+    },
+    { key: storageKey, title, content }
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue(title);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const storageKey = "opennotion-e2e-pages";
@@ -139,6 +172,10 @@ test.beforeEach(async ({ page }) => {
           return null;
         }
 
+        if (cmd === "list_studio_documents" || cmd === "list_studio_projects") {
+          return [];
+        }
+
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
       open: async () => null,
@@ -146,6 +183,13 @@ test.beforeEach(async ({ page }) => {
       fileSrc: (filePath: string) => filePath,
     };
   });
+});
+
+test("disables browser spellcheck inside the editor", async ({ page }) => {
+  const editor = await createPageAndFocusEditor(page, "Spellcheck Smoke");
+
+  await expect(editor).toHaveAttribute("spellcheck", "false");
+  await expect(editor).toHaveAttribute("autocorrect", "off");
 });
 
 test("create, edit, reload, and search preserves page content", async ({ page }) => {
@@ -908,6 +952,49 @@ test("keeps scroll position when converting a block into a formula", async ({ pa
     const afterBottomGap = await scrollArea.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
     return Math.abs(afterBottomGap - beforeBottomGap);
   }).toBeLessThan(96);
+});
+
+test("keeps scroll position while editing an existing formula block", async ({ page }) => {
+  await seedPage(page, "Formula Edit Scroll Smoke", [
+    ...Array.from({ length: 18 }, (_, index) => ({
+      id: `top-filler-${index}`,
+      type: "paragraph",
+      content: [{ type: "text", text: `Top filler ${index}`, styles: {} }],
+      children: [],
+    })),
+    {
+      id: "formula-middle",
+      type: "formula",
+      props: { formula: "E = mc^2" },
+      children: [],
+    },
+    ...Array.from({ length: 45 }, (_, index) => ({
+      id: `bottom-filler-${index}`,
+      type: "paragraph",
+      content: [{ type: "text", text: `Bottom filler ${index}`, styles: {} }],
+      children: [],
+    })),
+  ]);
+
+  const scrollArea = page.locator(".on-scroll-fade.flex-1.w-full.overflow-y-auto").first();
+  const formulaPreview = page.getByLabel("Formula preview: E = mc^2");
+  await formulaPreview.scrollIntoViewIfNeeded();
+  await expect(formulaPreview).toBeVisible();
+
+  const beforeScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+  const beforeBottomGap = await scrollArea.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
+
+  await formulaPreview.click();
+  const formulaInput = page.getByLabel("Formula input");
+  await expect(formulaInput).toHaveValue("E = mc^2");
+  await formulaInput.fill("E = mc^2 + c");
+
+  await expect.poll(async () => {
+    const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
+    return Math.abs(afterScrollTop - beforeScrollTop);
+  }).toBeLessThan(160);
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
+    .toBeGreaterThan(Math.max(120, beforeBottomGap - 160));
 });
 
 test("auto-scrolls while typing at the end of a long page", async ({ page }) => {

@@ -199,6 +199,23 @@ function isNativeTextInput(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
+function disableSpellcheck(element: HTMLElement | null) {
+  if (!element) return;
+  element.setAttribute("spellcheck", "false");
+  element.setAttribute("autocorrect", "off");
+  element.setAttribute("autocapitalize", "off");
+  element.querySelectorAll<HTMLElement>("[contenteditable='true'], input, textarea").forEach((editable) => {
+    editable.setAttribute("spellcheck", "false");
+    editable.setAttribute("autocorrect", "off");
+    editable.setAttribute("autocapitalize", "off");
+  });
+}
+
+function activeElementIsNativeTextInput() {
+  const activeElement = document.activeElement;
+  return activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+}
+
 function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
   const scrollContainer = editor.domElement?.closest(".on-scroll-fade.flex-1.w-full.overflow-y-auto");
   if (!(scrollContainer instanceof HTMLElement)) return () => {};
@@ -1104,8 +1121,18 @@ export function Editor({
 
     const content = JSON.stringify(editor.document as Block[]);
     queueSave({ content, search_text: pageContentToSearchText(content) });
+    if (activeElementIsNativeTextInput()) return;
     keepEditorCaretInView(editor, scrollContainerRef.current);
   };
+
+  useEffect(() => {
+    disableSpellcheck(editor.domElement ?? null);
+    if (!editor.domElement) return undefined;
+
+    const observer = new MutationObserver(() => disableSpellcheck(editor.domElement ?? null));
+    observer.observe(editor.domElement, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [editor]);
 
   useEffect(() => {
     isNormalizingMathRef.current = true;

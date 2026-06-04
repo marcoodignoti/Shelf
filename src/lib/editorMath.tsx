@@ -13,6 +13,26 @@ const KATEX_MACROS = {
   "\\zigzag": "\\mathrel{\\diagup\\!\\diagdown\\!\\diagup\\!\\diagdown}",
 };
 
+function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
+  const scrollContainer = editor.domElement?.closest(".on-scroll-fade.flex-1.w-full.overflow-y-auto");
+  if (!(scrollContainer instanceof HTMLElement)) return () => {};
+
+  const scrollTop = scrollContainer.scrollTop;
+  const restore = () => {
+    scrollContainer.scrollTop = scrollTop;
+  };
+
+  return () => {
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+    });
+    window.setTimeout(restore, 0);
+    window.setTimeout(restore, 50);
+  };
+}
+
 type InlineText = {
   type: "text";
   text: string;
@@ -140,7 +160,9 @@ export const MathInlineContent = createReactInlineContentSpec(
                   }
                 }}
                 onChange={(event) => {
+                  const restoreScroll = preserveEditorScroll(editor);
                   updateInlineContent({ type: "math", props: { formula: event.currentTarget.value } });
+                  restoreScroll();
                 }}
               />
             </div>
@@ -206,11 +228,13 @@ function FormulaBlockContent({
             }
           }}
           onChange={(event) => {
+            const restoreScroll = preserveEditorScroll(editor);
             editor.updateBlock(block, {
               props: {
                 formula: event.currentTarget.value,
               },
             });
+            restoreScroll();
           }}
         />
       ) : null}
