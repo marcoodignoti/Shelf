@@ -525,12 +525,37 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
 
   expect(styles).not.toBeNull();
   expect(styles!.controlsClass).toContain("on-studio-toolbar-controls-note-surface");
-  expect(styles!.pageGroupBackground).toContain("15, 20, 28");
   expect(styles!.pageGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles!.zoomGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles!.pageTotalBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.zoomBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.pageTotalColor).toBe(styles!.zoomColor);
+});
+
+test("keeps Studio toolbar in flow above PDF and notes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 720 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" })).toBeVisible({ timeout: 60_000 });
+
+  const toolbarBox = await page.locator(".on-studio-floating-toolbar").boundingBox();
+  const titleBox = await page.locator(".on-studio-toolbar-title").boundingBox();
+  const controlsBox = await page.locator(".on-studio-toolbar-controls").boundingBox();
+  const pdfBox = await page.getByLabel("PDF panel").boundingBox();
+  const noteBox = await page.getByLabel("Notes panel").boundingBox();
+
+  expect(toolbarBox).not.toBeNull();
+  expect(titleBox).not.toBeNull();
+  expect(controlsBox).not.toBeNull();
+  expect(pdfBox).not.toBeNull();
+  expect(noteBox).not.toBeNull();
+  if (!toolbarBox || !titleBox || !controlsBox || !pdfBox || !noteBox) return;
+
+  const toolbarBottom = toolbarBox.y + toolbarBox.height;
+  expect(pdfBox.y).toBeGreaterThanOrEqual(toolbarBottom - 1);
+  expect(noteBox.y).toBeGreaterThanOrEqual(toolbarBottom - 1);
+  expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(controlsBox.x - 8);
 });
 
 test("creates editable formula blocks in Studio notes", async ({ page }) => {

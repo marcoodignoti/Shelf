@@ -1097,7 +1097,6 @@ export function Sidebar() {
         </>
       )}
       {deleteDialog}
-      <div className="on-sidebar-settings-fade" aria-hidden="true" />
       <button
         type="button"
         className="on-sidebar-settings-button"

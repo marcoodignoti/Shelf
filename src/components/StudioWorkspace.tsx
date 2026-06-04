@@ -278,12 +278,12 @@ export function StudioWorkspace({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <div className={`on-studio-floating-toolbar pointer-events-none absolute inset-x-0 top-0 z-[80] flex h-14 items-center justify-between px-4 ${isSidebarOpen ? "" : "pl-36"}`}>
+      <div className={`on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-3 px-4 py-2 ${isSidebarOpen ? "" : "pl-36"}`}>
         <div className="on-studio-toolbar-title pointer-events-auto min-w-0">
           <div className="on-studio-toolbar-title-primary truncate text-sm font-medium text-foreground">{document.title}</div>
           <div className="on-studio-toolbar-title-secondary truncate text-xs">{document.original_filename}</div>
         </div>
-        <div className={`on-studio-toolbar-controls pointer-events-auto flex shrink-0 items-center gap-2 ${toolbarOverNoteSurface ? "on-studio-toolbar-controls-note-surface" : ""}`}>
+        <div className={`on-studio-toolbar-controls pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 ${toolbarOverNoteSurface ? "on-studio-toolbar-controls-note-surface" : ""}`}>
           {showPdfControls && (
             <>
               <div className="on-studio-toolbar-group on-studio-page-controls">
