@@ -9,9 +9,11 @@ function normalizeArgs(args) {
 }
 
 function filePathToUrl(filePath) {
-  const normalized = filePath.replace(/\\/g, "/");
-  const encodedPath = normalized.split("/").map((part) => encodeURIComponent(part)).join("/");
-  return normalized.startsWith("/") ? `file://${encodedPath}` : `file:///${encodedPath}`;
+  const result = ipcRenderer.sendSync("opennotion:file-src", filePath);
+  if (!result || result.ok !== true || typeof result.value !== "string") {
+    throw new Error(result?.error || "failed to create file URL");
+  }
+  return result.value;
 }
 
 function studioPdfUrl(documentId) {

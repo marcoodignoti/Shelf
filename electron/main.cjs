@@ -2,6 +2,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 const { OpenNotionBackend } = require("./backend.cjs");
 
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
@@ -143,42 +144,62 @@ function parseByteRange(rangeHeader, fileSize) {
   return { start, end: Math.min(end, fileSize - 1) };
 }
 
-function studioPdfHeaders(extraHeaders = {}) {
+function trustedRendererOrigin() {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    try {
+      return new URL(process.env.ELECTRON_RENDERER_URL).origin;
+    } catch {
+      return null;
+    }
+  }
+  return "file://";
+}
+
+function isTrustedPdfRequestOrigin(origin) {
+  if (!origin) return false;
+  const trustedOrigin = trustedRendererOrigin();
+  return origin === trustedOrigin || (trustedOrigin === "file://" && origin === "null");
+}
+
+function studioPdfHeaders(origin, extraHeaders = {}) {
+  const corsHeaders = isTrustedPdfRequestOrigin(origin)
+    ? { "Access-Control-Allow-Origin": origin }
+    : {};
   return {
     "Content-Type": "application/pdf",
     "Accept-Ranges": "bytes",
-    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Range",
     "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range",
+    ...corsHeaders,
     ...extraHeaders,
   };
 }
 
-function writeStudioPdfHeaders(response, statusCode, extraHeaders = {}) {
-  response.writeHead(statusCode, studioPdfHeaders(extraHeaders));
+function writeStudioPdfHeaders(response, statusCode, origin, extraHeaders = {}) {
+  response.writeHead(statusCode, studioPdfHeaders(origin, extraHeaders));
 }
 
-function sendStudioPdfError(response, statusCode, message, extraHeaders = {}) {
-  writeStudioPdfHeaders(response, statusCode, extraHeaders);
+function sendStudioPdfError(response, statusCode, message, origin, extraHeaders = {}) {
+  writeStudioPdfHeaders(response, statusCode, origin, extraHeaders);
   response.end(message);
 }
 
-function createStudioPdfResponse(response, filePath, rangeHeader) {
+function createStudioPdfResponse(response, filePath, rangeHeader, origin) {
   const stats = fs.statSync(filePath);
   if (!stats.isFile()) {
-    sendStudioPdfError(response, 404, "Studio PDF not found");
+    sendStudioPdfError(response, 404, "Studio PDF not found", origin);
     return;
   }
 
   if (stats.size <= 0) {
-    sendStudioPdfError(response, 404, "Studio PDF is empty");
+    sendStudioPdfError(response, 404, "Studio PDF is empty", origin);
     return;
   }
 
   const range = parseByteRange(rangeHeader, stats.size);
   if (range?.invalid) {
-    writeStudioPdfHeaders(response, 416, { "Content-Range": `bytes */${stats.size}` });
+    writeStudioPdfHeaders(response, 416, origin, { "Content-Range": `bytes */${stats.size}` });
     response.end();
     return;
   }
@@ -187,7 +208,7 @@ function createStudioPdfResponse(response, filePath, rangeHeader) {
   const end = range ? range.end : stats.size - 1;
   const contentLength = end - start + 1;
 
-  writeStudioPdfHeaders(response, range ? 206 : 200, {
+  writeStudioPdfHeaders(response, range ? 206 : 200, origin, {
     "Content-Length": String(contentLength),
     ...(range ? { "Content-Range": `bytes ${start}-${end}/${stats.size}` } : {}),
   });
@@ -195,28 +216,33 @@ function createStudioPdfResponse(response, filePath, rangeHeader) {
 }
 
 function handleStudioPdfRequest(request, response) {
+  const origin = Array.isArray(request.headers.origin) ? request.headers.origin[0] : request.headers.origin;
   if (request.method === "OPTIONS") {
-    writeStudioPdfHeaders(response, 204);
+    if (!isTrustedPdfRequestOrigin(origin)) {
+      sendStudioPdfError(response, 403, "Forbidden", origin);
+      return;
+    }
+    writeStudioPdfHeaders(response, 204, origin);
     response.end();
     return;
   }
   if (request.method !== "GET") {
-    sendStudioPdfError(response, 405, "Method not allowed");
+    sendStudioPdfError(response, 405, "Method not allowed", origin);
     return;
   }
 
   const documentId = parseStudioPdfDocumentId(request.url || "");
   if (!documentId) {
-    sendStudioPdfError(response, 404, "Studio PDF not found");
+    sendStudioPdfError(response, 404, "Studio PDF not found", origin);
     return;
   }
 
   try {
     const filePath = createBackend().resolveStudioDocumentPdfPath(documentId);
     const rangeHeader = Array.isArray(request.headers.range) ? request.headers.range[0] : request.headers.range;
-    createStudioPdfResponse(response, filePath, rangeHeader);
+    createStudioPdfResponse(response, filePath, rangeHeader, origin);
   } catch {
-    sendStudioPdfError(response, 404, "Studio PDF not found");
+    sendStudioPdfError(response, 404, "Studio PDF not found", origin);
   }
 }
 
@@ -245,6 +271,34 @@ function startStudioPdfServer() {
 function studioPdfUrl(documentId) {
   if (!studioPdfServerOrigin) throw new Error("Studio PDF server is not ready");
   return `${studioPdfServerOrigin}/studio-document/${encodeURIComponent(documentId)}/source.pdf`;
+}
+
+function packagedRendererUrl() {
+  return pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).toString();
+}
+
+function isTrustedRendererUrl(targetUrl) {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    try {
+      return new URL(targetUrl).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    return fileURLToPath(targetUrl) === fileURLToPath(packagedRendererUrl());
+  } catch {
+    return false;
+  }
+}
+
+function shouldOpenExternal(targetUrl) {
+  try {
+    return new URL(targetUrl).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function createMainWindow() {
@@ -283,6 +337,15 @@ function createMainWindow() {
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error(`[renderer-gone] ${details.reason}`);
   });
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (isTrustedRendererUrl(targetUrl)) return;
+    event.preventDefault();
+    if (shouldOpenExternal(targetUrl)) void shell.openExternal(targetUrl);
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (shouldOpenExternal(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -295,13 +358,7 @@ function isRecord(value) {
 
 function trustedSender(event) {
   const senderUrl = event.senderFrame?.url || "";
-  if (senderUrl.startsWith("file://")) return true;
-  if (!process.env.ELECTRON_RENDERER_URL) return false;
-  try {
-    return new URL(senderUrl).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
-  } catch {
-    return false;
-  }
+  return isTrustedRendererUrl(senderUrl);
 }
 
 function requireTrustedSender(event) {
@@ -353,6 +410,21 @@ function registerIpc() {
       event.returnValue = {
         ok: false,
         error: error instanceof Error ? error.message : "failed to create Studio PDF URL",
+      };
+    }
+  });
+
+  ipcMain.on("opennotion:file-src", (event, filePath) => {
+    try {
+      requireTrustedSender(event);
+      if (typeof filePath !== "string" || filePath.trim() === "") {
+        throw new Error("file path must be a string");
+      }
+      event.returnValue = { ok: true, value: createBackend().fileSrc(filePath) };
+    } catch (error) {
+      event.returnValue = {
+        ok: false,
+        error: error instanceof Error ? error.message : "failed to create file URL",
       };
     }
   });

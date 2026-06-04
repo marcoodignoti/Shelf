@@ -202,6 +202,58 @@ function validateOptionalStringLength(field, value, maxLength) {
   }
 }
 
+function normalizeImportedCoverUrl(value) {
+  if (value === null || value === undefined) return null;
+  const coverUrl = String(value).trim();
+  if (!coverUrl) return null;
+  if (/^https:\/\//i.test(coverUrl)) return coverUrl;
+  if (/^blob:/i.test(coverUrl)) return coverUrl;
+  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) return coverUrl;
+  return null;
+}
+
+const IMPORTED_MEDIA_BLOCK_TYPES = new Set(["image", "video", "audio", "file"]);
+
+function sanitizeImportedBlockMedia(block) {
+  if (!block || typeof block !== "object" || Array.isArray(block)) return block;
+  const next = { ...block };
+  if (
+    IMPORTED_MEDIA_BLOCK_TYPES.has(next.type) &&
+    next.props &&
+    typeof next.props === "object" &&
+    !Array.isArray(next.props)
+  ) {
+    next.props = { ...next.props };
+    if (typeof next.props.url === "string" && /^file:\/\//i.test(next.props.url)) {
+      delete next.props.url;
+    }
+  }
+  if (Array.isArray(next.children)) {
+    next.children = next.children.map(sanitizeImportedBlockMedia);
+  }
+  return next;
+}
+
+function sanitizeImportedPageContent(value) {
+  if (typeof value !== "string" || value.trim() === "") return value;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return value;
+    return JSON.stringify(parsed.map(sanitizeImportedBlockMedia));
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeImportedPageRecord(page) {
+  return {
+    ...page,
+    content: sanitizeImportedPageContent(page.content),
+    cover_url: normalizeImportedCoverUrl(page.cover_url),
+    page_kind: page.page_kind === "studio_note" ? "studio_note" : "note",
+  };
+}
+
 function validateImportedPage(page) {
   if (typeof page !== "object" || page === null || Array.isArray(page)) {
     throw new Error("Backup file has invalid pages");
@@ -252,7 +304,7 @@ function prepareImportedBackupPages(pages, importedAt) {
   });
 
   return pages.map((page) => ({
-    ...page,
+    ...sanitizeImportedPageRecord(page),
     id: idMap.get(page.id) || page.id,
     parent_id: page.parent_id ? idMap.get(page.parent_id) ?? null : null,
     is_deleted: 0,
@@ -347,6 +399,18 @@ function validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot) 
   return canonicalPath;
 }
 
+function validateManagedAssetPath(filePath, appConfigDir) {
+  const canonicalPath = fs.realpathSync(filePath);
+  const roots = ["covers", "editor-images", "studio-documents"]
+    .map((directory) => path.join(appConfigDir, directory))
+    .filter((directory) => fs.existsSync(directory))
+    .map((directory) => fs.realpathSync(directory));
+  if (!roots.some((root) => isPathInside(root, canonicalPath))) {
+    throw new Error("file path is outside app-managed storage");
+  }
+  return canonicalPath;
+}
+
 function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
   if (!fs.existsSync(storedFilePath)) return;
   const storedPath = validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot);
@@ -432,7 +496,7 @@ class OpenNotionBackend {
   }
 
   fileSrc(filePath) {
-    return pathToFileURL(filePath).toString();
+    return pathToFileURL(validateManagedAssetPath(filePath, this.appConfigDir)).toString();
   }
 
   async openExternalUrl({ url }) {
@@ -625,24 +689,25 @@ class OpenNotionBackend {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const page of pages) {
+        const sanitizedPage = sanitizeImportedPageRecord(page);
         importedCount += insert.run(
-          page.id,
-          page.title,
-          normalizeOptionalString(page.parent_id),
-          normalizeOptionalString(page.content),
-          normalizeOptionalString(page.search_text),
-          normalizeOptionalString(page.icon),
-          normalizeOptionalString(page.cover_url),
-          page.is_deleted,
-          page.is_favorite,
-          page.is_template ?? 0,
-          page.is_database ?? 0,
-          normalizeOptionalString(page.database_schema),
-          normalizeOptionalString(page.properties),
-          page.sort_order ?? 0,
-          page.page_kind ?? "note",
-          page.created_at,
-          page.updated_at
+          sanitizedPage.id,
+          sanitizedPage.title,
+          normalizeOptionalString(sanitizedPage.parent_id),
+          normalizeOptionalString(sanitizedPage.content),
+          normalizeOptionalString(sanitizedPage.search_text),
+          normalizeOptionalString(sanitizedPage.icon),
+          normalizeOptionalString(sanitizedPage.cover_url),
+          sanitizedPage.is_deleted,
+          sanitizedPage.is_favorite,
+          sanitizedPage.is_template ?? 0,
+          sanitizedPage.is_database ?? 0,
+          normalizeOptionalString(sanitizedPage.database_schema),
+          normalizeOptionalString(sanitizedPage.properties),
+          sanitizedPage.sort_order ?? 0,
+          sanitizedPage.page_kind,
+          sanitizedPage.created_at,
+          sanitizedPage.updated_at
         ).changes;
       }
     });

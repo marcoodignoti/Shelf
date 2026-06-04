@@ -15,6 +15,24 @@ const SUPPORTED_BLOCK_TYPES = new Set([
   "codeBlock",
   "formula",
 ]);
+const MEDIA_BLOCK_TYPES = new Set(["image", "video", "audio", "file"]);
+
+function isSafeBlockMediaUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  return /^(https:\/\/|blob:|file:\/\/)/i.test(value) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(value);
+}
+
+function sanitizeBlockProps(type: string, props: unknown): unknown {
+  if (!MEDIA_BLOCK_TYPES.has(type) || typeof props !== "object" || props === null || Array.isArray(props)) {
+    return props;
+  }
+
+  const sanitized = { ...(props as Record<string, unknown>) };
+  if ("url" in sanitized && !isSafeBlockMediaUrl(sanitized.url)) {
+    delete sanitized.url;
+  }
+  return sanitized;
+}
 
 function plainTextToBlocks(text: string): PartialBlock[] {
   const lines = text.split("\n");
@@ -66,8 +84,11 @@ function sanitizePageBlock(block: unknown): PartialBlock | null {
     } as PartialBlock;
   }
 
+  const props = sanitizeBlockProps(record.type, record.props);
+
   return {
     ...record,
+    ...(props ? { props } : {}),
     ...(children ? { children } : {}),
   } as PartialBlock;
 }
