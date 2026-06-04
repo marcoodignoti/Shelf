@@ -1705,6 +1705,35 @@
     color: hsl(var(--muted-foreground));
   }
 
+  .on-beta-update-steps {
+    display: grid;
+    gap: 0.2rem;
+    border-top: 1px solid hsl(var(--border) / 0.58);
+    padding-top: 0.65rem;
+    font-size: 0.74rem;
+    line-height: 1.36;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .on-beta-update-copy {
+    display: inline-flex;
+    min-height: 1.95rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    justify-self: start;
+    border-radius: 0.45rem;
+    border: 1px solid hsl(var(--border) / 0.68);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.74rem;
+    font-weight: 650;
+    color: hsl(var(--foreground));
+  }
+
+  .on-beta-update-copy:hover {
+    background: hsl(var(--accent) / 0.48);
+  }
+
   .on-update-result {
     display: grid;
     gap: 0.72rem;

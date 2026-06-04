@@ -94,6 +94,16 @@ function editorScrollContainer(page: Page) {
   return page.locator(".on-scroll-fade").filter({ has: page.locator(".on-page-editor-blocks") }).first();
 }
 
+async function selectedEditorBlockText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const selection = window.getSelection();
+    const anchorNode = selection?.anchorNode ?? null;
+    const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement ?? null;
+    const blockContent = anchorElement?.closest(".bn-block-content");
+    return blockContent?.textContent ?? "";
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const storageKey = "opennotion-e2e-pages";
@@ -490,12 +500,12 @@ test("supports arrow navigation, indentation, and keyboard slash insertion", asy
   await page.keyboard.type("Second block");
 
   await page.keyboard.press("ArrowUp");
-  await expect.poll(async () => page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? "")).toContain("First block");
+  await expect.poll(async () => selectedEditorBlockText(page)).toContain("First block");
 
   await page.keyboard.press("ArrowDown");
-  await expect.poll(async () => page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? "")).toContain("Second block");
+  await expect.poll(async () => selectedEditorBlockText(page)).toContain("Second block");
 
-  await page.getByText("Second block", { exact: true }).click();
+  await page.locator(".bn-block-content").filter({ hasText: "Second block" }).click();
   await page.keyboard.press("End");
   await page.keyboard.press("Tab");
   await expect.poll(async () => {

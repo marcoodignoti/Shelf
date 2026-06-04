@@ -8,11 +8,14 @@ opens the matching DMG or ZIP download.
 
 ## Tester Flow
 
-1. App starts and checks `beta-update.json` from the latest GitHub Release.
+1. App starts and checks `beta-update.json` from the beta channel release.
 2. If the manifest version is newer than the installed `package.json` version,
    OpenNotion shows a beta update notice.
 3. Tester reads the short changelog and downloads the matching build.
 4. Tester replaces the app manually.
+
+On macOS, testers can alternatively use the Homebrew beta cask documented in
+[`homebrew.md`](homebrew.md). Windows testers use the guided ZIP download.
 
 ## Create Manifest
 
@@ -33,13 +36,23 @@ Generated file:
 dist-electron/beta-update.json
 ```
 
-Upload these three files to the same GitHub Release:
+Upload the DMG, ZIP, and release-local manifest to the versioned GitHub Release:
 
 ```text
 OpenNotion_0.1.1_arm64.dmg
 OpenNotion_0.1.1_win-x64.zip
 beta-update.json
 ```
+
+Then upload the same `beta-update.json` to the `beta` release, replacing the
+old asset. The app checks this deterministic channel URL first:
+
+```text
+https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json
+```
+
+The legacy `releases/latest/download/beta-update.json` URL remains a fallback
+for older builds and GitHub cache edge cases.
 
 ## Manifest Format
 

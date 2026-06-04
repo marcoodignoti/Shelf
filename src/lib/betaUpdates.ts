@@ -1,8 +1,14 @@
 import packageJson from "../../package.json";
 
 export const CURRENT_APP_VERSION = packageJson.version;
-export const DEFAULT_UPDATE_MANIFEST_URL =
+export const BETA_CHANNEL_MANIFEST_URL =
+  "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json";
+export const LEGACY_LATEST_MANIFEST_URL =
   "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json";
+export const DEFAULT_UPDATE_MANIFEST_URLS = [
+  BETA_CHANNEL_MANIFEST_URL,
+  LEGACY_LATEST_MANIFEST_URL,
+];
 
 export type BetaUpdateDownload = {
   url: string;
@@ -30,8 +36,10 @@ export type BetaUpdateState =
 
 const MAX_CHANGE_ITEMS = 5;
 
-function manifestUrl(): string {
-  return import.meta.env.VITE_OPENNOTION_UPDATE_MANIFEST_URL || DEFAULT_UPDATE_MANIFEST_URL;
+function manifestUrls(): string[] {
+  const configuredUrl = import.meta.env.VITE_OPENNOTION_UPDATE_MANIFEST_URL;
+  if (configuredUrl) return [configuredUrl];
+  return DEFAULT_UPDATE_MANIFEST_URLS;
 }
 
 async function fetchManifest(url: string): Promise<unknown> {
@@ -134,19 +142,32 @@ export function downloadForCurrentPlatform(manifest: BetaUpdateManifest): BetaUp
 }
 
 export async function checkForBetaUpdate(): Promise<BetaUpdateState> {
-  const url = manifestUrl();
-  if (!url) return { status: "disabled" };
+  const urls = manifestUrls().filter((url) => url.trim().length > 0);
+  if (urls.length === 0) return { status: "disabled" };
 
+  let lastError: unknown = null;
+  let newestManifest: BetaUpdateManifest | null = null;
   try {
-    const manifest = parseBetaUpdateManifest(await fetchManifest(url));
-    if (compareVersions(manifest.version, CURRENT_APP_VERSION) <= 0) {
+    for (const url of urls) {
+      try {
+        const manifest = parseBetaUpdateManifest(await fetchManifest(url));
+        if (!newestManifest || compareVersions(manifest.version, newestManifest.version) > 0) {
+          newestManifest = manifest;
+        }
+      } catch (error: unknown) {
+        lastError = error;
+      }
+    }
+
+    if (!newestManifest) throw lastError ?? new Error("Update check failed");
+    if (compareVersions(newestManifest.version, CURRENT_APP_VERSION) <= 0) {
       return { status: "current" };
     }
 
     return {
       status: "available",
-      manifest,
-      download: downloadForCurrentPlatform(manifest),
+      manifest: newestManifest,
+      download: downloadForCurrentPlatform(newestManifest),
     };
   } catch (error: unknown) {
     return {

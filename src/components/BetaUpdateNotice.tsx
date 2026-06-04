@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, X } from "lucide-react";
+import { Clipboard, Download, X } from "lucide-react";
 import { openExternalUrl } from "../lib/desktop";
 import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey } from "../lib/betaUpdates";
 import { useAppStore } from "../store/useAppStore";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
+const HOMEBREW_UPDATE_COMMAND = [
+  "brew tap marcoodignoti/opennotion",
+  "brew upgrade --cask opennotion-beta || brew install --cask opennotion-beta",
+].join("\n");
 
 function hasDismissedUpdate(version: string): boolean {
   try {
@@ -22,9 +26,14 @@ function dismissUpdate(version: string): void {
   }
 }
 
+function isMacPlatform(): boolean {
+  return typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
+}
+
 export function BetaUpdateNotice() {
   const showError = useAppStore((state) => state.showError);
   const [state, setState] = useState<BetaUpdateState>({ status: "idle" });
+  const [copiedHomebrewCommand, setCopiedHomebrewCommand] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,9 +72,20 @@ export function BetaUpdateNotice() {
     }
   }, [showError, state]);
 
+  const handleCopyHomebrewCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(HOMEBREW_UPDATE_COMMAND);
+      setCopiedHomebrewCommand(true);
+      window.setTimeout(() => setCopiedHomebrewCommand(false), 2_000);
+    } catch (error: unknown) {
+      showError(error);
+    }
+  }, [showError]);
+
   if (state.status !== "available") return null;
 
   const { manifest, download } = state;
+  const showHomebrewCommand = isMacPlatform();
 
   return (
     <aside className="on-beta-update" role="status" aria-live="polite">
@@ -89,6 +109,16 @@ export function BetaUpdateNotice() {
         {download ? `Download ${manifest.version}` : "No build for this device"}
       </button>
       {download?.size && <div className="on-beta-update-size">{download.label} - {download.size}</div>}
+      <div className="on-beta-update-steps">
+        <span>Close OpenNotion, install the downloaded build, then reopen it.</span>
+        {showHomebrewCommand && <span>macOS testers can use Homebrew instead.</span>}
+      </div>
+      {showHomebrewCommand && (
+        <button type="button" className="on-beta-update-copy" onClick={() => void handleCopyHomebrewCommand()}>
+          <Clipboard className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {copiedHomebrewCommand ? "Copied Homebrew command" : "Copy Homebrew command"}
+        </button>
+      )}
     </aside>
   );
 }
