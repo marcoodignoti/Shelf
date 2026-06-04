@@ -6,6 +6,7 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 - macOS unsigned Electron DMG for private testing
 - Windows unsigned Electron zip from GitHub Actions for private testing
+- assisted beta update checks with brief changelog and manual download
 - explicit warning text for testers
 
 ## What This Does Not Solve
@@ -14,6 +15,7 @@ Unsigned beta releases are for private testing before paid signing credentials e
 - macOS notarization
 - Windows installer packaging or SmartScreen trust
 - production-grade public distribution
+- silent auto-install updates
 
 ## Build Locally
 
@@ -30,15 +32,24 @@ Local Electron artifacts are generated under:
 
 ```text
 dist-electron/mac-arm64/OpenNotion.app
-dist-electron/OpenNotion_0.1.0_arm64.dmg
+dist-electron/OpenNotion_0.1.1_arm64.dmg
 ```
 
 Build the unsigned Windows zip from GitHub Actions by running the `Windows package`
 job. It uploads:
 
 ```text
-OpenNotion_0.1.0_win-x64.zip
+OpenNotion_0.1.1_win-x64.zip
 ```
+
+Generate the update manifest after packaging:
+
+```sh
+npm run release:update-manifest
+```
+
+Upload `beta-update.json` with the DMG and ZIP in the same GitHub Release. See
+[`docs/release/beta-updates.md`](beta-updates.md).
 
 ## User Warning
 

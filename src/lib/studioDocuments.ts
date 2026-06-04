@@ -7,9 +7,9 @@ export type ProjectableStudioDocument = StudioDocument & {
   project_id?: string | null;
 };
 
-export type StudioProjectGroup = {
+export type StudioProjectGroup<TDocument extends ProjectableStudioDocument = ProjectableStudioDocument> = {
   project: StudioProject;
-  documents: ProjectableStudioDocument[];
+  documents: TDocument[];
 };
 
 export function recentStudioDocuments(documents: StudioDocument[], limit = 6): StudioDocument[] {
@@ -18,7 +18,7 @@ export function recentStudioDocuments(documents: StudioDocument[], limit = 6): S
     .slice(0, limit);
 }
 
-export function allStudioDocuments(documents: StudioDocument[]): StudioDocument[] {
+export function allStudioDocuments<TDocument extends StudioDocument>(documents: TDocument[]): TDocument[] {
   return [...documents].sort((first, second) => first.title.localeCompare(second.title));
 }
 
@@ -88,16 +88,21 @@ export function studioProjectDepth(project: StudioProject, projects: StudioProje
   return depth;
 }
 
-function compareStudioProjectGroups(first: StudioProjectGroup, second: StudioProjectGroup): number {
+function compareStudioProjectGroups<TDocument extends ProjectableStudioDocument>(
+  first: StudioProjectGroup<TDocument>,
+  second: StudioProjectGroup<TDocument>
+): number {
   if (first.project.sort_order !== second.project.sort_order) {
     return first.project.sort_order - second.project.sort_order;
   }
   return first.project.name.localeCompare(second.project.name);
 }
 
-function orderStudioProjectGroups(groups: StudioProjectGroup[]): StudioProjectGroup[] {
+function orderStudioProjectGroups<TDocument extends ProjectableStudioDocument>(
+  groups: StudioProjectGroup<TDocument>[]
+): StudioProjectGroup<TDocument>[] {
   const groupsById = new Map(groups.map((group) => [group.project.id, group]));
-  const childrenByParentId = new Map<string | null, StudioProjectGroup[]>();
+  const childrenByParentId = new Map<string | null, StudioProjectGroup<TDocument>[]>();
 
   for (const group of groups) {
     const parentId = cleanProjectValue(group.project.parent_id);
@@ -108,7 +113,7 @@ function orderStudioProjectGroups(groups: StudioProjectGroup[]): StudioProjectGr
     childrenByParentId.set(normalizedParentId, siblings);
   }
 
-  const orderedGroups: StudioProjectGroup[] = [];
+  const orderedGroups: StudioProjectGroup<TDocument>[] = [];
   const visitedProjectIds = new Set<string>();
 
   const visitChildren = (parentId: string | null) => {
@@ -133,11 +138,11 @@ function orderStudioProjectGroups(groups: StudioProjectGroup[]): StudioProjectGr
   return orderedGroups;
 }
 
-export function groupStudioDocumentsByProject(
-  documents: ProjectableStudioDocument[],
+export function groupStudioDocumentsByProject<TDocument extends ProjectableStudioDocument>(
+  documents: TDocument[],
   projects: StudioProject[] = []
-): StudioProjectGroup[] {
-  const groups = new Map<string, StudioProjectGroup>();
+): StudioProjectGroup<TDocument>[] {
+  const groups = new Map<string, StudioProjectGroup<TDocument>>();
 
   for (const project of projects) {
     groups.set(project.id, { project, documents: [] });

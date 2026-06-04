@@ -48,7 +48,7 @@ export function CommandPalette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
+  const { pages, setCurrentPageId, setWorkspaceMode, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
 
   useEffect(() => {
     if (isCommandPaletteOpen) {
@@ -123,6 +123,7 @@ export function CommandPalette() {
   const totalItems = commandItems.length + flattenedPages.length;
 
   const handleSelect = (id: string) => {
+    setWorkspaceMode('notes');
     setCurrentPageId(id);
     closeCommandPalette();
   };

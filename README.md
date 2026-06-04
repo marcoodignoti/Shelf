@@ -108,11 +108,11 @@ another computer starts with that computer's own empty app data directory.
 
 ## Installation
 
-OpenNotion `v0.1.0` is the first public desktop release.
+OpenNotion `v0.1.1` is the current private beta release.
 
 ### macOS
 
-Download `OpenNotion_0.1.0_arm64.dmg` from the latest GitHub release or build it
+Download `OpenNotion_0.1.1_arm64.dmg` from the latest GitHub release or build it
 locally:
 
 ```sh
@@ -124,7 +124,7 @@ npm run release:verify:macos
 Generated artifact:
 
 ```text
-dist-electron/OpenNotion_0.1.0_arm64.dmg
+dist-electron/OpenNotion_0.1.1_arm64.dmg
 ```
 
 Because the current macOS build is unsigned/ad-hoc and not notarized, macOS may
@@ -137,7 +137,7 @@ xattr -dr com.apple.quarantine /Applications/OpenNotion.app
 
 ### Windows
 
-Download `OpenNotion_0.1.0_win-x64.zip` from the latest GitHub release.
+Download `OpenNotion_0.1.1_win-x64.zip` from the latest GitHub release.
 
 1. Extract the zip.
 2. Run `OpenNotion.exe`.

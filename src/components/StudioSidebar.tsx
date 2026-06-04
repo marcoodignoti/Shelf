@@ -1,10 +1,11 @@
-import { ChevronLeft, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openStudioDocumentFile, revealStudioDocumentFile, StudioDocument, StudioProject } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
-import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, recentStudioDocuments, studioDocumentMetadata, studioProjectDepth } from "../lib/studioDocuments";
+import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, studioDocumentMetadata } from "../lib/studioDocuments";
+import type { StudioProjectGroup } from "../lib/studioDocuments";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
@@ -26,6 +27,10 @@ const STUDIO_DOCUMENT_MENU_WIDTH = 220;
 const STUDIO_DOCUMENT_MENU_HEIGHT = 178;
 const STUDIO_PROJECT_MENU_WIDTH = 190;
 const STUDIO_PROJECT_MENU_HEIGHT = 134;
+
+function formatStudioCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
 
 type ProjectNameDialogRequest = {
   title: string;
@@ -150,6 +155,8 @@ function StudioDocumentRenameDialog({
 function StudioDocumentRow({
   document,
   active,
+  depth = 0,
+  showMetadata = true,
   onSelect,
   onRename,
   onDelete,
@@ -160,6 +167,8 @@ function StudioDocumentRow({
 }: {
   document: StudioDocument;
   active: boolean;
+  depth?: number;
+  showMetadata?: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -244,7 +253,8 @@ function StudioDocumentRow({
         tabIndex={0}
         draggable
         data-studio-document-id={document.id}
-        className={`on-shell-row on-sidebar-page-row group mb-[1px] justify-between py-[3px] text-[13px] ${active ? "on-shell-row-active" : ""}`}
+        className={`on-studio-tree-row group ${active ? "on-studio-tree-row-active" : ""}`}
+        style={{ paddingLeft: 12 + depth * 18 }}
         onClick={onSelect}
         onDragStart={(event) => {
           closeOpenOverlays();
@@ -266,13 +276,15 @@ function StudioDocumentRow({
         }}
         title={document.original_filename}
       >
-        <div className="flex min-w-0 items-start gap-2">
-          <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
           <span className="min-w-0 text-left">
             <span className="block truncate">{document.title}</span>
-            <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-              {studioDocumentMetadata(document)}
-            </span>
+            {showMetadata && (
+              <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+                {studioDocumentMetadata(document)}
+              </span>
+            )}
           </span>
         </div>
         <button
@@ -368,7 +380,9 @@ function StudioProjectHeader({
   count,
   depth,
   active,
-  onOpen,
+  expanded,
+  onSelect,
+  onToggle,
   onCreateChild,
   onRename,
   onDelete,
@@ -379,7 +393,9 @@ function StudioProjectHeader({
   count: number;
   depth: number;
   active: boolean;
-  onOpen: () => void;
+  expanded: boolean;
+  onSelect: () => void;
+  onToggle: () => void;
   onCreateChild: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -469,9 +485,21 @@ function StudioProjectHeader({
   return (
     <>
       <div
-        className={`mb-1 flex items-center gap-2 rounded-md px-3 py-1 text-xs font-medium text-muted-foreground ${active ? "bg-accent/60" : ""}`}
-        style={{ paddingLeft: 12 + depth * 10 }}
+        className={`on-studio-project-row ${active ? "on-studio-tree-row-active" : ""}`}
+        style={{ paddingLeft: 8 + depth * 18 }}
       >
+        <button
+          type="button"
+          aria-label={`Toggle project ${project.name}`}
+          aria-expanded={expanded}
+          className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle();
+          }}
+        >
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
         <span
           draggable={!isInbox}
           data-studio-project-drag-handle={isInbox ? undefined : ""}
@@ -487,7 +515,7 @@ function StudioProjectHeader({
           }}
           onDragEnd={onProjectDragEnd}
         >
-          {active ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
+          {expanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
         </span>
         {isRenaming && !isInbox ? (
           <input
@@ -512,9 +540,9 @@ function StudioProjectHeader({
         ) : (
           <button
             type="button"
-            aria-label={`Open project ${project.name}`}
+            aria-label={`Select project ${project.name}`}
             className="min-w-0 flex-1 truncate text-left text-foreground/80 hover:text-foreground"
-            onClick={onOpen}
+            onClick={onSelect}
             onDoubleClick={() => {
               if (!isInbox) handleRename();
             }}
@@ -582,20 +610,48 @@ export function StudioSidebar({
   onRenameDocument,
   onDeleteDocument,
 }: StudioSidebarProps) {
-  const recent = recentStudioDocuments(documents, 4);
   const projectGroups = groupStudioDocumentsByProject(documents, projects);
   const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dropProjectId, setDropProjectId] = useState<string | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(() => new Set([DEFAULT_STUDIO_PROJECT_ID]));
   const [projectNameDialog, setProjectNameDialog] = useState<ProjectNameDialogRequest | null>(null);
+  const knownProjectIdsRef = useRef<Set<string>>(new Set());
 
-  const currentProject = currentProjectId === DEFAULT_STUDIO_PROJECT_ID
-    ? projectGroups.find((group) => group.project.id === DEFAULT_STUDIO_PROJECT_ID)?.project ?? null
-    : projects.find((project) => project.id === currentProjectId) ?? null;
   const currentImportProjectId = currentProjectId && currentProjectId !== DEFAULT_STUDIO_PROJECT_ID
     ? currentProjectId
     : null;
+
+  useEffect(() => {
+    setExpandedProjectIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      let changed = false;
+
+      if (!nextIds.has(DEFAULT_STUDIO_PROJECT_ID)) {
+        nextIds.add(DEFAULT_STUDIO_PROJECT_ID);
+        changed = true;
+      }
+
+      const liveProjectIds = new Set(projects.map((project) => project.id));
+      for (const project of projects) {
+        if (!knownProjectIdsRef.current.has(project.id)) {
+          knownProjectIdsRef.current.add(project.id);
+          nextIds.add(project.id);
+          changed = true;
+        }
+      }
+
+      for (const id of [...nextIds]) {
+        if (id !== DEFAULT_STUDIO_PROJECT_ID && !liveProjectIds.has(id)) {
+          nextIds.delete(id);
+          changed = true;
+        }
+      }
+
+      return changed ? nextIds : currentIds;
+    });
+  }, [projects]);
 
   useEffect(() => {
     if (!currentProjectId) return;
@@ -614,6 +670,9 @@ export function StudioSidebar({
 
   const handleSubmitProjectName = (name: string, parentId: string | null) => {
     setProjectNameDialog(null);
+    if (parentId) {
+      setExpandedProjectIds((currentIds) => new Set(currentIds).add(parentId));
+    }
     onCreateProject(name, parentId);
   };
 
@@ -655,6 +714,7 @@ export function StudioSidebar({
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) return;
     if ((project.parent_id ?? null) === targetParentId) return;
+    setExpandedProjectIds((currentIds) => new Set(currentIds).add(targetParentId));
     onMoveProject(projectId, targetParentId);
   };
 
@@ -663,20 +723,141 @@ export function StudioSidebar({
     const document = documents.find((candidate) => candidate.id === documentId);
     if (!document) return;
     if ((document.project_id ?? null) === targetProjectId) return;
+    setExpandedProjectIds((currentIds) => new Set(currentIds).add(projectId));
     onMoveDocument(documentId, targetProjectId);
   };
 
-  const visibleProjectGroups = projectGroups.filter((group) => {
-    if (!currentProjectId) {
-      return group.project.id === DEFAULT_STUDIO_PROJECT_ID || !group.project.parent_id;
-    }
+  const projectGroupsById = new Map(projectGroups.map((group) => [group.project.id, group]));
+  const childProjectGroupsByParentId = new Map<string | null, StudioProjectGroup[]>();
 
-    if (currentProjectId === DEFAULT_STUDIO_PROJECT_ID) {
-      return group.project.id === DEFAULT_STUDIO_PROJECT_ID;
-    }
+  for (const group of projectGroups) {
+    const parentId = group.project.id === DEFAULT_STUDIO_PROJECT_ID
+      ? null
+      : group.project.parent_id && projectGroupsById.has(group.project.parent_id)
+        ? group.project.parent_id
+        : null;
+    const siblings = childProjectGroupsByParentId.get(parentId) ?? [];
+    siblings.push(group);
+    childProjectGroupsByParentId.set(parentId, siblings);
+  }
 
-    return group.project.id === currentProjectId || group.project.parent_id === currentProjectId;
+  const rootProjectGroups = [...(childProjectGroupsByParentId.get(null) ?? [])].sort((first, second) => {
+    if (first.project.id === DEFAULT_STUDIO_PROJECT_ID) return -1;
+    if (second.project.id === DEFAULT_STUDIO_PROJECT_ID) return 1;
+    return 0;
   });
+  const projectHeaderSummary = `${formatStudioCount(documents.length, "PDF", "PDFs")} / ${formatStudioCount(projects.length, "project")}`;
+
+  const selectProject = (projectId: string) => {
+    setCurrentProjectId(projectId);
+    setExpandedProjectIds((currentIds) => new Set(currentIds).add(projectId));
+  };
+
+  const toggleProject = (projectId: string) => {
+    setExpandedProjectIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(projectId)) {
+        nextIds.delete(projectId);
+      } else {
+        nextIds.add(projectId);
+      }
+      nextIds.add(DEFAULT_STUDIO_PROJECT_ID);
+      return nextIds;
+    });
+  };
+
+  const renderProjectGroup = (group: StudioProjectGroup, depth: number) => {
+    const isExpanded = expandedProjectIds.has(group.project.id);
+    const isDropTarget = dropProjectId === group.project.id;
+    const canAcceptDraggedProject = draggedProjectId
+      ? canMoveProject(draggedProjectId, group.project.id)
+      : false;
+    const canAcceptDraggedDocument = Boolean(draggedDocumentId);
+    const canAcceptDrop = canAcceptDraggedDocument || canAcceptDraggedProject;
+    const childGroups = childProjectGroupsByParentId.get(group.project.id) ?? [];
+
+    return (
+      <div
+        key={group.project.id}
+        className={`on-studio-project-node ${isDropTarget ? "on-studio-project-drop-target" : ""}`}
+        data-studio-project-id={group.project.id}
+        data-studio-project-parent-id={group.project.parent_id ?? ""}
+        data-studio-project-depth={depth}
+        onDragEnter={(event) => {
+          if (!canAcceptDrop) return;
+          event.preventDefault();
+          setDropProjectId(group.project.id);
+        }}
+        onDragOver={(event) => {
+          if (!canAcceptDrop) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDragLeave={(event) => {
+          const relatedTarget = event.relatedTarget;
+          if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
+            setDropProjectId(null);
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          const projectId = event.dataTransfer.getData("application/x-opennotion-studio-project-id") || draggedProjectId;
+          const documentId = event.dataTransfer.getData("application/x-opennotion-studio-document-id") || draggedDocumentId;
+          clearDragState();
+          if (projectId) {
+            moveDraggedProject(projectId, group.project.id);
+            return;
+          }
+          if (documentId) moveDraggedDocument(documentId, group.project.id);
+        }}
+      >
+        <StudioProjectHeader
+          project={group.project}
+          count={group.documents.length}
+          depth={depth}
+          active={group.project.id === currentProjectId}
+          expanded={isExpanded}
+          onSelect={() => selectProject(group.project.id)}
+          onToggle={() => toggleProject(group.project.id)}
+          onCreateChild={() => openChildProjectDialog(group.project.id)}
+          onRename={(name) => onRenameProject(group.project.id, name)}
+          onDelete={() => onDeleteProject(group.project.id)}
+          onProjectDragStart={() => setDraggedProjectId(group.project.id)}
+          onProjectDragEnd={clearDragState}
+        />
+        {isExpanded && (
+          <>
+            {group.documents.length === 0 && childGroups.length === 0 && (
+              <div
+                className="on-studio-empty-drop-row"
+                style={{ paddingLeft: 34 + depth * 18 }}
+                data-studio-project-empty
+              >
+                Drop PDFs here
+              </div>
+            )}
+            {group.documents.map((document) => (
+              <StudioDocumentRow
+                key={`project-${group.project.id}-${document.id}`}
+                document={document}
+                active={document.id === currentDocumentId}
+                depth={depth + 1}
+                showMetadata={false}
+                onSelect={() => onSelectDocument(document.id)}
+                onRename={(title) => onRenameDocument(document.id, title)}
+                onDelete={() => onDeleteDocument(document.id)}
+                projects={projects}
+                onMove={(projectId) => onMoveDocument(document.id, projectId)}
+                onDragStart={() => setDraggedDocumentId(document.id)}
+                onDragEnd={clearDragState}
+              />
+            ))}
+            {childGroups.map((childGroup) => renderProjectGroup(childGroup, depth + 1))}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -699,45 +880,17 @@ export function StudioSidebar({
             <div className="mt-1">Import a PDF to create a linked note.</div>
           </div>
         )}
-        {recent.length > 0 && (
-          <section className="mb-4">
-            <div className="on-section-label mb-1">Recenti</div>
-            {recent.map((document) => (
-              <StudioDocumentRow
-                key={`recent-${document.id}`}
-                document={document}
-                active={document.id === currentDocumentId}
-                onSelect={() => onSelectDocument(document.id)}
-                onRename={(title) => onRenameDocument(document.id, title)}
-                onDelete={() => onDeleteDocument(document.id)}
-                projects={projects}
-                onMove={(projectId) => onMoveDocument(document.id, projectId)}
-                onDragStart={() => setDraggedDocumentId(document.id)}
-                onDragEnd={clearDragState}
-              />
-            ))}
-          </section>
-        )}
         {!isLoading && (
-          <section data-studio-current-project-id={currentProjectId ?? "root"}>
-            <div className="mb-1 flex items-center justify-between">
-              <div className="flex min-w-0 items-center gap-1">
-                {currentProjectId && (
-                  <button
-                    type="button"
-                    aria-label="Back to Projects"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                    onClick={() => setCurrentProjectId(currentProject?.parent_id ?? null)}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <div className="on-section-label truncate">{currentProject?.name ?? "Projects"}</div>
+          <section className="mb-4" data-studio-current-project-id={currentProjectId ?? "root"}>
+            <div className="mb-2 flex items-end justify-between gap-2">
+              <div className="min-w-0">
+                <div className="on-studio-tree-title">Projects</div>
+                <div className="on-studio-section-subtitle px-3">{projectHeaderSummary}</div>
               </div>
               <button
                 type="button"
                 aria-label={currentImportProjectId ? "New Studio subfolder" : "New Studio project"}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={handleCreateProject}
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -748,88 +901,9 @@ export function StudioSidebar({
                 Create a project to organize PDFs.
               </div>
             )}
-            {visibleProjectGroups.map((group) => {
-              const depth = studioProjectDepth(group.project, projects);
-              const isDropTarget = dropProjectId === group.project.id;
-              const canAcceptDraggedProject = draggedProjectId
-                ? canMoveProject(draggedProjectId, group.project.id)
-                : false;
-              const canAcceptDraggedDocument = Boolean(draggedDocumentId);
-              const canAcceptDrop = canAcceptDraggedDocument || canAcceptDraggedProject;
-              const hasChildProjects = projects.some((project) => project.parent_id === group.project.id);
-
-              return (
-                <div
-                  key={group.project.id}
-                  className={`mb-3 rounded-lg transition-colors ${isDropTarget ? "bg-primary/5 ring-1 ring-primary/35" : ""}`}
-                  data-studio-project-id={group.project.id}
-                  data-studio-project-parent-id={group.project.parent_id ?? ""}
-                  data-studio-project-depth={depth}
-                  onDragEnter={(event) => {
-                    if (!canAcceptDrop) return;
-                    event.preventDefault();
-                    setDropProjectId(group.project.id);
-                  }}
-                  onDragOver={(event) => {
-                    if (!canAcceptDrop) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                  }}
-                  onDragLeave={(event) => {
-                    const relatedTarget = event.relatedTarget;
-                    if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
-                      setDropProjectId(null);
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const projectId = event.dataTransfer.getData("application/x-opennotion-studio-project-id") || draggedProjectId;
-                    const documentId = event.dataTransfer.getData("application/x-opennotion-studio-document-id") || draggedDocumentId;
-                    clearDragState();
-                    if (projectId) {
-                      moveDraggedProject(projectId, group.project.id);
-                      return;
-                    }
-                    if (documentId) moveDraggedDocument(documentId, group.project.id);
-                  }}
-                >
-                  <StudioProjectHeader
-                    project={group.project}
-                    count={group.documents.length}
-                    depth={currentProjectId ? Math.max(0, depth - studioProjectDepth(currentProject ?? group.project, projects)) : depth}
-                    active={group.project.id === currentProjectId}
-                    onOpen={() => setCurrentProjectId(group.project.id)}
-                    onCreateChild={() => openChildProjectDialog(group.project.id)}
-                    onRename={(name) => onRenameProject(group.project.id, name)}
-                    onDelete={() => onDeleteProject(group.project.id)}
-                    onProjectDragStart={() => setDraggedProjectId(group.project.id)}
-                    onProjectDragEnd={clearDragState}
-                  />
-                  {group.documents.length === 0 && !hasChildProjects && (
-                    <div
-                      className="mx-3 mb-2 rounded-md border border-dashed border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground"
-                      data-studio-project-empty
-                    >
-                      Drop PDFs here
-                    </div>
-                  )}
-                  {group.documents.map((document) => (
-                    <StudioDocumentRow
-                      key={`project-${group.project.id}-${document.id}`}
-                      document={document}
-                      active={document.id === currentDocumentId}
-                      onSelect={() => onSelectDocument(document.id)}
-                      onRename={(title) => onRenameDocument(document.id, title)}
-                      onDelete={() => onDeleteDocument(document.id)}
-                      projects={projects}
-                      onMove={(projectId) => onMoveDocument(document.id, projectId)}
-                      onDragStart={() => setDraggedDocumentId(document.id)}
-                      onDragEnd={clearDragState}
-                    />
-                  ))}
-                </div>
-              );
-            })}
+            <div className="on-studio-tree">
+              {rootProjectGroups.map((group) => renderProjectGroup(group, 0))}
+            </div>
           </section>
         )}
       </div>

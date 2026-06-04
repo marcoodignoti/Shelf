@@ -26,6 +26,7 @@ function createBackend() {
     appConfigDir: app.getPath("userData"),
     openPath: (filePath) => shell.openPath(filePath),
     revealPath: (filePath) => shell.showItemInFolder(filePath),
+    openExternalUrl: (url) => shell.openExternal(url),
   });
   return backend;
 }

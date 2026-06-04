@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppNotice } from "./components/AppNotice";
+import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { HomeView } from "./components/HomeView";
@@ -157,6 +158,7 @@ export default function App() {
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>
+      <BetaUpdateNotice />
       <AppNotice />
     </Layout>
   );

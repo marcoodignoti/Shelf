@@ -1,0 +1,71 @@
+# Beta Updates
+
+OpenNotion uses assisted beta updates for testers.
+
+This is not a silent auto-updater. Current macOS and Windows builds are unsigned,
+so the app checks a small GitHub Release manifest, shows a brief changelog, and
+opens the matching DMG or ZIP download.
+
+## Tester Flow
+
+1. App starts and checks `beta-update.json` from the latest GitHub Release.
+2. If the manifest version is newer than the installed `package.json` version,
+   OpenNotion shows a beta update notice.
+3. Tester reads the short changelog and downloads the matching build.
+4. Tester replaces the app manually.
+
+## Create Manifest
+
+After packaging the beta artifacts, generate:
+
+```sh
+OPENNOTION_UPDATE_VERSION=0.1.1 \
+OPENNOTION_UPDATE_TAG=v0.1.1 \
+OPENNOTION_UPDATE_TITLE="OpenNotion 0.1.1" \
+OPENNOTION_UPDATE_SUMMARY="Studio links, bookmarks, shared search, and beta updates." \
+OPENNOTION_UPDATE_CHANGES="PDFs can link multiple notes;Inline page links show previews;Studio notes appear in Notes search;Slash command search is more accurate;Beta updates now include changelog" \
+npm run release:update-manifest
+```
+
+Generated file:
+
+```text
+dist-electron/beta-update.json
+```
+
+Upload these three files to the same GitHub Release:
+
+```text
+OpenNotion_0.1.1_arm64.dmg
+OpenNotion_0.1.1_win-x64.zip
+beta-update.json
+```
+
+## Manifest Format
+
+```json
+{
+  "version": "0.1.1",
+  "channel": "beta",
+  "publishedAt": "2026-06-04T00:00:00.000Z",
+  "title": "OpenNotion 0.1.1",
+  "summary": "Studio links, bookmarks, shared search, and beta updates.",
+  "changes": [
+    "PDFs can link multiple notes",
+    "Inline page links show previews",
+    "Studio notes appear in Notes search"
+  ],
+  "downloads": {
+    "macosArm64": {
+      "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_arm64.dmg",
+      "label": "macOS Apple Silicon"
+    },
+    "windowsX64": {
+      "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_win-x64.zip",
+      "label": "Windows x64 portable zip"
+    }
+  }
+}
+```
+
+Keep `changes` short: three to five concrete points, no marketing copy.

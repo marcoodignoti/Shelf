@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
+const packageJson = require(path.join(root, "package.json"));
 const electronApp = path.join(root, "node_modules", "electron", "dist", "Electron.app");
 const outputDir = path.join(root, "dist-electron", "mac-arm64");
 const workingOutputDir =
@@ -52,9 +53,9 @@ fs.writeFileSync(
   JSON.stringify(
     {
       name: "opennotion",
-      version: "0.1.0",
-      description: "Local-first Notion-style workspace.",
-      author: "Marco Dignoti",
+      version: packageJson.version,
+      description: packageJson.description,
+      author: packageJson.author,
       main: "electron/main.cjs",
     },
     null,
@@ -67,8 +68,8 @@ run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName OpenNotion", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName OpenNotion", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier org.opennotion.desktop", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable OpenNotion", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleShortVersionString 0.1.0", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleVersion 0.1.0", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleShortVersionString ${packageJson.version}`, plist]);
+run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleVersion ${packageJson.version}`, plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);
 
 if (process.platform === "darwin") {

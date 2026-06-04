@@ -19,7 +19,7 @@ The current unsigned artifacts are generated at:
 
 ```text
 dist-electron/mac-arm64/OpenNotion.app
-dist-electron/OpenNotion_0.1.0_arm64.dmg
+dist-electron/OpenNotion_0.1.1_arm64.dmg
 ```
 
 ## Acceptance Criteria
@@ -31,6 +31,7 @@ dist-electron/OpenNotion_0.1.0_arm64.dmg
 - The packaged app opens normally after copying it from the DMG.
 - For public releases, Gatekeeper accepts the app after signing and notarization.
 - Large local PDFs are handled with clear errors or acceptable performance.
+- Beta update notices open the latest GitHub Release DMG manually.
 
 ## Pre-Distribution Profiling
 

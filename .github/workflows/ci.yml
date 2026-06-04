@@ -83,11 +83,13 @@ jobs:
 
       - name: Zip Windows package
         shell: pwsh
-        run: Compress-Archive -Path dist-electron/win-x64/OpenNotion/* -DestinationPath dist-electron/OpenNotion_0.1.0_win-x64.zip -Force
+        run: |
+          $version = node -p "require('./package.json').version"
+          Compress-Archive -Path dist-electron/win-x64/OpenNotion/* -DestinationPath "dist-electron/OpenNotion_${version}_win-x64.zip" -Force
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: OpenNotion_0.1.0_win-x64
-          path: dist-electron/OpenNotion_0.1.0_win-x64.zip
+          name: OpenNotion_win-x64
+          path: dist-electron/OpenNotion_*_win-x64.zip
           if-no-files-found: error

@@ -176,7 +176,7 @@ test.beforeEach(async ({ page }) => {
           return null;
         }
 
-        if (cmd === "list_studio_documents" || cmd === "list_studio_projects") {
+        if (cmd === "list_studio_documents" || cmd === "list_studio_projects" || cmd === "list_all_studio_document_page_links") {
           return [];
         }
 
@@ -194,6 +194,53 @@ test("disables browser spellcheck inside the editor", async ({ page }) => {
 
   await expect(editor).toHaveAttribute("spellcheck", "false");
   await expect(editor).toHaveAttribute("autocorrect", "off");
+});
+
+test("keeps editor body text readable in dark mode", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("opennotion-theme", "dark");
+  });
+  await seedPage(page, "Dark Readability Smoke", [
+    {
+      type: "paragraph",
+      content: [{ type: "text", text: "Readable dark editor body text", styles: {} }],
+      children: [],
+    },
+  ]);
+
+  const styles = await page.locator(".bn-block-content").first().evaluate((element) => {
+    const parseRgb = (color: string) => {
+      const match = color.match(/\d+(\.\d+)?/g)?.map(Number);
+      if (!match || match.length < 3) return null;
+      return match.slice(0, 3);
+    };
+    const luminance = ([red, green, blue]: number[]) => {
+      const channels = [red, green, blue].map((value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+
+    const textColor = getComputedStyle(element).color;
+    const backgroundColor = getComputedStyle(document.body).backgroundColor;
+    const textRgb = parseRgb(textColor);
+    const backgroundRgb = parseRgb(backgroundColor);
+    const textLuminance = textRgb ? luminance(textRgb) : 0;
+    const backgroundLuminance = backgroundRgb ? luminance(backgroundRgb) : 0;
+    const lighter = Math.max(textLuminance, backgroundLuminance);
+    const darker = Math.min(textLuminance, backgroundLuminance);
+
+    return {
+      blockNoteScheme: element.closest(".bn-root")?.getAttribute("data-color-scheme"),
+      textColor,
+      backgroundColor,
+      contrast: (lighter + 0.05) / (darker + 0.05),
+    };
+  });
+
+  expect(styles.blockNoteScheme).toBe("dark");
+  expect(styles.contrast).toBeGreaterThan(7);
 });
 
 test("create, edit, reload, and search preserves page content", async ({ page }) => {
@@ -565,6 +612,41 @@ test("navigates slash command menu with arrows and enter", async ({ page }) => {
   await page.keyboard.type("Arrow selected heading");
 
   await expect(page.getByRole("heading", { name: "Arrow selected heading", level: 2 })).toBeVisible();
+});
+
+test("inserts inline page links with hover preview and custom label", async ({ page }) => {
+  await createPageAndFocusEditor(page, "Target Page");
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => page.title === "Target Page");
+    },
+    { key: storageKey }
+  );
+  const sourceEditor = await createPageAndFocusEditor(page, "Source Page");
+
+  await sourceEditor.click();
+  await page.keyboard.type("@Target");
+  const menu = page.locator(".bn-suggestion-menu");
+  await expect(menu).toContainText("Target Page");
+  await menu.getByText("Target Page", { exact: true }).click();
+
+  const pageLink = page.getByLabel("Page link: Target Page");
+  await expect(pageLink).toBeVisible();
+  await pageLink.hover();
+  await expect(page.getByTitle("Open page")).toBeVisible();
+  await page.getByLabel("Page link label").fill("Target Alias");
+  await expect(page.getByLabel("Page link: Target Alias")).toBeVisible();
+
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const source = pages.find((page) => page.title === "Source Page");
+      return (source?.content ?? "").includes('"type":"pageLink"') &&
+        (source?.search_text ?? "").includes("Target Alias");
+    },
+    { key: storageKey }
+  );
 });
 
 test("selects all editor blocks with command a", async ({ page }) => {

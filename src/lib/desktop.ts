@@ -56,3 +56,7 @@ export function studioDocumentPdfSrc(documentId: string, filePath: string): stri
   const desktop = bridge();
   return desktop.studioPdfSrc ? desktop.studioPdfSrc(documentId) : desktop.fileSrc(filePath);
 }
+
+export async function openExternalUrl(url: string): Promise<void> {
+  await invoke('open_external_url', { url });
+}

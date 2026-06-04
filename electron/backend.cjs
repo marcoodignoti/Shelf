@@ -7,6 +7,7 @@ const { pathToFileURL } = require("node:url");
 const APP_SCHEMA_VERSION = "1";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const STUDIO_PDF_MAX_BYTES = 512 * 1024 * 1024;
+const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
 const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
 const BACKUP_MAX_PAGES = 5000;
 const BACKUP_MAX_ID_LENGTH = 512;
@@ -21,6 +22,7 @@ const PAGE_COLUMNS =
 const STUDIO_DOCUMENT_COLUMNS =
   "id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at";
 const STUDIO_PROJECT_COLUMNS = "id, name, parent_id, sort_order, created_at, updated_at";
+const STUDIO_DOCUMENT_PAGE_LINK_COLUMNS = "id, document_id, page_id, pdf_page, label, sort_order, created_at, updated_at";
 
 function ensurePrivateDirectory(directoryPath) {
   fs.mkdirSync(directoryPath, { recursive: true });
@@ -103,6 +105,18 @@ function runMigrations(db) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS studio_document_page_links (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      page_id TEXT NOT NULL,
+      pdf_page INTEGER,
+      label TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(document_id, page_id)
+    );
   `);
 
   if (!hasColumn(db, "studio_documents", "project_id")) {
@@ -116,10 +130,22 @@ function runMigrations(db) {
       ON studio_documents (project_id, last_opened_at DESC);
     CREATE INDEX IF NOT EXISTS idx_studio_projects_parent_sort
       ON studio_projects (parent_id, sort_order, name);
+    CREATE INDEX IF NOT EXISTS idx_studio_document_page_links_document
+      ON studio_document_page_links (document_id, sort_order, created_at);
+    CREATE INDEX IF NOT EXISTS idx_studio_document_page_links_page
+      ON studio_document_page_links (page_id);
     CREATE INDEX IF NOT EXISTS idx_pages_active_parent_sort
       ON pages (is_deleted, parent_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_pages_active_updated_at
       ON pages (is_deleted, updated_at);
+  `);
+
+  db.exec(`
+    INSERT OR IGNORE INTO studio_document_page_links (
+      id, document_id, page_id, pdf_page, label, sort_order, created_at, updated_at
+    )
+    SELECT lower(hex(randomblob(16))), id, note_page_id, NULL, 'Primary note', 0, created_at, updated_at
+    FROM studio_documents
   `);
 }
 
@@ -329,11 +355,12 @@ function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
 }
 
 class OpenNotionBackend {
-  constructor({ appConfigDir, openPath, revealPath }) {
+  constructor({ appConfigDir, openPath, revealPath, openExternalUrl }) {
     this.appConfigDir = appConfigDir;
     this.db = openDatabase(appConfigDir);
     this.openPath = openPath || (() => Promise.resolve(""));
     this.revealPath = revealPath || (() => {});
+    this.openExternal = openExternalUrl || (() => Promise.resolve(""));
     this.commands = {
       list_pages: () => this.listPages(),
       list_all_pages: () => this.listAllPages(),
@@ -354,6 +381,11 @@ class OpenNotionBackend {
       update_studio_project_parent: (args) => this.updateStudioProjectParent(args),
       delete_studio_project: (args) => this.deleteStudioProject(args),
       update_studio_document_project: (args) => this.updateStudioDocumentProject(args),
+      list_all_studio_document_page_links: () => this.listAllStudioDocumentPageLinks(),
+      list_studio_document_page_links: (args) => this.listStudioDocumentPageLinks(args),
+      link_studio_document_page: (args) => this.linkStudioDocumentPage(args),
+      update_studio_document_page_link: (args) => this.updateStudioDocumentPageLink(args),
+      unlink_studio_document_page: (args) => this.unlinkStudioDocumentPage(args),
       import_studio_document: (args) => this.importStudioDocument(args),
       replace_studio_document_file: (args) => this.replaceStudioDocumentFile(args),
       update_studio_document_viewer_state: (args) => this.updateStudioDocumentViewerState(args),
@@ -367,6 +399,8 @@ class OpenNotionBackend {
       duplicate_page: (args) => this.duplicatePage(args),
       import_cover_image: (args) => this.importCoverImage(args),
       import_editor_image: (args) => this.importEditorImage(args),
+      open_external_url: (args) => this.openExternalUrl(args),
+      fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
       show_character_palette: () => null,
     };
   }
@@ -401,8 +435,45 @@ class OpenNotionBackend {
     return pathToFileURL(filePath).toString();
   }
 
+  async openExternalUrl({ url }) {
+    const parsed = new URL(String(url ?? ""));
+    if (parsed.protocol !== "https:") throw new Error("external URL must use HTTPS");
+    const error = await this.openExternal(parsed.toString());
+    if (error) throw new Error(error);
+  }
+
+  async fetchUpdateManifest({ url }) {
+    const parsed = new URL(String(url ?? ""));
+    if (parsed.protocol !== "https:") throw new Error("update manifest URL must use HTTPS");
+
+    const response = await fetch(parsed.toString(), {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Update check failed (${response.status})`);
+    }
+
+    const contentLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
+    if (Number.isFinite(contentLength) && contentLength > UPDATE_MANIFEST_MAX_BYTES) {
+      throw new Error("Update manifest is too large");
+    }
+
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > UPDATE_MANIFEST_MAX_BYTES) {
+      throw new Error("Update manifest is too large");
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("Invalid update manifest JSON");
+    }
+  }
+
   listPages() {
-    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind = 'note' ORDER BY sort_order ASC, created_at DESC`).all();
+    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind IN ('note', 'studio_note') ORDER BY sort_order ASC, created_at DESC`).all();
   }
 
   listAllPages() {
@@ -421,7 +492,7 @@ class OpenNotionBackend {
         END AS matched_content
       FROM pages
       WHERE is_deleted = 0
-        AND page_kind = 'note'
+        AND page_kind IN ('note', 'studio_note')
         AND (lower(coalesce(title, '')) LIKE ? OR lower(coalesce(search_text, '')) LIKE ?)
       ORDER BY
         CASE WHEN lower(coalesce(title, '')) LIKE ? THEN 0 ELSE 1 END,
@@ -477,16 +548,28 @@ class OpenNotionBackend {
   }
 
   deletePage({ id }) {
-    this.db.prepare(`
-      WITH RECURSIVE descendants(id) AS (
-        SELECT id FROM pages WHERE id = ?
-        UNION ALL
-        SELECT pages.id FROM pages
-        JOIN descendants ON pages.parent_id = descendants.id
-      )
-      DELETE FROM pages
-      WHERE id IN (SELECT id FROM descendants)
-    `).run(id);
+    this.withTransaction(() => {
+      this.db.prepare(`
+        WITH RECURSIVE descendants(id) AS (
+          SELECT id FROM pages WHERE id = ?
+          UNION ALL
+          SELECT pages.id FROM pages
+          JOIN descendants ON pages.parent_id = descendants.id
+        )
+        DELETE FROM studio_document_page_links
+        WHERE page_id IN (SELECT id FROM descendants)
+      `).run(id);
+      this.db.prepare(`
+        WITH RECURSIVE descendants(id) AS (
+          SELECT id FROM pages WHERE id = ?
+          UNION ALL
+          SELECT pages.id FROM pages
+          JOIN descendants ON pages.parent_id = descendants.id
+        )
+        DELETE FROM pages
+        WHERE id IN (SELECT id FROM descendants)
+      `).run(id);
+    });
   }
 
   movePage({ id, parentId, parent_id, updatedAt, updated_at }) {
@@ -669,13 +752,151 @@ class OpenNotionBackend {
     if (result.changes === 0) throw new Error("document not found");
   }
 
+  studioDocumentPageLinkFromRow(row) {
+    if (!row) return null;
+    return {
+      id: row.link_id,
+      document_id: row.document_id,
+      page_id: row.page_id,
+      pdf_page: row.pdf_page,
+      label: row.label,
+      sort_order: row.link_sort_order,
+      created_at: row.link_created_at,
+      updated_at: row.link_updated_at,
+      page: {
+        id: row.page_id,
+        title: row.title,
+        parent_id: row.parent_id,
+        content: row.content,
+        search_text: row.search_text,
+        icon: row.icon,
+        cover_url: row.cover_url,
+        is_deleted: row.is_deleted,
+        is_favorite: row.is_favorite,
+        is_template: row.is_template,
+        is_database: row.is_database,
+        database_schema: row.database_schema,
+        properties: row.properties,
+        sort_order: row.page_sort_order,
+        page_kind: row.page_kind,
+        created_at: row.page_created_at,
+        updated_at: row.page_updated_at,
+      },
+    };
+  }
+
+  studioDocumentPageLinkSelectSql() {
+    return `
+      SELECT
+        links.id AS link_id,
+        links.document_id,
+        links.page_id,
+        links.pdf_page,
+        links.label,
+        links.sort_order AS link_sort_order,
+        links.created_at AS link_created_at,
+        links.updated_at AS link_updated_at,
+        pages.id AS page_id,
+        pages.title,
+        pages.parent_id,
+        pages.content,
+        pages.search_text,
+        pages.icon,
+        pages.cover_url,
+        pages.is_deleted,
+        pages.is_favorite,
+        pages.is_template,
+        pages.is_database,
+        pages.database_schema,
+        pages.properties,
+        pages.sort_order AS page_sort_order,
+        pages.page_kind,
+        pages.created_at AS page_created_at,
+        pages.updated_at AS page_updated_at
+      FROM studio_document_page_links links
+      JOIN pages ON pages.id = links.page_id
+    `;
+  }
+
+  listStudioDocumentPageLinks({ documentId, document_id }) {
+    const document = documentId ?? document_id;
+    return this.db.prepare(`
+      ${this.studioDocumentPageLinkSelectSql()}
+      WHERE links.document_id = ?
+        AND pages.is_deleted = 0
+      ORDER BY links.sort_order ASC, links.created_at ASC
+    `).all(document).map((row) => this.studioDocumentPageLinkFromRow(row));
+  }
+
+  listAllStudioDocumentPageLinks() {
+    return this.db.prepare(`
+      ${this.studioDocumentPageLinkSelectSql()}
+      JOIN studio_documents documents ON documents.id = links.document_id
+      WHERE pages.is_deleted = 0
+      ORDER BY documents.title COLLATE NOCASE ASC, links.sort_order ASC, links.created_at ASC
+    `).all().map((row) => this.studioDocumentPageLinkFromRow(row));
+  }
+
+  linkStudioDocumentPage({ id, documentId, document_id, pageId, page_id, pdfPage, pdf_page, label, createdAt, created_at }) {
+    const linkId = id || crypto.randomUUID();
+    const document = documentId ?? document_id;
+    const page = pageId ?? page_id;
+    const created = createdAt ?? created_at;
+    const pdfPageValue = Number.isFinite(Number(pdfPage ?? pdf_page)) ? Math.max(1, Math.round(Number(pdfPage ?? pdf_page))) : null;
+    const labelValue = normalizeOptionalString(label);
+    const documentExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_documents WHERE id = ?").get(document), "value");
+    if (documentExists === 0) throw new Error("document not found");
+    const pageExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM pages WHERE id = ? AND is_deleted = 0").get(page), "value");
+    if (pageExists === 0) throw new Error("page not found");
+    const sortOrder = rowValue(this.db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
+      FROM studio_document_page_links
+      WHERE document_id = ?
+    `).get(document), "value");
+
+    this.db.prepare(`
+      INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(document_id, page_id) DO UPDATE SET
+        pdf_page = excluded.pdf_page,
+        label = excluded.label,
+        updated_at = excluded.updated_at
+    `).run(linkId, document, page, pdfPageValue, labelValue, sortOrder, created, created);
+
+    const row = this.db.prepare(`
+      ${this.studioDocumentPageLinkSelectSql()}
+      WHERE links.document_id = ?
+        AND links.page_id = ?
+        AND pages.is_deleted = 0
+    `).get(document, page);
+    return this.studioDocumentPageLinkFromRow(row);
+  }
+
+  updateStudioDocumentPageLink({ id, pdfPage, pdf_page, label, updatedAt, updated_at }) {
+    const pdfPageInput = pdfPage ?? pdf_page;
+    const pdfPageValue = pdfPageInput === null || pdfPageInput === undefined || pdfPageInput === ""
+      ? null
+      : Math.max(1, Math.round(Number(pdfPageInput)));
+    if (pdfPageValue !== null && !Number.isFinite(pdfPageValue)) throw new Error("invalid PDF page");
+    const result = this.db.prepare(`
+      UPDATE studio_document_page_links
+      SET pdf_page = ?, label = ?, updated_at = ?
+      WHERE id = ?
+    `).run(pdfPageValue, normalizeOptionalString(label), updatedAt ?? updated_at, id);
+    if (result.changes === 0) throw new Error("link not found");
+  }
+
+  unlinkStudioDocumentPage({ id }) {
+    this.db.prepare("DELETE FROM studio_document_page_links WHERE id = ?").run(id);
+  }
+
   studioPdfDestination(documentId) {
     const directory = path.join(this.appConfigDir, "studio-documents", safeStorageId(documentId));
     ensurePrivateDirectory(directory);
     return path.join(directory, "source.pdf");
   }
 
-  importStudioDocument({ documentId, document_id, notePageId, note_page_id, sourcePath, source_path, importedAt, imported_at }) {
+  async importStudioDocument({ documentId, document_id, notePageId, note_page_id, sourcePath, source_path, importedAt, imported_at }) {
     const documentIdValue = documentId ?? document_id;
     const notePageIdValue = notePageId ?? note_page_id;
     const source = sourcePath ?? source_path;
@@ -685,7 +906,7 @@ class OpenNotionBackend {
     const originalFilename = path.basename(source);
     const title = parsed.name || "Imported PDF";
     const destination = this.studioPdfDestination(documentIdValue);
-    fs.copyFileSync(source, destination);
+    await fs.promises.copyFile(source, destination);
     const storedFilePath = destination;
 
     try {
@@ -698,6 +919,10 @@ class OpenNotionBackend {
           INSERT INTO studio_documents (id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, 100, 1, 'pdf-left', ?, ?)
         `).run(documentIdValue, title, originalFilename, storedFilePath, notePageIdValue, imported, imported, imported);
+        this.db.prepare(`
+          INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
+          VALUES (?, ?, ?, NULL, 'Primary note', 0, ?, ?)
+        `).run(crypto.randomUUID(), documentIdValue, notePageIdValue, imported, imported);
       });
     } catch (error) {
       fs.rmSync(destination, { force: true });
@@ -707,12 +932,12 @@ class OpenNotionBackend {
     return this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(documentIdValue);
   }
 
-  replaceStudioDocumentFile({ id, sourcePath, source_path, updatedAt, updated_at }) {
+  async replaceStudioDocumentFile({ id, sourcePath, source_path, updatedAt, updated_at }) {
     const source = fs.realpathSync(sourcePath ?? source_path);
     validatedPdfFile(source);
     const destination = this.studioPdfDestination(id);
     const shouldCopy = fs.existsSync(destination) ? fs.realpathSync(destination) !== source : true;
-    if (shouldCopy) fs.copyFileSync(source, destination);
+    if (shouldCopy) await fs.promises.copyFile(source, destination);
     const result = this.db.prepare("UPDATE studio_documents SET original_filename = ?, stored_file_path = ?, updated_at = ? WHERE id = ?")
       .run(path.basename(source), destination, updatedAt ?? updated_at, id);
     if (result.changes === 0) throw new Error("document not found");
@@ -774,6 +999,7 @@ class OpenNotionBackend {
     const current = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(id);
     if (!current) throw new Error("document not found");
     this.withTransaction(() => {
+      this.db.prepare("DELETE FROM studio_document_page_links WHERE document_id = ?").run(id);
       this.db.prepare("DELETE FROM studio_documents WHERE id = ?").run(id);
       this.db.prepare("DELETE FROM pages WHERE id = ?").run(current.note_page_id);
     });

@@ -1,7 +1,7 @@
 {
   "name": "opennotion",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first Notion-style workspace.",
   "author": "Marco Dignoti",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "check:electron": "npm run build && npm run test && npm run electron:smoke && npm run electron:smoke:runtime && npm audit --audit-level=moderate && npm run electron:package:dir && npm run electron:smoke:visual && npm run electron:smoke:parity && npm run electron:smoke:stability",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:dev": "concurrently -k \"npm run dev -- --host 127.0.0.1\" \"wait-on http://127.0.0.1:1420 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:1420 electron .\"",
+    "electron:dev": "node scripts/electron-dev.cjs",
     "electron:smoke": "node electron/smoke.cjs",
     "electron:smoke:runtime": "cross-env ELECTRON_RUN_AS_NODE=1 electron electron/smoke.cjs",
     "electron:smoke:visual": "node electron/visual-smoke.cjs",
@@ -43,6 +43,7 @@
     "release:package:desktop": "npm run electron:package:dmg",
     "release:package:macos": "npm run electron:package:dmg",
     "release:package:windows": "npm run electron:package:win",
+    "release:update-manifest": "node scripts/write-beta-update-manifest.cjs",
     "release:verify:macos": "node scripts/electron-verify-macos.cjs"
   },
   "dependencies": {

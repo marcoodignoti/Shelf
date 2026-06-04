@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
         invokedCommands.push(cmd);
 
         if (cmd === "list_pages" || cmd === "list_all_pages" || cmd === "search_pages") return [];
-        if (cmd === "list_studio_documents" || cmd === "list_studio_projects") return [];
+        if (cmd === "list_studio_documents" || cmd === "list_studio_projects" || cmd === "list_all_studio_document_page_links") return [];
         if (cmd === "show_character_palette") return null;
 
         throw new Error(`Unhandled no-ai e2e command: ${cmd}`);

@@ -67,6 +67,7 @@ describe("pageContentToSearchText", () => {
         content: [
           { type: "text", text: "Alpha", styles: {} },
           { type: "math", props: { formula: "\\nabla \\cdot \\vec{E}" } },
+          { type: "pageLink", props: { title: "Linked Research", label: "Research note" } },
           { type: "text", text: "Beta", styles: {} },
         ],
         children: [
@@ -84,7 +85,7 @@ describe("pageContentToSearchText", () => {
       },
     ]);
 
-    expect(pageContentToSearchText(content)).toBe("Alpha \\nabla \\cdot \\vec{E} Beta Nested item Roadmap");
+    expect(pageContentToSearchText(content)).toBe("Alpha \\nabla \\cdot \\vec{E} Research note Beta Nested item Roadmap");
   });
 
   it("keeps legacy plain text searchable", () => {

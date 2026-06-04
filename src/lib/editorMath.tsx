@@ -4,6 +4,7 @@ import { createReactBlockSpec, createReactInlineContentSpec, DefaultReactSuggest
 import katex from "katex";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
+import { PageLinkInlineContent } from "./editorLinks";
 
 const DEFAULT_FORMULA = "\\nabla \\cdot \\vec{E}";
 export const MAX_FORMULA_LENGTH = 4000;
@@ -321,6 +322,7 @@ export const openNotionEditorSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     math: MathInlineContent,
+    pageLink: PageLinkInlineContent,
   },
 });
 

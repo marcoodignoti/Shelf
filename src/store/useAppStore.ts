@@ -8,12 +8,14 @@ import {
   deleteStudioDocument,
   deleteStudioProject,
   importStudioDocument,
+  listAllStudioDocumentPageLinks,
   listStudioDocuments,
   listStudioProjects,
   renameStudioDocument,
   renameStudioProject,
   replaceStudioDocumentFile,
   StudioDocument,
+  StudioDocumentPageLink,
   StudioPanelLayout,
   StudioProject,
   updateStudioDocumentProject,
@@ -34,6 +36,7 @@ interface AppState {
   isCommandPaletteOpen: boolean;
   workspaceMode: WorkspaceMode;
   studioDocuments: StudioDocument[];
+  studioDocumentPageLinks: StudioDocumentPageLink[];
   studioProjects: StudioProject[];
   currentStudioDocumentId: string | null;
   fetchPages: () => Promise<void>;
@@ -126,6 +129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isCommandPaletteOpen: false,
   workspaceMode: getStoredWorkspaceMode(),
   studioDocuments: [],
+  studioDocumentPageLinks: [],
   studioProjects: [],
   currentStudioDocumentId: getStoredStudioDocumentId(),
   isSidebarOpen: true,
@@ -146,9 +150,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   fetchStudioDocuments: async () => {
     try {
-      const [studioDocuments, studioProjects] = await Promise.all([
+      const [studioDocuments, studioProjects, studioDocumentPageLinks] = await Promise.all([
         listStudioDocuments(),
         listStudioProjects(),
+        listAllStudioDocumentPageLinks(),
       ]);
       const studioNotes = (await Promise.all(
         studioDocuments.map(async (document) => {
@@ -173,7 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           localStorage.removeItem('opennotion-current-studio-document-id');
         }
 
-        return { studioDocuments, studioProjects, currentStudioDocumentId, pages, error: null };
+        return { studioDocuments, studioDocumentPageLinks, studioProjects, currentStudioDocumentId, pages, error: null };
       });
     } catch (error: unknown) {
       const message = userMessageForError(error);
@@ -222,10 +227,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         await updateStudioDocumentProject(document.id, projectId);
       }
       const note = await getPage(document.note_page_id);
+      const studioDocumentPageLinks = await listAllStudioDocumentPageLinks();
       localStorage.setItem('opennotion-workspace-mode', 'studio');
       localStorage.setItem('opennotion-current-studio-document-id', document.id);
       set((state) => ({
         studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
+        studioDocumentPageLinks,
         pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
         currentStudioDocumentId: document.id,
         workspaceMode: 'studio',
@@ -441,6 +448,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         return {
           studioDocuments,
+          studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => link.document_id !== id),
           currentStudioDocumentId,
           pages: state.pages.filter((page) => page.id !== document.note_page_id),
           error: null,

@@ -1,7 +1,7 @@
 import { Page } from "./db";
 
 function notePages(pages: Page[]): Page[] {
-  return pages.filter((page) => page.page_kind === "note");
+  return pages.filter((page) => page.page_kind === "note" || page.page_kind === "studio_note");
 }
 
 export function recentPages(pages: Page[], limit = 6): Page[] {

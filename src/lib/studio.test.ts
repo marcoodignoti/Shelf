@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   buildStudioPanelGridColumns,
+  buildStudioContinuousPageWindow,
   buildStudioPdfHash,
   clampStudioPage,
   clampStudioPanelRatio,
   clampStudioZoom,
   isStudioPdfPageCountAllowed,
   MAX_STUDIO_PDF_PAGES,
+  STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES,
   studioPanelRatioFromPointer,
   studioPdfSrc,
 } from "./studio";
@@ -65,6 +67,35 @@ describe("studio viewer helpers", () => {
     expect(isStudioPdfPageCountAllowed(0)).toBe(false);
     expect(isStudioPdfPageCountAllowed(MAX_STUDIO_PDF_PAGES + 1)).toBe(false);
     expect(isStudioPdfPageCountAllowed(1.5)).toBe(false);
+  });
+
+  it("windows large continuous PDFs instead of mounting every page", () => {
+    const window = buildStudioContinuousPageWindow({
+      pageCount: MAX_STUDIO_PDF_PAGES,
+      page: 1,
+      scrollTop: 0,
+      viewportHeight: 900,
+      zoom: 100,
+    });
+
+    expect(window.pages[0]).toBe(1);
+    expect(window.pages.length).toBeLessThanOrEqual(STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES + 3);
+    expect(window.afterHeight).toBeGreaterThan(0);
+  });
+
+  it("keeps a scrolled continuous PDF window near the viewport", () => {
+    const window = buildStudioContinuousPageWindow({
+      pageCount: 400,
+      page: 1,
+      scrollTop: 90_000,
+      viewportHeight: 900,
+      zoom: 100,
+    });
+
+    expect(window.pages[0]).toBeGreaterThan(90);
+    expect(window.pages.length).toBeLessThan(20);
+    expect(window.beforeHeight).toBeGreaterThan(0);
+    expect(window.afterHeight).toBeGreaterThan(0);
   });
 
   it("builds a PDF hash with persisted page and zoom", () => {

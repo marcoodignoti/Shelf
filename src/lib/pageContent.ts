@@ -90,6 +90,11 @@ function textFromInlineContent(content: unknown): string {
         const props = "props" in item && typeof item.props === "object" && item.props !== null ? item.props : {};
         return "formula" in props && typeof props.formula === "string" ? props.formula : "";
       }
+      if ("type" in item && item.type === "pageLink") {
+        const props = "props" in item && typeof item.props === "object" && item.props !== null ? item.props : {};
+        if ("label" in props && typeof props.label === "string" && props.label.trim()) return props.label;
+        return "title" in props && typeof props.title === "string" ? props.title : "";
+      }
       return "";
     })
     .filter(Boolean)

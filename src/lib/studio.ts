@@ -1,8 +1,12 @@
 import { invoke, studioDocumentPdfSrc } from "./desktop";
+import type { Page } from "./db";
 
 export type StudioPanelLayout = "pdf-left" | "note-left";
 
 export const MAX_STUDIO_PDF_PAGES = 1000;
+export const STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES = 4;
+export const STUDIO_PDF_ESTIMATED_PAGE_GAP_PX = 18;
+export const STUDIO_PDF_FALLBACK_PAGE_HEIGHT_PX = 792;
 
 export interface StudioDocument {
   id: string;
@@ -28,11 +32,29 @@ export interface StudioProject {
   updated_at: string;
 }
 
+export interface StudioDocumentPageLink {
+  id: string;
+  document_id: string;
+  page_id: string;
+  pdf_page: number | null;
+  label: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  page: Page;
+}
+
 export interface StudioViewerUpdates {
   viewer_zoom?: number;
   viewer_page?: number;
   panel_layout?: StudioPanelLayout;
   last_opened_at?: string;
+}
+
+export interface StudioContinuousPageWindow {
+  pages: number[];
+  beforeHeight: number;
+  afterHeight: number;
 }
 
 export async function listStudioDocuments(): Promise<StudioDocument[]> {
@@ -41,6 +63,10 @@ export async function listStudioDocuments(): Promise<StudioDocument[]> {
 
 export async function listStudioProjects(): Promise<StudioProject[]> {
   return await invoke<StudioProject[]>("list_studio_projects");
+}
+
+export async function listAllStudioDocumentPageLinks(): Promise<StudioDocumentPageLink[]> {
+  return await invoke<StudioDocumentPageLink[]>("list_all_studio_document_page_links");
 }
 
 export async function createStudioProject(name: string, parentId: string | null = null): Promise<StudioProject> {
@@ -82,6 +108,41 @@ export async function updateStudioDocumentProject(id: string, projectId: string 
     projectId,
     updatedAt: new Date().toISOString(),
   });
+}
+
+export async function listStudioDocumentPageLinks(documentId: string): Promise<StudioDocumentPageLink[]> {
+  return await invoke<StudioDocumentPageLink[]>("list_studio_document_page_links", { documentId });
+}
+
+export async function linkStudioDocumentPage(
+  documentId: string,
+  pageId: string,
+  options: { pdfPage?: number | null; label?: string | null } = {}
+): Promise<StudioDocumentPageLink> {
+  return await invoke<StudioDocumentPageLink>("link_studio_document_page", {
+    id: crypto.randomUUID(),
+    documentId,
+    pageId,
+    pdfPage: options.pdfPage ?? null,
+    label: options.label ?? null,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function updateStudioDocumentPageLink(
+  id: string,
+  updates: { pdfPage?: number | null; label?: string | null }
+): Promise<void> {
+  await invoke("update_studio_document_page_link", {
+    id,
+    pdfPage: updates.pdfPage ?? null,
+    label: updates.label ?? null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function unlinkStudioDocumentPage(id: string): Promise<void> {
+  await invoke("unlink_studio_document_page", { id });
 }
 
 export async function importStudioDocument(sourcePath: string): Promise<StudioDocument> {
@@ -143,6 +204,41 @@ export function clampStudioPage(page: number): number {
 
 export function isStudioPdfPageCountAllowed(pageCount: number): boolean {
   return Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= MAX_STUDIO_PDF_PAGES;
+}
+
+export function estimatedStudioPdfPageSlotHeight(zoom: number): number {
+  return Math.max(1, Math.round(STUDIO_PDF_FALLBACK_PAGE_HEIGHT_PX * (clampStudioZoom(zoom) / 100))) + STUDIO_PDF_ESTIMATED_PAGE_GAP_PX;
+}
+
+export function buildStudioContinuousPageWindow({
+  pageCount,
+  page,
+  scrollTop,
+  viewportHeight,
+  zoom,
+}: {
+  pageCount: number;
+  page: number;
+  scrollTop: number;
+  viewportHeight: number;
+  zoom: number;
+}): StudioContinuousPageWindow {
+  const safePageCount = Math.max(1, Math.min(MAX_STUDIO_PDF_PAGES, Math.floor(pageCount)));
+  const currentPage = Math.min(clampStudioPage(page), safePageCount);
+  const pageSlotHeight = estimatedStudioPdfPageSlotHeight(zoom);
+  const visiblePageSlots = Math.max(1, Math.ceil(Math.max(0, viewportHeight) / pageSlotHeight));
+  const scrollPage = Number.isFinite(scrollTop) && scrollTop > 0
+    ? Math.floor(scrollTop / pageSlotHeight) + 1
+    : currentPage;
+  const centerPage = Math.max(1, Math.min(safePageCount, scrollPage));
+  const startPage = Math.max(1, centerPage - STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES);
+  const endPage = Math.min(safePageCount, centerPage + visiblePageSlots + STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES);
+
+  return {
+    pages: Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index),
+    beforeHeight: startPage > 1 ? (startPage - 1) * pageSlotHeight : 0,
+    afterHeight: endPage < safePageCount ? (safePageCount - endPage) * pageSlotHeight : 0,
+  };
 }
 
 export function buildStudioPdfHash({ page, zoom }: { page: number; zoom: number }): string {

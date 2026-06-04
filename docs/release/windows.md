@@ -9,7 +9,7 @@ The `Windows package` job in `.github/workflows/ci.yml` runs on
 `windows-latest` and uploads:
 
 ```text
-OpenNotion_0.1.0_win-x64.zip
+OpenNotion_0.1.1_win-x64.zip
 ```
 
 Inside the extracted zip:
@@ -41,10 +41,11 @@ dist-electron/win-x64/OpenNotion/
 - SmartScreen warning is expected until code signing is implemented.
 - The zip does not contain local development databases, imported PDFs, editor
   images, covers, or Studio documents.
+- Beta update notices open the latest GitHub Release zip manually.
 
 ## Not Yet Supported
 
 - signed Windows installer
-- auto-updater
+- silent auto-updater
 - SmartScreen reputation
 - Microsoft Store packaging

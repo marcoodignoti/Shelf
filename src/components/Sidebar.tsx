@@ -2,8 +2,9 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
-import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy } from 'lucide-react';
+import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy, Folder, FolderOpen } from 'lucide-react';
 import { Page } from '../lib/db';
+import type { StudioDocument, StudioDocumentPageLink } from '../lib/studio';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
 import { SettingsModal } from './SettingsModal';
 import { HOME_PAGE_ID } from '../lib/navigation';
@@ -15,6 +16,8 @@ import { dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId }
 import type { DropPosition } from '../lib/pageOrder';
 import { SidebarModeSwitch } from './SidebarModeSwitch';
 import { StudioSidebar } from './StudioSidebar';
+import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject } from '../lib/studioDocuments';
+import type { StudioProjectGroup } from '../lib/studioDocuments';
 
 type PendingDelete = {
   page: Page;
@@ -503,6 +506,272 @@ function PageItem({
   );
 }
 
+type StudioNoteEntry = {
+  page: Page;
+  link: StudioDocumentPageLink | null;
+};
+
+type StudioNoteDocument = StudioDocument & {
+  noteEntries: StudioNoteEntry[];
+};
+
+function storedStudioTreeExpanded(key: string): boolean {
+  return localStorage.getItem(`opennotion-${key}-expanded`) !== 'false';
+}
+
+function storeStudioTreeExpanded(key: string, expanded: boolean) {
+  localStorage.setItem(`opennotion-${key}-expanded`, String(expanded));
+}
+
+function studioNoteCount(
+  group: StudioProjectGroup<StudioNoteDocument>,
+  childrenByParentId: Map<string | null, StudioProjectGroup<StudioNoteDocument>[]>
+): number {
+  const directCount = group.documents.reduce((count, document) => count + document.noteEntries.length, 0);
+  const childCount = (childrenByParentId.get(group.project.id) ?? [])
+    .reduce((count, childGroup) => count + studioNoteCount(childGroup, childrenByParentId), 0);
+  return directCount + childCount;
+}
+
+function buildStudioNoteDocuments(
+  documents: StudioDocument[],
+  links: StudioDocumentPageLink[],
+  studioNotePages: Page[]
+): { documents: StudioNoteDocument[]; linkedPageIds: Set<string> } {
+  const studioNoteById = new Map(studioNotePages.map((page) => [page.id, page]));
+  const linksByDocumentId = new Map<string, StudioDocumentPageLink[]>();
+  const linkedPageIds = new Set<string>();
+
+  for (const link of links) {
+    if (link.page.page_kind !== 'studio_note') continue;
+    linkedPageIds.add(link.page_id);
+    const documentLinks = linksByDocumentId.get(link.document_id) ?? [];
+    documentLinks.push(link);
+    linksByDocumentId.set(link.document_id, documentLinks);
+  }
+
+  return {
+    linkedPageIds,
+    documents: documents
+      .map((document) => {
+        const linkedEntries = (linksByDocumentId.get(document.id) ?? [])
+          .map((link) => ({ page: link.page, link }));
+        const hasPrimaryLink = linkedEntries.some((entry) => entry.page.id === document.note_page_id);
+        const primaryNote = studioNoteById.get(document.note_page_id);
+        const entries = hasPrimaryLink || !primaryNote
+          ? linkedEntries
+          : [{ page: primaryNote, link: null }, ...linkedEntries];
+
+        if (primaryNote) linkedPageIds.add(primaryNote.id);
+        if (entries.length === 0) return null;
+        return { ...document, noteEntries: entries };
+      })
+      .filter((document): document is StudioNoteDocument => Boolean(document)),
+  };
+}
+
+function StudioNotesTree({
+  groups,
+  currentPageId,
+  onSelectPage,
+  onSelectDocument,
+}: {
+  groups: StudioProjectGroup<StudioNoteDocument>[];
+  currentPageId: string | null;
+  onSelectPage: (id: string) => void;
+  onSelectDocument: (id: string) => void;
+}) {
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(() => new Set([DEFAULT_STUDIO_PROJECT_ID]));
+  const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
+  const knownProjectIdsRef = useRef<Set<string>>(new Set());
+  const knownDocumentIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setExpandedProjectIds((currentIds) => {
+      const liveProjectIds = new Set(groups.map((group) => group.project.id));
+      const nextIds = new Set([...currentIds].filter((id) => id === DEFAULT_STUDIO_PROJECT_ID || liveProjectIds.has(id)));
+      let changed = nextIds.size !== currentIds.size;
+
+      if (!nextIds.has(DEFAULT_STUDIO_PROJECT_ID)) {
+        nextIds.add(DEFAULT_STUDIO_PROJECT_ID);
+        changed = true;
+      }
+
+      for (const group of groups) {
+        if (!knownProjectIdsRef.current.has(group.project.id)) {
+          knownProjectIdsRef.current.add(group.project.id);
+          if (storedStudioTreeExpanded(`studio-note-project-${group.project.id}`)) {
+            nextIds.add(group.project.id);
+            changed = true;
+          }
+        }
+      }
+
+      return changed ? nextIds : currentIds;
+    });
+  }, [groups]);
+
+  useEffect(() => {
+    setExpandedDocumentIds((currentIds) => {
+      const liveDocumentIds = new Set(groups.flatMap((group) => group.documents.map((document) => document.id)));
+      const nextIds = new Set([...currentIds].filter((id) => liveDocumentIds.has(id)));
+      let changed = nextIds.size !== currentIds.size;
+
+      for (const group of groups) {
+        for (const document of group.documents) {
+          if (!knownDocumentIdsRef.current.has(document.id)) {
+            knownDocumentIdsRef.current.add(document.id);
+            if (storedStudioTreeExpanded(`studio-note-document-${document.id}`)) {
+              nextIds.add(document.id);
+              changed = true;
+            }
+          }
+        }
+      }
+
+      return changed ? nextIds : currentIds;
+    });
+  }, [groups]);
+
+  const groupsById = new Map(groups.map((group) => [group.project.id, group]));
+  const childGroupsByParentId = new Map<string | null, StudioProjectGroup<StudioNoteDocument>[]>();
+
+  for (const group of groups) {
+    const parentId = group.project.id === DEFAULT_STUDIO_PROJECT_ID
+      ? null
+      : group.project.parent_id && groupsById.has(group.project.parent_id)
+        ? group.project.parent_id
+        : null;
+    const siblings = childGroupsByParentId.get(parentId) ?? [];
+    siblings.push(group);
+    childGroupsByParentId.set(parentId, siblings);
+  }
+
+  const rootGroups = [...(childGroupsByParentId.get(null) ?? [])].sort((first, second) => {
+    if (first.project.id === DEFAULT_STUDIO_PROJECT_ID) return -1;
+    if (second.project.id === DEFAULT_STUDIO_PROJECT_ID) return 1;
+    return 0;
+  });
+
+  const toggleProject = (projectId: string) => {
+    setExpandedProjectIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      const nextExpanded = !nextIds.has(projectId);
+      if (nextExpanded) {
+        nextIds.add(projectId);
+      } else {
+        nextIds.delete(projectId);
+      }
+      nextIds.add(DEFAULT_STUDIO_PROJECT_ID);
+      storeStudioTreeExpanded(`studio-note-project-${projectId}`, nextExpanded);
+      return nextIds;
+    });
+  };
+
+  const toggleDocument = (documentId: string) => {
+    setExpandedDocumentIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      const nextExpanded = !nextIds.has(documentId);
+      if (nextExpanded) {
+        nextIds.add(documentId);
+      } else {
+        nextIds.delete(documentId);
+      }
+      storeStudioTreeExpanded(`studio-note-document-${documentId}`, nextExpanded);
+      return nextIds;
+    });
+  };
+
+  const renderNoteRow = (entry: StudioNoteEntry, document: StudioNoteDocument, depth: number) => (
+    <button
+      key={`studio-note-${document.id}-${entry.page.id}`}
+      type="button"
+      data-studio-note-id={entry.page.id}
+      data-studio-note-document-id={document.id}
+      className={`group on-studio-note-tree-row ${currentPageId === entry.page.id ? 'on-shell-row-active' : ''}`}
+      style={{ paddingLeft: 18 + depth * 18 }}
+      onClick={() => {
+        onSelectDocument(document.id);
+        onSelectPage(entry.page.id);
+      }}
+      title="Open Studio note in Notes"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {entry.page.icon ? (
+          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{entry.page.icon}</span>
+        ) : (
+          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        )}
+        <span className="truncate">{entry.page.title || 'Untitled'}</span>
+      </div>
+      {entry.link?.pdf_page ? (
+        <span className="on-studio-note-page-badge">p. {entry.link.pdf_page}</span>
+      ) : null}
+    </button>
+  );
+
+  const renderDocument = (document: StudioNoteDocument, depth: number) => {
+    const isExpanded = expandedDocumentIds.has(document.id);
+    const active = document.noteEntries.some((entry) => entry.page.id === currentPageId);
+
+    return (
+      <div key={`studio-note-doc-${document.id}`} className="on-studio-note-document-node" data-studio-note-document-id={document.id}>
+        <button
+          type="button"
+          className={`on-studio-note-document-row ${active ? 'on-shell-row-active' : ''}`}
+          style={{ paddingLeft: 10 + depth * 18 }}
+          aria-expanded={isExpanded}
+          onClick={() => toggleDocument(document.id)}
+          title={document.original_filename}
+        >
+          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
+          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-left">{document.title}</span>
+          <span className="on-studio-note-count">{document.noteEntries.length}</span>
+        </button>
+        {isExpanded && document.noteEntries.map((entry) => renderNoteRow(entry, document, depth + 1))}
+      </div>
+    );
+  };
+
+  const renderProjectGroup = (group: StudioProjectGroup<StudioNoteDocument>, depth: number) => {
+    const isExpanded = expandedProjectIds.has(group.project.id);
+    const childGroups = childGroupsByParentId.get(group.project.id) ?? [];
+    const count = studioNoteCount(group, childGroupsByParentId);
+
+    return (
+      <div
+        key={`studio-note-project-${group.project.id}`}
+        className="on-studio-note-project-node"
+        data-studio-note-project-id={group.project.id}
+        data-studio-note-project-parent-id={group.project.parent_id ?? ""}
+        data-studio-note-project-depth={depth}
+      >
+        <button
+          type="button"
+          className="on-studio-note-project-row"
+          style={{ paddingLeft: 6 + depth * 18 }}
+          aria-expanded={isExpanded}
+          onClick={() => toggleProject(group.project.id)}
+        >
+          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
+          {isExpanded ? <FolderOpen className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" /> : <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
+          <span className="min-w-0 flex-1 truncate text-left">{group.project.name}</span>
+          <span className="on-studio-note-count">{count}</span>
+        </button>
+        {isExpanded && (
+          <>
+            {group.documents.map((document) => renderDocument(document, depth + 1))}
+            {childGroups.map((childGroup) => renderProjectGroup(childGroup, depth + 1))}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return <div className="on-studio-note-tree">{rootGroups.map((group) => renderProjectGroup(group, 0))}</div>;
+}
+
 export function Sidebar() {
   const {
     pages,
@@ -520,6 +789,7 @@ export function Sidebar() {
     workspaceMode,
     setWorkspaceMode,
     studioDocuments,
+    studioDocumentPageLinks,
     studioProjects,
     currentStudioDocumentId,
     fetchStudioDocuments,
@@ -555,17 +825,23 @@ export function Sidebar() {
   }, [fetchPages]);
 
   useEffect(() => {
-    if (workspaceMode === 'studio') {
-      void fetchStudioDocuments();
-    }
-  }, [fetchStudioDocuments, workspaceMode]);
+    void fetchStudioDocuments();
+  }, [fetchStudioDocuments]);
 
   useEffect(() => {
     pagesRef.current = pages;
   }, [pages]);
 
-  const notePages = pages.filter((page) => page.page_kind === 'note');
-  const sortedPages = sortPages(notePages);
+  const regularNotePages = pages.filter((page) => page.page_kind === 'note');
+  const studioNotePages = sortPages(pages.filter((page) => page.page_kind === 'studio_note'));
+  const { documents: studioNoteDocuments, linkedPageIds: groupedStudioNoteIds } = buildStudioNoteDocuments(
+    studioDocuments,
+    studioDocumentPageLinks,
+    studioNotePages
+  );
+  const studioNoteGroups = groupStudioDocumentsByProject(studioNoteDocuments, studioProjects);
+  const ungroupedStudioNotes = studioNotePages.filter((page) => !groupedStudioNoteIds.has(page.id));
+  const sortedPages = sortPages(regularNotePages);
   const rootPages = sortedPages.filter(p => p.parent_id === null);
   const templatePages = sortedPages.filter(p => p.is_template === 1);
   const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
@@ -651,12 +927,12 @@ export function Sidebar() {
     if (activeElement.closest('input,textarea,[contenteditable="true"]')) return;
     if (currentPageId === HOME_PAGE_ID) return;
 
-    const currentPage = notePages.find(page => page.id === currentPageId);
+    const currentPage = regularNotePages.find(page => page.id === currentPageId);
     if (!currentPage) return;
 
     const childPages = sortedPages.filter(page => page.parent_id === currentPage.id);
-    const expandedIds = expandedPageIds(notePages);
-    const visibleIds = visiblePageIds(notePages, expandedIds);
+    const expandedIds = expandedPageIds(regularNotePages);
+    const visibleIds = visiblePageIds(regularNotePages, expandedIds);
     const currentIndex = visibleIds.indexOf(currentPage.id);
 
     if (event.key === 'ArrowDown' && currentIndex >= 0 && currentIndex < visibleIds.length - 1) {
@@ -1068,7 +1344,7 @@ export function Sidebar() {
           <div className="on-section-label mb-1 mt-4">Private</div>
           {!isLoading && rootPages.length === 0 && (
             <div className="mx-3 mt-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-              No pages yet.
+              No private pages yet.
               <button
                 className="mt-2 block text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => void addPage()}
@@ -1092,6 +1368,44 @@ export function Sidebar() {
                 onPointerDownPage={handlePointerDownPage}
               />
             ))}
+          {(studioNoteGroups.length > 0 || ungroupedStudioNotes.length > 0) && (
+            <div className="mt-5">
+              <div className="on-section-label mb-1">Studio notes</div>
+              {studioNoteGroups.length > 0 && (
+                <StudioNotesTree
+                  groups={studioNoteGroups}
+                  currentPageId={currentPageId}
+                  onSelectPage={setCurrentPageId}
+                  onSelectDocument={setCurrentStudioDocumentId}
+                />
+              )}
+              {ungroupedStudioNotes.length > 0 && (
+                <div className="mt-2">
+                  <div className="on-studio-note-orphan-label">Unlinked</div>
+                  {ungroupedStudioNotes.map((page) => (
+                    <button
+                      key={`studio-note-orphan-${page.id}`}
+                      type="button"
+                      data-studio-note-id={page.id}
+                      className={`group on-studio-note-tree-row ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
+                      style={{ paddingLeft: 18 }}
+                      onClick={() => setCurrentPageId(page.id)}
+                      title="Open Studio note in Notes"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        {page.icon ? (
+                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{page.icon}</span>
+                        ) : (
+                          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate">{page.title || 'Untitled'}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
         </>

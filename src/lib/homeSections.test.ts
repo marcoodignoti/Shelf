@@ -32,13 +32,13 @@ describe("recentPages", () => {
     expect(recentPages(pages).map((item) => item.id)).toEqual(["new", "middle", "old"]);
   });
 
-  it("excludes Studio notes", () => {
+  it("includes Studio notes", () => {
     expect(
       recentPages([
         page("regular", "2026-05-18T08:00:00.000Z"),
         { ...page("studio", "2026-05-18T10:00:00.000Z"), page_kind: "studio_note" },
       ]).map((item) => item.id)
-    ).toEqual(["regular"]);
+    ).toEqual(["studio", "regular"]);
   });
 });
 

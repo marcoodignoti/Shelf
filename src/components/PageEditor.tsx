@@ -1,6 +1,6 @@
 import { Block, BlockNoteEditor, editorHasBlockWithType } from "@blocknote/core";
 import "@blocknote/core/fonts/inter.css";
-import { filterSuggestionItems, SideMenuExtension } from "@blocknote/core/extensions";
+import { SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import "katex/dist/katex.min.css";
@@ -28,6 +28,7 @@ import { defaultDatabaseSchema } from "../lib/database";
 import { invoke, openDialog } from "../lib/desktop";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
+import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
@@ -35,6 +36,7 @@ import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
 import { reorderedSiblingIds } from "../lib/pageOrder";
 import { subpageSectionMode } from "../lib/subpageSection";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
+import { rankedSuggestionItems } from "../lib/slashSearch";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -421,17 +423,50 @@ function OpenNotionDragHandleButton() {
 }
 
 function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
-  return async (query: string) =>
-    filterSuggestionItems(
-      [
-        ...getDefaultReactSlashMenuItems(editor),
-        {
-          ...formulaSlashMenuItem(editor),
-          icon: <Sigma size={18} />,
+  const items = [
+    ...getDefaultReactSlashMenuItems(editor),
+    {
+      ...formulaSlashMenuItem(editor),
+      icon: <Sigma size={18} />,
+    },
+  ];
+
+  return async (query: string) => rankedSuggestionItems(items, query);
+}
+
+function pageLinkKindLabel(page: Page): string {
+  return page.page_kind === "studio_note" ? "Studio note" : "Note";
+}
+
+function openNotionPageLinkItems(editor: BlockNoteEditor<any, any, any>, pages: Page[], currentPageId: string) {
+  return async (query: string) => {
+    const candidates = pages
+      .filter((candidate) => candidate.id !== currentPageId && candidate.is_deleted === 0)
+      .map((candidate) => ({
+        page: candidate,
+        title: candidate.title || "Untitled",
+        aliases: [
+          candidate.page_kind === "studio_note" ? "studio" : "note",
+          candidate.icon || "",
+        ].filter(Boolean),
+      }));
+
+    return rankedSuggestionItems(candidates, query)
+      .slice(0, 8)
+      .map(({ page, title }) => ({
+        title,
+        subtext: pageLinkKindLabel(page),
+        group: "Pages",
+        icon: page.icon ? (
+          <span className="flex h-[18px] w-[18px] items-center justify-center text-sm">{page.icon}</span>
+        ) : (
+          <FileText size={18} />
+        ),
+        onItemClick: () => {
+          insertPageLinkInlineContent(editor, page);
         },
-      ],
-      query
-    );
+      }));
+  };
 }
 
 function eventPathIncludesSelector(event: Event, selector: string): boolean {
@@ -799,6 +834,7 @@ export function Editor({
   const removePage = useAppStore((state) => state.removePage);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
+  const setWorkspaceMode = useAppStore((state) => state.setWorkspaceMode);
   const appTheme = useAppStore((state) => state.theme);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id]);
@@ -877,6 +913,10 @@ export function Editor({
     () => openNotionSlashMenuItems(editor),
     [editor]
   );
+  const pageLinkItems = useMemo(
+    () => openNotionPageLinkItems(editor, pages, page.id),
+    [editor, page.id, pages]
+  );
   const slashMenuFloatingOptions = useMemo(
     () => ({
       useFloatingOptions: {
@@ -903,6 +943,21 @@ export function Editor({
 
     return () => query.removeEventListener("change", handleChange);
   }, []);
+
+  useEffect(() => {
+    const handleOpenPageLink = (event: Event) => {
+      const pageId = (event as CustomEvent<{ pageId?: string }>).detail?.pageId;
+      if (!pageId) return;
+
+      if (variant === "studio") {
+        setWorkspaceMode("notes");
+      }
+      onSelectPage(pageId);
+    };
+
+    window.addEventListener(OPEN_PAGE_LINK_EVENT, handleOpenPageLink);
+    return () => window.removeEventListener(OPEN_PAGE_LINK_EVENT, handleOpenPageLink);
+  }, [onSelectPage, setWorkspaceMode, variant]);
 
   useEffect(() => {
     setTitle(page.title || "");
@@ -1461,28 +1516,29 @@ export function Editor({
         ref={scrollContainerRef}
         className={`on-scroll-fade flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
       >
-        <div className={`${isStudioVariant ? "max-w-none px-8 pt-8" : "max-w-3xl px-8 pt-20"} mx-auto flex min-h-full w-full flex-col pb-16`}>
-        {!isStudioVariant && (
-        <div className="on-page-breadcrumb-sticky mb-6 flex min-h-7 items-center gap-1 overflow-hidden text-xs text-muted-foreground">
-          {breadcrumbs.map((breadcrumb, index) => {
-            const isCurrent = breadcrumb.id === page.id;
-            return (
-              <div key={breadcrumb.id} className="flex min-w-0 items-center gap-1">
-                {index > 0 && <span className="text-muted-foreground/50">/</span>}
-                <button
-                  type="button"
-                  className={`truncate rounded px-1.5 py-1 hover:bg-muted hover:text-foreground ${isCurrent ? "text-foreground/80" : ""}`}
-                  disabled={isCurrent}
-                  onClick={() => onSelectPage(breadcrumb.id)}
-                >
-                  {breadcrumb.icon ? `${breadcrumb.icon} ` : ""}
-                  {breadcrumb.title || "Untitled"}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        )}
+        <div className="max-w-3xl px-8 pt-20 mx-auto flex min-h-full w-full flex-col pb-16">
+          {!isStudioVariant && (
+            <nav className="on-page-breadcrumb-sticky mb-6" aria-label="Page breadcrumb">
+              {breadcrumbs.map((breadcrumb, index) => {
+                const isCurrent = breadcrumb.id === page.id;
+                return (
+                  <div key={breadcrumb.id} className="on-page-breadcrumb-item">
+                    {index > 0 && <span className="on-page-breadcrumb-separator">/</span>}
+                    <button
+                      type="button"
+                      className={`on-page-breadcrumb-button ${isCurrent ? "on-page-breadcrumb-button-current" : ""}`}
+                      disabled={isCurrent}
+                      aria-current={isCurrent ? "page" : undefined}
+                      onClick={() => onSelectPage(breadcrumb.id)}
+                    >
+                      {breadcrumb.icon ? `${breadcrumb.icon} ` : ""}
+                      {breadcrumb.title || "Untitled"}
+                    </button>
+                  </div>
+                );
+              })}
+            </nav>
+          )}
 
         {!isStudioVariant && (
         <div className="group/page-actions mb-3 flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -1780,10 +1836,10 @@ export function Editor({
           )}
         </div>
         )}
-        <div className={`${isStudioVariant ? "mb-6" : "mb-4"} flex items-start gap-4`}>
+        <div className="mb-4 flex items-start gap-4">
           <textarea
             ref={titleInputRef}
-            className={`${isStudioVariant ? "text-2xl" : "text-4xl"} min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground`}
+            className="text-4xl min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground"
             value={title}
             placeholder="Untitled"
             rows={1}
@@ -1905,6 +1961,12 @@ export function Editor({
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={slashMenuItems}
+              portalElement={null}
+              floatingUIOptions={slashMenuFloatingOptions}
+            />
+            <SuggestionMenuController
+              triggerCharacter="@"
+              getItems={pageLinkItems}
               portalElement={null}
               floatingUIOptions={slashMenuFloatingOptions}
             />
