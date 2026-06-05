@@ -93,3 +93,20 @@ jobs:
           name: OpenNotion_win-x64
           path: dist-electron/OpenNotion_*_win-x64.zip
           if-no-files-found: error
+
+      - name: Authenticode dry run
+        shell: pwsh
+        run: |
+          $passwordText = "opennotion-ci-authenticode-dry-run"
+          $password = ConvertTo-SecureString -String $passwordText -Force -AsPlainText
+          $pfxPath = Join-Path $env:RUNNER_TEMP "opennotion-ci-authenticode.pfx"
+          $exePath = "dist-electron/win-x64/OpenNotion/OpenNotion.exe"
+          $cert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=OpenNotion CI Authenticode Dry Run" `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -KeyExportPolicy Exportable `
+            -KeyUsage DigitalSignature
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password | Out-Null
+          signtool.exe sign /fd SHA256 /f $pfxPath /p $passwordText $exePath
+          signtool.exe verify /pa /v $exePath
