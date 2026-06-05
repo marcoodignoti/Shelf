@@ -112,3 +112,29 @@ jobs:
           if ($signature.SignerCertificate.Subject -ne "CN=OpenNotion CI Authenticode Dry Run") {
             throw "Authenticode dry run signer mismatch"
           }
+
+  macos-package:
+    name: macOS package
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package macOS app
+        run: npm run release:package:macos
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenNotion_macos-arm64
+          path: dist-electron/OpenNotion_*_arm64.dmg
+          if-no-files-found: error
