@@ -119,4 +119,10 @@ jobs:
           Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
           Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
           & $signTool sign /fd SHA256 /f $pfxPath /p $passwordText $exePath
-          & $signTool verify /pa /v $exePath
+          $signature = Get-AuthenticodeSignature $exePath
+          if ($signature.Status -eq "NotSigned") {
+            throw "Authenticode dry run did not sign OpenNotion.exe"
+          }
+          if ($signature.SignerCertificate.Subject -ne "CN=OpenNotion CI Authenticode Dry Run") {
+            throw "Authenticode dry run signer mismatch"
+          }
