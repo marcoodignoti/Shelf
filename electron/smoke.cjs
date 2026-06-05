@@ -197,6 +197,7 @@ async function run() {
   const updateBytes = Buffer.from("verified update artifact");
   const updateSha256 = crypto.createHash("sha256").update(updateBytes).digest("hex");
   const updateUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_arm64.dmg";
+  const installerUpdateUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_setup_win-x64.exe";
   const originalFetch = global.fetch;
   let openedUpdatePath = null;
   global.fetch = async () => new Response(updateBytes, {
@@ -214,6 +215,14 @@ async function run() {
   });
   if (verifiedUpdate.sha256 !== updateSha256 || !fs.existsSync(verifiedUpdate.path) || openedUpdatePath !== verifiedUpdate.path) {
     throw new Error("download_update_artifact failed verified download");
+  }
+
+  const verifiedInstallerUpdate = await backend.invoke("download_update_artifact", {
+    url: installerUpdateUrl,
+    sha256: updateSha256,
+  });
+  if (!verifiedInstallerUpdate.path.endsWith(".exe")) {
+    throw new Error("download_update_artifact rejected Windows installer");
   }
 
   try {

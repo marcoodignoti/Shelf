@@ -87,8 +87,10 @@ const repo = env("OPENNOTION_GITHUB_REPO", "OpenNotion");
 const baseUrl = `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(tag)}`;
 const macArtifact = `OpenNotion_${version}_arm64.dmg`;
 const winArtifact = `OpenNotion_${version}_win-x64.zip`;
+const winInstallerArtifact = `OpenNotion_${version}_setup_win-x64.exe`;
 const macArtifactPath = path.join(root, "dist-electron", macArtifact);
 const winArtifactPath = path.join(root, "dist-electron", winArtifact);
+const winInstallerArtifactPath = path.join(root, "dist-electron", winInstallerArtifact);
 const outputPath = path.resolve(root, env("OPENNOTION_UPDATE_MANIFEST_OUT", "dist-electron/beta-update.json"));
 
 const downloads = {
@@ -99,6 +101,10 @@ const downloads = {
   windowsX64: optionalDownload(winArtifactPath, {
     url: `${baseUrl}/${winArtifact}`,
     label: "Windows x64 portable zip",
+  }),
+  windowsInstallerX64: optionalDownload(winInstallerArtifactPath, {
+    url: `${baseUrl}/${winInstallerArtifact}`,
+    label: "Windows x64 installer",
   }),
 };
 

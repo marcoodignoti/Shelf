@@ -121,6 +121,11 @@ for older builds and GitHub cache edge cases.
         "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_win-x64.zip",
         "label": "Windows x64 portable zip",
         "sha256": "..."
+      },
+      "windowsInstallerX64": {
+        "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_setup_win-x64.exe",
+        "label": "Windows x64 installer",
+        "sha256": "..."
       }
     }
   },

@@ -10,6 +10,7 @@ import {
 const VALID_SHA = "a".repeat(64);
 const VALID_MAC_URL = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_arm64.dmg";
 const VALID_WIN_URL = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_win-x64.zip";
+const VALID_WIN_INSTALLER_URL = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_setup_win-x64.exe";
 
 describe("beta update manifest", () => {
   afterEach(() => {
@@ -33,6 +34,7 @@ describe("beta update manifest", () => {
       downloads: {
         macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA, size: "120 MB" },
         windowsX64: { url: VALID_WIN_URL, label: "Windows x64", sha256: VALID_SHA },
+        windowsInstallerX64: { url: VALID_WIN_INSTALLER_URL, label: "Windows x64 installer", sha256: VALID_SHA },
         ignored: { url: "http://example.com/bad.zip", label: "Bad", sha256: VALID_SHA },
       },
     });
@@ -46,6 +48,7 @@ describe("beta update manifest", () => {
     ]);
     expect(manifest.downloads.macosArm64?.size).toBe("120 MB");
     expect(manifest.downloads.windowsX64?.label).toBe("Windows x64");
+    expect(manifest.downloads.windowsInstallerX64?.label).toBe("Windows x64 installer");
     expect(manifest.downloads.windowsX64?.sha256).toBe(VALID_SHA);
   });
 
@@ -90,6 +93,22 @@ describe("beta update manifest", () => {
     });
 
     expect(downloadForPlatform(manifest, "Win32", "Windows")?.label).toBe("Windows x64");
+  });
+
+  it("prefers the Windows installer over the portable zip", () => {
+    const manifest = parseBetaUpdateManifest({
+      version: "0.1.1",
+      channel: "beta",
+      publishedAt: "2026-06-04T00:00:00.000Z",
+      title: "OpenNotion 0.1.1",
+      summary: "Windows installer test.",
+      downloads: {
+        windowsX64: { url: VALID_WIN_URL, label: "Windows x64 zip", sha256: VALID_SHA },
+        windowsInstallerX64: { url: VALID_WIN_INSTALLER_URL, label: "Windows x64 installer", sha256: VALID_SHA },
+      },
+    });
+
+    expect(downloadForPlatform(manifest, "Win32", "Windows")?.label).toBe("Windows x64 installer");
   });
 
   it("downloads updates through the desktop verifier", async () => {

@@ -33,6 +33,7 @@ export type BetaUpdateManifest = {
   downloads: {
     macosArm64?: BetaUpdateDownload;
     windowsX64?: BetaUpdateDownload;
+    windowsInstallerX64?: BetaUpdateDownload;
   };
 };
 
@@ -43,7 +44,7 @@ export type BetaUpdateState =
 
 const MAX_CHANGE_ITEMS = 5;
 const DOWNLOAD_URL_PATTERN =
-  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip)$/i;
+  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip|exe)$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 function manifestUrls(): string[] {
@@ -137,6 +138,7 @@ export function parseBetaUpdateManifest(value: unknown): BetaUpdateManifest {
     downloads: {
       macosArm64: parseDownload(downloads.macosArm64),
       windowsX64: parseDownload(downloads.windowsX64),
+      windowsInstallerX64: parseDownload(downloads.windowsInstallerX64),
     },
   };
 }
@@ -145,7 +147,9 @@ export function downloadForPlatform(manifest: BetaUpdateManifest, platformName: 
   const platform = platformName.toLowerCase();
   const userAgent = userAgentName.toLowerCase();
   if (platform.includes("mac")) return manifest.downloads.macosArm64 ?? null;
-  if (platform.includes("win") || userAgent.includes("windows")) return manifest.downloads.windowsX64 ?? null;
+  if (platform.includes("win") || userAgent.includes("windows")) {
+    return manifest.downloads.windowsInstallerX64 ?? manifest.downloads.windowsX64 ?? null;
+  }
   return null;
 }
 

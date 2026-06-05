@@ -25,7 +25,7 @@ const UPDATE_MANIFEST_URLS = new Set([
   "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json",
 ]);
 const UPDATE_DOWNLOAD_URL_PATTERN =
-  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip)$/i;
+  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip|exe)$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const DEFAULT_UPDATE_PUBLIC_KEY_PATH = path.join(__dirname, "update-public-key.pem");
 
@@ -490,7 +490,7 @@ function signedManifestPayload(value, publicKeyPem) {
 
 function updateArtifactFileName(parsedUrl) {
   const fileName = decodeURIComponent(path.basename(parsedUrl.pathname));
-  if (!/^OpenNotion_[a-zA-Z0-9._-]+\.(dmg|zip)$/i.test(fileName)) {
+  if (!/^OpenNotion_[a-zA-Z0-9._-]+\.(dmg|zip|exe)$/i.test(fileName)) {
     throw new Error("update artifact filename is not trusted");
   }
   return fileName;
