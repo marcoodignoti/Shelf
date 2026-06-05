@@ -100,7 +100,15 @@ jobs:
           $passwordText = "opennotion-ci-authenticode-dry-run"
           $password = ConvertTo-SecureString -String $passwordText -Force -AsPlainText
           $pfxPath = Join-Path $env:RUNNER_TEMP "opennotion-ci-authenticode.pfx"
+          $cerPath = Join-Path $env:RUNNER_TEMP "opennotion-ci-authenticode.cer"
           $exePath = "dist-electron/win-x64/OpenNotion/OpenNotion.exe"
+          $signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -like "*\x64\signtool.exe" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) {
+            throw "signtool.exe not found"
+          }
           $cert = New-SelfSignedCertificate `
             -Type CodeSigningCert `
             -Subject "CN=OpenNotion CI Authenticode Dry Run" `
@@ -108,5 +116,8 @@ jobs:
             -KeyExportPolicy Exportable `
             -KeyUsage DigitalSignature
           Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password | Out-Null
-          signtool.exe sign /fd SHA256 /f $pfxPath /p $passwordText $exePath
-          signtool.exe verify /pa /v $exePath
+          Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+          Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+          & $signTool sign /fd SHA256 /f $pfxPath /p $passwordText $exePath
+          & $signTool verify /pa /v $exePath
