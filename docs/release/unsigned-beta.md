@@ -4,7 +4,7 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 ## What This Supports
 
-- macOS unsigned Electron DMG for private testing
+- macOS ad-hoc signed Electron DMG for private testing
 - Windows unsigned Electron zip from GitHub Actions for private testing
 - signed assisted beta update checks with SHA-256 verified downloads
 - ad-hoc macOS codesigning with hardened runtime enabled
@@ -20,7 +20,7 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 ## Build Locally
 
-Build unsigned desktop artifacts on macOS:
+Build ad-hoc signed desktop artifacts on macOS:
 
 ```sh
 npm ci
@@ -49,6 +49,10 @@ Generate the update manifest after packaging:
 OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
 npm run release:update-manifest
 ```
+
+Local macOS dry-runs can generate a manifest with only the DMG present. Full
+multi-platform releases should set `OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS=1`
+after the Windows ZIP exists.
 
 Upload signed `beta-update.json` with the DMG and ZIP in the same GitHub
 Release. See [`docs/release/beta-updates.md`](beta-updates.md).

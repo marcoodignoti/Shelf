@@ -62,11 +62,22 @@ function fileSizeLabel(filePath) {
   return `${Math.max(1, Math.round(megabytes))} MB`;
 }
 
-function requiredFileSha256(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing release artifact for manifest: ${filePath}`);
-  }
+function fileSha256(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function optionalDownload(filePath, download) {
+  if (!fs.existsSync(filePath)) {
+    if (env("OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS") === "1") {
+      throw new Error(`Missing release artifact for manifest: ${filePath}`);
+    }
+    return undefined;
+  }
+  return {
+    ...download,
+    sha256: fileSha256(filePath),
+    ...(fileSizeLabel(filePath) ? { size: fileSizeLabel(filePath) } : {}),
+  };
 }
 
 const version = env("OPENNOTION_UPDATE_VERSION", packageJson.version);
@@ -80,6 +91,25 @@ const macArtifactPath = path.join(root, "dist-electron", macArtifact);
 const winArtifactPath = path.join(root, "dist-electron", winArtifact);
 const outputPath = path.resolve(root, env("OPENNOTION_UPDATE_MANIFEST_OUT", "dist-electron/beta-update.json"));
 
+const downloads = {
+  macosArm64: optionalDownload(macArtifactPath, {
+    url: `${baseUrl}/${macArtifact}`,
+    label: "macOS Apple Silicon",
+  }),
+  windowsX64: optionalDownload(winArtifactPath, {
+    url: `${baseUrl}/${winArtifact}`,
+    label: "Windows x64 portable zip",
+  }),
+};
+
+Object.keys(downloads).forEach((key) => {
+  if (!downloads[key]) delete downloads[key];
+});
+
+if (Object.keys(downloads).length === 0) {
+  throw new Error("At least one release artifact is required for the update manifest");
+}
+
 const manifest = {
   version,
   channel: env("OPENNOTION_UPDATE_CHANNEL", "beta"),
@@ -87,20 +117,7 @@ const manifest = {
   title: env("OPENNOTION_UPDATE_TITLE", `OpenNotion ${version}`),
   summary: env("OPENNOTION_UPDATE_SUMMARY", "New beta build ready for testers."),
   changes: changesFromEnv(),
-  downloads: {
-    macosArm64: {
-      url: `${baseUrl}/${macArtifact}`,
-      label: "macOS Apple Silicon",
-      sha256: requiredFileSha256(macArtifactPath),
-      ...(fileSizeLabel(macArtifactPath) ? { size: fileSizeLabel(macArtifactPath) } : {}),
-    },
-    windowsX64: {
-      url: `${baseUrl}/${winArtifact}`,
-      label: "Windows x64 portable zip",
-      sha256: requiredFileSha256(winArtifactPath),
-      ...(fileSizeLabel(winArtifactPath) ? { size: fileSizeLabel(winArtifactPath) } : {}),
-    },
-  },
+  downloads,
 };
 
 const signature = crypto.sign(null, Buffer.from(canonicalJson(manifest), "utf8"), crypto.createPrivateKey(privateKeyPem()));

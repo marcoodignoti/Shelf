@@ -50,6 +50,16 @@ Generated file:
 dist-electron/beta-update.json
 ```
 
+For a full release that must include both macOS and Windows artifacts, add:
+
+```sh
+OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS=1
+```
+
+Without that flag, the manifest includes the artifacts currently present under
+`dist-electron/`. This supports macOS-only local dry-runs before the Windows ZIP
+is produced by GitHub Actions.
+
 Upload the DMG, ZIP, and release-local manifest to the versioned GitHub Release:
 
 ```text
