@@ -409,7 +409,7 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
   );
 });
 
-test("shows a hover heading rail and navigates between page sections", async ({ page }) => {
+test("keeps note scrolling stable with hover heading rail and hidden native scrollbar", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 820 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -433,6 +433,21 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
   const rail = page.getByRole("navigation", { name: "Page sections" });
   await expect(rail).toBeVisible();
 
+  const scrollArea = editorScrollContainer(page);
+  await expect.poll(async () =>
+    scrollArea.evaluate((element) => getComputedStyle(element).scrollbarWidth)
+  ).toBe("none");
+  await expect.poll(async () =>
+    scrollArea.evaluate((element) => getComputedStyle(element).scrollbarGutter)
+  ).toBe("auto");
+  await expect.poll(async () =>
+    page.locator("main").evaluate((element) => getComputedStyle(element).overflowY)
+  ).toBe("hidden");
+
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(
+    await scrollArea.evaluate((element) => element.clientWidth)
+  );
+
   const visiblePreviewTexts = async () =>
     page.locator(".on-heading-rail-preview").evaluateAll((elements) =>
       elements
@@ -445,6 +460,9 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
   await firstSectionButton.hover();
   await expect.poll(visiblePreviewTexts).toEqual(["First section"]);
 
+  const contentBoxBefore = await page.locator(".max-w-3xl").first().boundingBox();
+  expect(contentBoxBefore).not.toBeNull();
+
   const secondSectionButton = page.getByRole("button", { name: "Go to Second section" });
   await expect(secondSectionButton).toBeVisible();
   await secondSectionButton.hover();
@@ -452,9 +470,13 @@ test("shows a hover heading rail and navigates between page sections", async ({ 
   await secondSectionButton.locator(".on-heading-rail-preview").click();
 
   await expect(secondSectionButton).toHaveAttribute("aria-current", "true");
-  await expect.poll(async () =>
-    page.locator(".on-scroll-fade.w-full").first().evaluate((element) => element.scrollTop)
-  ).toBeGreaterThan(0);
+  await expect.poll(async () => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  const contentBoxAfter = await page.locator(".max-w-3xl").first().boundingBox();
+  expect(contentBoxAfter).not.toBeNull();
+  if (!contentBoxBefore || !contentBoxAfter) return;
+
+  expect(Math.abs(contentBoxAfter.x - contentBoxBefore.x)).toBeLessThan(1);
 });
 
 test("supports multiline page titles with alt enter and enter moves to body", async ({ page }) => {

@@ -1,10 +1,13 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
-const { fileURLToPath, pathToFileURL } = require("node:url");
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require("electron");
+const { pathToFileURL } = require("node:url");
 const { OpenNotionBackend } = require("./backend.cjs");
 
+const APP_PROTOCOL = "opennotion-app";
+const APP_RENDERER_HOST = "renderer";
+const APP_ASSET_HOST = "asset";
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
 const MAX_DIALOG_FILTERS = 10;
 const MAX_DIALOG_EXTENSIONS = 20;
@@ -12,6 +15,17 @@ let mainWindow = null;
 let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: APP_PROTOCOL,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+  },
+}]);
 
 function configureAppIdentity() {
   app.setName("OpenNotion");
@@ -25,6 +39,7 @@ function createBackend() {
   if (backend) return backend;
   backend = new OpenNotionBackend({
     appConfigDir: app.getPath("userData"),
+    downloadsDir: app.getPath("downloads"),
     openPath: (filePath) => shell.openPath(filePath),
     revealPath: (filePath) => shell.showItemInFolder(filePath),
     openExternalUrl: (url) => shell.openExternal(url),
@@ -144,6 +159,11 @@ function parseByteRange(rangeHeader, fileSize) {
   return { start, end: Math.min(end, fileSize - 1) };
 }
 
+function isPathInside(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function trustedRendererOrigin() {
   if (process.env.ELECTRON_RENDERER_URL) {
     try {
@@ -152,13 +172,13 @@ function trustedRendererOrigin() {
       return null;
     }
   }
-  return "file://";
+  return `${APP_PROTOCOL}://${APP_RENDERER_HOST}`;
 }
 
 function isTrustedPdfRequestOrigin(origin) {
   if (!origin) return false;
   const trustedOrigin = trustedRendererOrigin();
-  return origin === trustedOrigin || (trustedOrigin === "file://" && origin === "null");
+  return origin === trustedOrigin;
 }
 
 function studioPdfHeaders(origin, extraHeaders = {}) {
@@ -274,7 +294,7 @@ function studioPdfUrl(documentId) {
 }
 
 function packagedRendererUrl() {
-  return pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).toString();
+  return `${APP_PROTOCOL}://${APP_RENDERER_HOST}/index.html`;
 }
 
 function isTrustedRendererUrl(targetUrl) {
@@ -287,10 +307,80 @@ function isTrustedRendererUrl(targetUrl) {
   }
 
   try {
-    return fileURLToPath(targetUrl) === fileURLToPath(packagedRendererUrl());
+    const parsed = new URL(targetUrl);
+    return parsed.protocol === `${APP_PROTOCOL}:` && parsed.hostname === APP_RENDERER_HOST;
   } catch {
     return false;
   }
+}
+
+function plainTextResponse(status, message) {
+  return new Response(message, {
+    status,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
+function resolveFileUnderRoot(rootPath, requestPath) {
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(requestPath);
+  } catch {
+    return null;
+  }
+
+  const relativePath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
+  if (!relativePath || relativePath.includes("\0")) return null;
+
+  let canonicalRoot;
+  let canonicalPath;
+  try {
+    canonicalRoot = fs.realpathSync(rootPath);
+    canonicalPath = fs.realpathSync(path.join(canonicalRoot, relativePath));
+  } catch {
+    return null;
+  }
+
+  if (!isPathInside(canonicalRoot, canonicalPath)) return null;
+  if (!fs.statSync(canonicalPath).isFile()) return null;
+  return canonicalPath;
+}
+
+async function fileResponse(filePath) {
+  return await net.fetch(pathToFileURL(filePath).toString());
+}
+
+async function handleAppProtocolRequest(request) {
+  if (request.method !== "GET") return plainTextResponse(405, "Method not allowed");
+
+  let parsed;
+  try {
+    parsed = new URL(request.url);
+  } catch {
+    return plainTextResponse(400, "Bad request");
+  }
+
+  if (parsed.protocol !== `${APP_PROTOCOL}:`) return plainTextResponse(400, "Bad request");
+
+  if (parsed.hostname === APP_RENDERER_HOST) {
+    const filePath = resolveFileUnderRoot(path.join(__dirname, "..", "dist"), parsed.pathname);
+    return filePath ? await fileResponse(filePath) : plainTextResponse(404, "Not found");
+  }
+
+  if (parsed.hostname === APP_ASSET_HOST) {
+    try {
+      const assetToken = parsed.pathname.replace(/^\/+/, "");
+      return await fileResponse(createBackend().resolveManagedAssetPath(assetToken));
+    } catch {
+      return plainTextResponse(404, "Not found");
+    }
+  }
+
+  return plainTextResponse(404, "Not found");
+}
+
+function configureAppProtocol() {
+  protocol.handle(APP_PROTOCOL, handleAppProtocolRequest);
 }
 
 function shouldOpenExternal(targetUrl) {
@@ -327,7 +417,7 @@ function createMainWindow() {
       mainWindow.webContents.openDevTools({ mode: "detach" });
     }
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadURL(packagedRendererUrl());
   }
 
   mainWindow.webContents.on("console-message", (details) => {
@@ -463,6 +553,7 @@ registerIpc();
 
 app.whenReady().then(async () => {
   configureApplicationMenu();
+  configureAppProtocol();
   createBackend();
   await startStudioPdfServer();
   createMainWindow();

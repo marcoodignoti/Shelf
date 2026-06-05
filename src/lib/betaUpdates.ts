@@ -17,6 +17,12 @@ export type BetaUpdateDownload = {
   size?: string;
 };
 
+export type VerifiedUpdateDownload = {
+  path: string;
+  bytes: number;
+  sha256: string;
+};
+
 export type BetaUpdateManifest = {
   version: string;
   channel: "beta" | "stable";
@@ -145,6 +151,17 @@ export function downloadForPlatform(manifest: BetaUpdateManifest, platformName: 
 
 export function downloadForCurrentPlatform(manifest: BetaUpdateManifest): BetaUpdateDownload | null {
   return downloadForPlatform(manifest, navigator.platform, navigator.userAgent);
+}
+
+export async function downloadVerifiedUpdate(download: BetaUpdateDownload): Promise<VerifiedUpdateDownload> {
+  if (typeof window === "undefined" || !window.openNotion) {
+    throw new Error("OpenNotion desktop bridge is not available");
+  }
+
+  return await window.openNotion.invoke<VerifiedUpdateDownload>("download_update_artifact", {
+    url: download.url,
+    sha256: download.sha256,
+  });
 }
 
 export async function checkForBetaUpdate(): Promise<BetaUpdateState> {

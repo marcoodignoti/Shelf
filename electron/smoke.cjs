@@ -1,14 +1,36 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { OpenNotionBackend } = require("./backend.cjs");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-"));
-const backend = new OpenNotionBackend({ appConfigDir: tempRoot });
+const updateSigningKey = crypto.generateKeyPairSync("ed25519");
+const updateManifestPublicKey = updateSigningKey.publicKey.export({ format: "pem", type: "spki" });
+const backend = new OpenNotionBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
 const tinyPdfFixture = Buffer.from(
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
   "base64"
 );
+
+function canonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  throw new Error("unsupported signed manifest test value");
+}
+
+function signedUpdateManifest(payload) {
+  return {
+    signatureAlgorithm: "ed25519",
+    payload,
+    signature: crypto.sign(null, Buffer.from(canonicalJson(payload), "utf8"), updateSigningKey.privateKey).toString("base64"),
+  };
+}
 
 async function run() {
   const createdAt = "2026-06-03T00:00:00.000Z";
@@ -117,6 +139,95 @@ async function run() {
     if (!String(error?.message || error).includes("update manifest URL must use HTTPS")) {
       throw error;
     }
+  }
+
+  const assetRoot = path.join(tempRoot, "covers");
+  const assetPath = path.join(assetRoot, "cover.png");
+  fs.mkdirSync(assetRoot, { recursive: true });
+  fs.writeFileSync(assetPath, Buffer.from("managed asset"));
+  const assetUrl = backend.fileSrc(assetPath);
+  if (!assetUrl.startsWith("opennotion-app://asset/") || assetUrl.startsWith("file://")) {
+    throw new Error("fileSrc did not use the app asset protocol");
+  }
+  if (backend.resolveManagedAssetPath(new URL(assetUrl).pathname.slice(1)) !== fs.realpathSync(assetPath)) {
+    throw new Error("app asset protocol token did not resolve to the managed file");
+  }
+
+  const updateManifestUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json";
+  const manifestPayload = {
+    version: "99.0.0",
+    channel: "beta",
+    publishedAt: "2026-06-05T00:00:00.000Z",
+    title: "OpenNotion 99.0.0",
+    summary: "Signed update manifest.",
+    changes: ["Signed manifest"],
+    downloads: {},
+  };
+  const originalManifestFetch = global.fetch;
+  try {
+    global.fetch = async () => new Response(JSON.stringify(signedUpdateManifest(manifestPayload)), {
+      status: 200,
+      headers: { "content-length": "512" },
+    });
+    const verifiedManifest = await backend.invoke("fetch_update_manifest", { url: updateManifestUrl });
+    if (verifiedManifest.version !== manifestPayload.version) {
+      throw new Error("fetch_update_manifest did not return verified payload");
+    }
+
+    let rejectedBadSignature = false;
+    try {
+      global.fetch = async () => {
+        const manifest = signedUpdateManifest(manifestPayload);
+        manifest.signature = "bad";
+        return new Response(JSON.stringify(manifest), {
+          status: 200,
+          headers: { "content-length": "512" },
+        });
+      };
+      await backend.invoke("fetch_update_manifest", { url: updateManifestUrl });
+    } catch (error) {
+      if (!String(error?.message || error).includes("signature")) throw error;
+      rejectedBadSignature = true;
+    }
+    if (!rejectedBadSignature) throw new Error("fetch_update_manifest accepted bad signature");
+  } finally {
+    global.fetch = originalManifestFetch;
+  }
+
+  const updateBytes = Buffer.from("verified update artifact");
+  const updateSha256 = crypto.createHash("sha256").update(updateBytes).digest("hex");
+  const updateUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_arm64.dmg";
+  const originalFetch = global.fetch;
+  let openedUpdatePath = null;
+  global.fetch = async () => new Response(updateBytes, {
+    status: 200,
+    headers: { "content-length": String(updateBytes.length) },
+  });
+  backend.openPath = async (filePath) => {
+    openedUpdatePath = filePath;
+    return "";
+  };
+
+  const verifiedUpdate = await backend.invoke("download_update_artifact", {
+    url: updateUrl,
+    sha256: updateSha256,
+  });
+  if (verifiedUpdate.sha256 !== updateSha256 || !fs.existsSync(verifiedUpdate.path) || openedUpdatePath !== verifiedUpdate.path) {
+    throw new Error("download_update_artifact failed verified download");
+  }
+
+  try {
+    await backend.invoke("download_update_artifact", {
+      url: updateUrl,
+      sha256: "0".repeat(64),
+    });
+    throw new Error("download_update_artifact accepted bad checksum");
+  } catch (error) {
+    if (!String(error?.message || error).includes("checksum mismatch")) {
+      throw error;
+    }
+  } finally {
+    global.fetch = originalFetch;
   }
 }
 

@@ -9,6 +9,35 @@ function env(name, fallback = "") {
   return process.env[name] && process.env[name].trim() ? process.env[name].trim() : fallback;
 }
 
+function requiredEnv(name) {
+  const value = env(name);
+  if (!value) {
+    throw new Error(`Missing required ${name}. Generate an Ed25519 update key and keep the private key outside git.`);
+  }
+  return value;
+}
+
+function normalizePem(value) {
+  return String(value).replace(/\\n/g, "\n").trim();
+}
+
+function privateKeyPem() {
+  const keyPath = env("OPENNOTION_UPDATE_PRIVATE_KEY_PATH");
+  if (keyPath) return normalizePem(fs.readFileSync(path.resolve(root, keyPath), "utf8"));
+  return normalizePem(requiredEnv("OPENNOTION_UPDATE_PRIVATE_KEY_PEM"));
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  throw new Error("Manifest contains unsupported data");
+}
+
 function changesFromEnv() {
   const raw = env("OPENNOTION_UPDATE_CHANGES");
   if (!raw) {
@@ -74,6 +103,13 @@ const manifest = {
   },
 };
 
+const signature = crypto.sign(null, Buffer.from(canonicalJson(manifest), "utf8"), crypto.createPrivateKey(privateKeyPem()));
+const signedManifest = {
+  signatureAlgorithm: "ed25519",
+  payload: manifest,
+  signature: signature.toString("base64"),
+};
+
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
+fs.writeFileSync(outputPath, `${JSON.stringify(signedManifest, null, 2)}\n`);
 console.log(`Wrote ${outputPath}`);

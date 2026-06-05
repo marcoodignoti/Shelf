@@ -1,3 +1,4 @@
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -13,6 +14,18 @@ function copyDirectory(source, destination) {
   fs.cpSync(source, destination, { recursive: true });
 }
 
+function env(name, fallback = "") {
+  return process.env[name] && process.env[name].trim() ? process.env[name].trim() : fallback;
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}`);
+  }
+}
+
 if (process.platform !== "win32") {
   throw new Error("Windows packaging requires win32");
 }
@@ -21,6 +34,33 @@ function windowsVersion(version) {
   const parts = version.split(".").map((part) => Number.parseInt(part, 10));
   while (parts.length < 4) parts.push(0);
   return parts.slice(0, 4).map((part) => (Number.isFinite(part) ? part : 0)).join(".");
+}
+
+function signWindowsExecutable(executablePath) {
+  const certificatePath = env("OPENNOTION_WINDOWS_PFX_PATH");
+  const certificateSha1 = env("OPENNOTION_WINDOWS_CERTIFICATE_SHA1");
+  if (!certificatePath && !certificateSha1) return;
+
+  const args = [
+    "sign",
+    "/fd",
+    "SHA256",
+    "/td",
+    "SHA256",
+    "/tr",
+    env("OPENNOTION_WINDOWS_TIMESTAMP_URL", "http://timestamp.digicert.com"),
+  ];
+
+  if (certificatePath) {
+    args.push("/f", path.resolve(root, certificatePath));
+    const password = env("OPENNOTION_WINDOWS_PFX_PASSWORD");
+    if (password) args.push("/p", password);
+  } else {
+    args.push("/sha1", certificateSha1);
+  }
+
+  args.push(executablePath);
+  run(env("OPENNOTION_SIGNTOOL_PATH", "signtool.exe"), args);
 }
 
 async function main() {
@@ -70,6 +110,7 @@ async function main() {
     )
   );
 
+  signWindowsExecutable(openNotionExe);
   console.log(`Packaged ${outputDir}`);
 }
 

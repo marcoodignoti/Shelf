@@ -1514,7 +1514,7 @@ export function Editor({
       )}
       <div
         ref={scrollContainerRef}
-        className={`on-scroll-fade flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
+        className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
       >
         <div className="max-w-3xl px-8 pt-20 mx-auto flex min-h-full w-full flex-col pb-16">
           {!isStudioVariant && (

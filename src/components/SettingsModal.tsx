@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
 import { exportWorkspaceBackup, importWorkspaceBackup } from '../lib/backup';
-import { openDialog, openExternalUrl, saveDialog } from '../lib/desktop';
-import { BetaUpdateState, CURRENT_APP_VERSION, checkForBetaUpdate } from '../lib/betaUpdates';
+import { openDialog, saveDialog } from '../lib/desktop';
+import { BetaUpdateState, CURRENT_APP_VERSION, checkForBetaUpdate, downloadVerifiedUpdate } from '../lib/betaUpdates';
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
 import {
   Download,
@@ -27,6 +27,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>('preferences');
   const [updateState, setUpdateState] = useState<BetaUpdateState>({ status: 'idle' });
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -97,9 +98,13 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
     }
 
     try {
-      await openExternalUrl(updateState.download.url);
+      setIsDownloadingUpdate(true);
+      await downloadVerifiedUpdate(updateState.download);
+      showSuccess('Downloaded and verified update.');
     } catch (error: unknown) {
       showError(error);
+    } finally {
+      setIsDownloadingUpdate(false);
     }
   };
 
@@ -203,7 +208,7 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
               <div className="on-settings-content">
                 <div className="on-settings-content-title">
                   <h2>Updates</h2>
-                  <p>Check beta builds and open the matching download for this device.</p>
+                  <p>Check beta builds and verify the matching download for this device.</p>
                 </div>
 
                 <section className="on-settings-group">
@@ -248,10 +253,14 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
                         type="button"
                         className="on-button-secondary gap-2"
                         onClick={() => void handleDownloadUpdate()}
-                        disabled={!availableUpdate.download}
+                        disabled={!availableUpdate.download || isDownloadingUpdate}
                       >
                         <Download className="h-4 w-4" strokeWidth={1.9} />
-                        {availableUpdate.download ? `Download ${availableUpdate.download.label}` : 'No build for this device'}
+                        {isDownloadingUpdate
+                          ? 'Verifying download'
+                          : availableUpdate.download
+                            ? `Download ${availableUpdate.download.label}`
+                            : 'No build for this device'}
                       </button>
                     </div>
                   )}

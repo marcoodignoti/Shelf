@@ -120,6 +120,21 @@ function logStoreError(error: unknown): void {
   }
 }
 
+function descendantPageIds(pages: Page[], rootId: string): Set<string> {
+  const ids = new Set([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const page of pages) {
+      if (page.parent_id && ids.has(page.parent_id) && !ids.has(page.id)) {
+        ids.add(page.id);
+        changed = true;
+      }
+    }
+  }
+  return ids;
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   pages: [],
   currentPageId: getStoredPageId(),
@@ -157,9 +172,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ]);
       const studioNotes = (await Promise.all(
         studioDocuments.map(async (document) => {
-          const note = await getPage(document.note_page_id);
-          if (note) return note;
-          return await createStudioNotePage(document.note_page_id, `${document.title} Notes`);
+          return await getPage(document.note_page_id);
         })
       )).filter((page): page is Page => Boolean(page));
       set((state) => {
@@ -498,19 +511,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   removePage: async (id) => {
+    const previousPages = get().pages;
+    const previousStudioDocumentPageLinks = get().studioDocumentPageLinks;
+    const deletedIds = descendantPageIds(previousPages, id);
+    const optimisticPages = previousPages.filter((page) => !deletedIds.has(page.id));
+    set((state) => ({
+      pages: optimisticPages,
+      studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => !deletedIds.has(link.page_id)),
+      currentPageId: resolveCurrentPageId(optimisticPages, state.currentPageId)
+    }));
+
     try {
       await deletePage(id);
-      const pages = await getPages();
+      const [pages, studioDocumentPageLinks] = await Promise.all([
+        getPages(),
+        listAllStudioDocumentPageLinks(),
+      ]);
       set((state) => ({
         pages,
+        studioDocumentPageLinks,
         currentPageId: resolveCurrentPageId(pages, state.currentPageId)
       }));
       const current = get().currentPageId;
       localStorage.setItem('opennotion-current-page-id', current || HOME_PAGE_ID);
+      await get().fetchStudioDocuments();
     } catch (error: unknown) {
       logStoreError(error);
       const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      set({
+        pages: previousPages,
+        studioDocumentPageLinks: previousStudioDocumentPageLinks,
+        error: message,
+        notice: { kind: 'error', message }
+      });
     }
   },
   movePageAction: async (id, parentId) => {

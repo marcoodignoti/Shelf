@@ -238,6 +238,23 @@ test.beforeEach(async ({ page }) => {
           save(pagesKey, pages.map((item) => item.id === args.id ? { ...item, ...(args.updates as object), updated_at: args.updatedAt } : item));
           return null;
         }
+        if (cmd === "delete_page") {
+          const pages = load<any>(pagesKey);
+          const deleteIds = new Set<string>([args.id as string]);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const item of pages) {
+              if (item.parent_id && deleteIds.has(item.parent_id) && !deleteIds.has(item.id)) {
+                deleteIds.add(item.id);
+                changed = true;
+              }
+            }
+          }
+          save(pagesKey, pages.filter((item) => !deleteIds.has(item.id)));
+          save(linksKey, load<any>(linksKey).filter((link) => !deleteIds.has(link.page_id)));
+          return null;
+        }
         if (cmd === "search_pages") return [];
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
@@ -302,7 +319,7 @@ test("opens Studio notes in a dedicated Notes sidebar section", async ({ page })
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  await page.getByRole("button", { name: "Note" }).click();
+  await page.getByRole("button", { name: "Note", exact: true }).click();
   await expect(page.locator(".on-section-label", { hasText: "Studio notes" })).toBeVisible();
   await expect(page.getByText("No private pages yet.")).toBeVisible();
   await expect(page.locator("[data-studio-note-project-id='studio-inbox']")).toBeVisible();
@@ -312,6 +329,39 @@ test("opens Studio notes in a dedicated Notes sidebar section", async ({ page })
   await expect(studioNoteRow).toBeVisible();
   await studioNoteRow.click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
+});
+
+test("deletes a primary Studio note without recreating it automatically", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  const studioNoteId = await page.evaluate(() => {
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
+      id: string;
+      title: string;
+    }>;
+    return pages.find((item) => item.title === "civil-law Notes")?.id ?? null;
+  });
+  expect(studioNoteId).toBeTruthy();
+  await page.evaluate((id) => {
+    window.localStorage.setItem("opennotion-e2e-deleted-studio-note-id", id);
+  }, studioNoteId);
+
+  await page.getByLabel("Delete linked note civil-law Notes").click();
+  await page.locator(".on-delete-dialog").getByRole("button", { name: "Delete" }).click();
+
+  await page.waitForFunction(() => {
+    const deletedId = window.localStorage.getItem("opennotion-e2e-deleted-studio-note-id");
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ title: string }>;
+    return Boolean(deletedId) && !pages.some((item: any) => item.id === deletedId);
+  });
+  await expect(page.getByText("Linked note missing.")).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.getByText("Linked note missing.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Note", exact: true }).click();
+  await expect(page.locator("[data-studio-note-id]", { hasText: "civil-law Notes" })).toBeHidden();
 });
 
 test("groups Studio notes by nested Studio project folders in Notes", async ({ page }) => {
@@ -373,7 +423,7 @@ test("creates multiple linked notes and PDF bookmarks for a Studio document", as
   await expect(page.getByRole("button", { name: "civil-law Note", exact: true })).toBeVisible();
 
   await page.getByTitle("Bookmark current PDF page").click();
-  await expect(page.getByRole("button", { name: /civil-law p\. 1/ })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-chip", { hasText: /civil-law p\. 1/ })).toBeVisible();
   await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 1" })).toBeVisible();
 
   await page.waitForFunction(() => {
@@ -447,7 +497,7 @@ test("links existing pages and PDF-page bookmarks to a Studio document", async (
   await page.getByTitle("Link existing page").click();
   await page.getByPlaceholder("Search pages").fill("Chapter");
   await page.locator(".on-studio-link-picker-row", { hasText: "Chapter Bookmark" }).getByTitle("Bookmark page 1").click();
-  await expect(page.getByRole("button", { name: /Chapter Bookmark/ })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-chip", { hasText: /Chapter Bookmark/ })).toBeVisible();
   await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 1" })).toBeVisible();
 });
 
@@ -649,7 +699,7 @@ test("switches Studio PDF view mode between continuous, single page, and two pag
   await expect(page.locator("[data-pdf-view-mode='continuous']")).toBeVisible();
 });
 
-test("auto-creates a missing Studio note from the notes panel fallback", async ({ page }) => {
+test("creates a missing Studio note only from the notes panel fallback action", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("opennotion-e2e-missing-studio-note", "1");
   });
@@ -658,6 +708,10 @@ test("auto-creates a missing Studio note from the notes panel fallback", async (
   await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
+  await expect(page.getByText("Linked note missing.")).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.locator("textarea[placeholder='Untitled']")).toBeHidden();
+  await page.getByRole("button", { name: "Create linked note" }).click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
   await expect(page.getByText("Linked note missing.")).toBeHidden();
   await page.waitForFunction(() => {
@@ -883,4 +937,28 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
   expect(noteBox).not.toBeNull();
   expect(Math.abs(noteBox!.y - pdfBox!.y)).toBeLessThan(120);
   expect(noteBox!.x).toBeGreaterThan(pdfBox!.x + pdfBox!.width);
+});
+
+test("does not show a window-level horizontal scrollbar in Studio split view", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-split")).toBeVisible();
+
+  const overflow = await page.evaluate(() => {
+    const splitFrame = document.querySelector<HTMLElement>(".on-studio-split-frame");
+    const split = document.querySelector<HTMLElement>(".on-studio-split");
+    return {
+      windowExtra: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      bodyExtra: document.body.scrollWidth - document.body.clientWidth,
+      frameExtra: splitFrame ? splitFrame.scrollWidth - splitFrame.clientWidth : 0,
+      splitExtra: split ? split.scrollWidth - split.clientWidth : 0,
+    };
+  });
+
+  expect(overflow.windowExtra).toBeLessThanOrEqual(0);
+  expect(overflow.bodyExtra).toBeLessThanOrEqual(0);
+  expect(overflow.frameExtra).toBeLessThanOrEqual(0);
+  expect(overflow.splitExtra).toBeLessThanOrEqual(0);
 });

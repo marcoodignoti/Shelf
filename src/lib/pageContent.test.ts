@@ -57,6 +57,20 @@ describe("parsePageBlocks", () => {
       },
     ]);
   });
+
+  it("keeps app asset media URLs but drops file URLs", () => {
+    expect(
+      parsePageBlocks(
+        JSON.stringify([
+          { type: "image", props: { url: "opennotion-app://asset/abc123" }, children: [] },
+          { type: "image", props: { url: "file:///tmp/unsafe.png" }, children: [] },
+        ])
+      )
+    ).toEqual([
+      { type: "image", props: { url: "opennotion-app://asset/abc123" }, children: [] },
+      { type: "image", props: {}, children: [] },
+    ]);
+  });
 });
 
 describe("pageContentToSearchText", () => {

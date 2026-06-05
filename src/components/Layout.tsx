@@ -69,7 +69,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <PanelLeft className="h-3.5 w-3.5" />
         </button>
       </div>
-      <main className="flex-1 overflow-y-auto relative transition-all duration-300 flex flex-col">
+      <main className="flex-1 overflow-hidden relative transition-all duration-300 flex flex-col">
         {children}
       </main>
     </div>

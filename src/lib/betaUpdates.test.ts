@@ -3,6 +3,7 @@ import {
   compareVersions,
   downloadForPlatform,
   checkForBetaUpdate,
+  downloadVerifiedUpdate,
   parseBetaUpdateManifest,
 } from "./betaUpdates";
 
@@ -89,6 +90,21 @@ describe("beta update manifest", () => {
     });
 
     expect(downloadForPlatform(manifest, "Win32", "Windows")?.label).toBe("Windows x64");
+  });
+
+  it("downloads updates through the desktop verifier", async () => {
+    const invoke = vi.fn(async () => ({ path: "/tmp/OpenNotion.dmg", bytes: 7, sha256: VALID_SHA }));
+    vi.stubGlobal("window", { openNotion: { invoke } });
+
+    await expect(downloadVerifiedUpdate({
+      url: VALID_MAC_URL,
+      label: "macOS Apple Silicon",
+      sha256: VALID_SHA,
+    })).resolves.toEqual({ path: "/tmp/OpenNotion.dmg", bytes: 7, sha256: VALID_SHA });
+    expect(invoke).toHaveBeenCalledWith("download_update_artifact", {
+      url: VALID_MAC_URL,
+      sha256: VALID_SHA,
+    });
   });
 
   it("falls back to the legacy manifest URL when the beta channel URL is unavailable", async () => {

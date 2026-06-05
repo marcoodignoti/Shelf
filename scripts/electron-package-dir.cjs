@@ -14,6 +14,7 @@ const finalAppDir = path.join(outputDir, "OpenNotion.app");
 const resourcesDir = path.join(appDir, "Contents", "Resources");
 const appResourcesDir = path.join(resourcesDir, "app");
 const appIcon = path.join(root, "assets", "app-icon.icns");
+const macEntitlements = path.join(root, "packaging", "entitlements.mac.plist");
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: "inherit" });
@@ -21,6 +22,19 @@ function run(command, args) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}`);
   }
+}
+
+function env(name, fallback = "") {
+  return process.env[name] && process.env[name].trim() ? process.env[name].trim() : fallback;
+}
+
+function macCodesignArgs(appPath) {
+  const args = ["--force", "--deep", "--options", "runtime"];
+  if (fs.existsSync(macEntitlements)) {
+    args.push("--entitlements", macEntitlements);
+  }
+  args.push("--sign", env("OPENNOTION_MAC_CODESIGN_IDENTITY", "-"), appPath);
+  return args;
 }
 
 function copyDirectory(source, destination) {
@@ -74,7 +88,7 @@ run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);
 
 if (process.platform === "darwin") {
   run("xattr", ["-cr", appDir]);
-  run("codesign", ["--force", "--deep", "--sign", "-", appDir]);
+  run("codesign", macCodesignArgs(appDir));
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appDir]);
   fs.mkdirSync(path.dirname(outputDir), { recursive: true });
   run("ditto", ["--norsrc", appDir, finalAppDir]);

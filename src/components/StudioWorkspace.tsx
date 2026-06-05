@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, Link2, PanelLeft, Plus, RotateCcw, Search, Square, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, Link2, PanelLeft, Plus, RotateCcw, Search, Square, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import type { TouchEvent, WheelEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -16,10 +16,12 @@ import {
   linkStudioDocumentPage,
   listStudioDocumentPageLinks,
   MAX_STUDIO_PDF_PAGES,
+  studioPdfCanvasPixelRatio,
   StudioDocument,
   StudioDocumentPageLink,
   studioPanelRatioFromPointer,
   studioPdfSrc,
+  studioPdfViewportScale,
 } from "../lib/studio";
 import { FloatingPopover } from "./FloatingPopover";
 import { Editor } from "./PageEditor";
@@ -66,9 +68,10 @@ export function StudioWorkspace({
   const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
   const fetchPages = useAppStore((state) => state.fetchPages);
   const fetchStudioDocuments = useAppStore((state) => state.fetchStudioDocuments);
+  const removePage = useAppStore((state) => state.removePage);
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
-  const pdfSrc = useMemo(() => studioPdfSrc(document).split("#")[0], [document.stored_file_path]);
+  const pdfSrc = useMemo(() => studioPdfSrc(document).split("#")[0], [document.id, document.stored_file_path]);
   const currentPage = clampStudioPage(document.viewer_page);
   const persistedZoom = clampStudioZoom(document.viewer_zoom);
   const [localZoom, setLocalZoom] = useState(persistedZoom);
@@ -87,10 +90,10 @@ export function StudioWorkspace({
   const [isCreatingLinkedPage, setIsCreatingLinkedPage] = useState(false);
   const [isExistingPagePickerOpen, setIsExistingPagePickerOpen] = useState(false);
   const [existingPageQuery, setExistingPageQuery] = useState("");
+  const [pendingDeleteLinkedPage, setPendingDeleteLinkedPage] = useState<StudioDocumentPageLink | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const existingPagePickerButtonRef = useRef<HTMLButtonElement>(null);
   const zoomPersistTimeoutRef = useRef<number | null>(null);
-  const attemptedNoteRecoveryRef = useRef<string | null>(null);
   const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
   const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
   const activeLinkedPage = useMemo(() => {
@@ -172,19 +175,18 @@ export function StudioWorkspace({
   }, [document.id, document.note_page_id, showError]);
 
   useEffect(() => {
-    setLocalZoom(persistedZoom);
-  }, [document.id, persistedZoom]);
+    const livePageIds = new Set(pages.filter((page) => page.is_deleted === 0).map((page) => page.id));
+    setLinkedPageLinks((links) => links.filter((link) => livePageIds.has(link.page_id)));
+    setSelectedLinkedPageId((currentId) => {
+      if (currentId && livePageIds.has(currentId)) return currentId;
+      if (note && livePageIds.has(note.id)) return note.id;
+      return null;
+    });
+  }, [note, pages]);
 
   useEffect(() => {
-    if (note) {
-      attemptedNoteRecoveryRef.current = null;
-      return;
-    }
-    if (attemptedNoteRecoveryRef.current === document.id) return;
-
-    attemptedNoteRecoveryRef.current = document.id;
-    onCreateMissingNote(document.id);
-  }, [document.id, note, onCreateMissingNote]);
+    setLocalZoom(persistedZoom);
+  }, [document.id, persistedZoom]);
 
   useEffect(() => {
     return () => {
@@ -264,6 +266,17 @@ export function StudioWorkspace({
     } catch (error: unknown) {
       showError(error);
     }
+  };
+
+  const handleConfirmDeleteLinkedPage = async () => {
+    const link = pendingDeleteLinkedPage;
+    if (!link) return;
+
+    setPendingDeleteLinkedPage(null);
+    setLinkedPageLinks((links) => links.filter((candidate) => candidate.page_id !== link.page_id));
+    setSelectedLinkedPageId((currentId) => currentId === link.page_id ? null : currentId);
+    await removePage(link.page_id);
+    showSuccess("Linked note deleted.");
   };
 
   const commitPageDraft = () => {
@@ -385,17 +398,30 @@ export function StudioWorkspace({
               {visibleLinkedPageLinks.map((link) => {
                 const isActive = link.page_id === activeLinkedPage.id;
                 return (
-                  <button
+                  <div
                     key={link.id}
-                    type="button"
-                    className={`on-studio-linked-page-chip ${isActive ? "on-studio-linked-page-chip-active" : ""}`}
-                    onClick={() => handleSelectLinkedPage(link)}
-                    title={link.page.title || "Untitled"}
+                    className={`on-studio-linked-page-pill ${isActive ? "on-studio-linked-page-pill-active" : ""}`}
                   >
-                    <FileText className="h-3.5 w-3.5" />
-                    <span className="truncate">{link.page.title || "Untitled"}</span>
-                    {link.pdf_page ? <span className="on-studio-linked-page-badge">p. {link.pdf_page}</span> : null}
-                  </button>
+                    <button
+                      type="button"
+                      className="on-studio-linked-page-chip"
+                      onClick={() => handleSelectLinkedPage(link)}
+                      title={link.page.title || "Untitled"}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span className="truncate">{link.page.title || "Untitled"}</span>
+                      {link.pdf_page ? <span className="on-studio-linked-page-badge">p. {link.pdf_page}</span> : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="on-studio-linked-page-delete"
+                      title={`Delete linked note ${link.page.title || "Untitled"}`}
+                      aria-label={`Delete linked note ${link.page.title || "Untitled"}`}
+                      onClick={() => setPendingDeleteLinkedPage(link)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -696,6 +722,39 @@ export function StudioWorkspace({
           onPointerCancel={() => setIsResizingPanels(false)}
         />
       )}
+      {pendingDeleteLinkedPage ? (
+        <div className="on-modal-overlay z-[240] items-center justify-center p-4" onMouseDown={() => setPendingDeleteLinkedPage(null)}>
+          <div className="on-modal-panel on-delete-dialog w-[420px] max-w-[calc(100vw-2rem)]" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="on-delete-dialog-content">
+              <div className="on-delete-dialog-icon">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold">Delete linked note?</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  Delete "{pendingDeleteLinkedPage.page.title || "Untitled"}" permanently and remove it from this PDF?
+                </div>
+              </div>
+            </div>
+            <div className="on-delete-dialog-actions">
+              <button
+                type="button"
+                className="on-button-secondary"
+                onClick={() => setPendingDeleteLinkedPage(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="on-button-danger"
+                onClick={() => void handleConfirmDeleteLinkedPage()}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -985,8 +1044,19 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
       const pdfPage = await pdfDocument.getPage(pageNumber);
       if (isCancelled) return;
 
-      const viewport = pdfPage.getViewport({ scale: clampStudioZoom(zoom) / 100 });
-      const pixelRatio = window.devicePixelRatio || 1;
+      const rawViewport = pdfPage.getViewport({ scale: clampStudioZoom(zoom) / 100 });
+      const viewportScale = studioPdfViewportScale({
+        width: rawViewport.width,
+        height: rawViewport.height,
+      });
+      const viewport = viewportScale < 1
+        ? pdfPage.getViewport({ scale: (clampStudioZoom(zoom) / 100) * viewportScale })
+        : rawViewport;
+      const pixelRatio = studioPdfCanvasPixelRatio({
+        width: viewport.width,
+        height: viewport.height,
+        devicePixelRatio: window.devicePixelRatio || 1,
+      });
       canvas.width = Math.floor(viewport.width * pixelRatio);
       canvas.height = Math.floor(viewport.height * pixelRatio);
       canvas.style.width = `${viewport.width}px`;

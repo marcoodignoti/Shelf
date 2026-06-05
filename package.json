@@ -43,6 +43,7 @@
     "release:package:desktop": "npm run electron:package:dmg",
     "release:package:macos": "npm run electron:package:dmg",
     "release:package:windows": "npm run electron:package:win",
+    "release:update-keypair": "node scripts/generate-update-keypair.cjs",
     "release:update-manifest": "node scripts/write-beta-update-manifest.cjs",
     "release:verify:macos": "node scripts/electron-verify-macos.cjs"
   },

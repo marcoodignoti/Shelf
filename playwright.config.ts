@@ -15,7 +15,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:1420",
     trace: "retain-on-failure",
   },
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_SKIP_WEB_SERVER ? undefined : {
     command: "npm run preview -- --host 127.0.0.1 --port 1420 --strictPort",
     url: "http://127.0.0.1:1420",
     reuseExistingServer: !process.env.CI,

@@ -7,6 +7,8 @@ export const MAX_STUDIO_PDF_PAGES = 1000;
 export const STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES = 4;
 export const STUDIO_PDF_ESTIMATED_PAGE_GAP_PX = 18;
 export const STUDIO_PDF_FALLBACK_PAGE_HEIGHT_PX = 792;
+export const STUDIO_PDF_MAX_PAGE_EDGE_PX = 4096;
+export const STUDIO_PDF_MAX_CANVAS_PIXELS = 16_000_000;
 
 export interface StudioDocument {
   id: string;
@@ -206,6 +208,32 @@ export function isStudioPdfPageCountAllowed(pageCount: number): boolean {
   return Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= MAX_STUDIO_PDF_PAGES;
 }
 
+function finitePositive(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
+
+export function studioPdfViewportScale({ width, height }: { width: number; height: number }): number {
+  if (!finitePositive(width) || !finitePositive(height)) return 1;
+  const edgeScale = STUDIO_PDF_MAX_PAGE_EDGE_PX / Math.max(width, height);
+  const pixelScale = Math.sqrt(STUDIO_PDF_MAX_CANVAS_PIXELS / (width * height));
+  return Math.min(1, edgeScale, pixelScale);
+}
+
+export function studioPdfCanvasPixelRatio({
+  width,
+  height,
+  devicePixelRatio,
+}: {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+}): number {
+  if (!finitePositive(width) || !finitePositive(height)) return 1;
+  const safeDevicePixelRatio = finitePositive(devicePixelRatio) ? Math.min(devicePixelRatio, 2) : 1;
+  const pixelScale = Math.sqrt(STUDIO_PDF_MAX_CANVAS_PIXELS / (width * height));
+  return Math.min(safeDevicePixelRatio, Math.max(0.25, pixelScale));
+}
+
 export function estimatedStudioPdfPageSlotHeight(zoom: number): number {
   return Math.max(1, Math.round(STUDIO_PDF_FALLBACK_PAGE_HEIGHT_PX * (clampStudioZoom(zoom) / 100))) + STUDIO_PDF_ESTIMATED_PAGE_GAP_PX;
 }
@@ -254,7 +282,7 @@ export function buildStudioPanelGridColumns(layout: StudioPanelLayout, pdfRatio:
   const clampedRatio = clampStudioPanelRatio(pdfRatio);
   const leftRatio = layout === "pdf-left" ? clampedRatio : 100 - clampedRatio;
   const rightRatio = 100 - leftRatio;
-  return `${leftRatio}% 6px ${rightRatio}%`;
+  return `minmax(0, ${leftRatio}fr) 6px minmax(0, ${rightRatio}fr)`;
 }
 
 export function studioPanelRatioFromPointer(

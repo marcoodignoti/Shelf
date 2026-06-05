@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Clipboard, Download, X } from "lucide-react";
-import { openExternalUrl } from "../lib/desktop";
-import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey } from "../lib/betaUpdates";
+import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey, downloadVerifiedUpdate } from "../lib/betaUpdates";
 import { useAppStore } from "../store/useAppStore";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
@@ -32,8 +31,10 @@ function isMacPlatform(): boolean {
 
 export function BetaUpdateNotice() {
   const showError = useAppStore((state) => state.showError);
+  const showSuccess = useAppStore((state) => state.showSuccess);
   const [state, setState] = useState<BetaUpdateState>({ status: "idle" });
   const [copiedHomebrewCommand, setCopiedHomebrewCommand] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,11 +67,15 @@ export function BetaUpdateNotice() {
     }
 
     try {
-      await openExternalUrl(state.download.url);
+      setIsDownloading(true);
+      await downloadVerifiedUpdate(state.download);
+      showSuccess("Downloaded and verified update.");
     } catch (error: unknown) {
       showError(error);
+    } finally {
+      setIsDownloading(false);
     }
-  }, [showError, state]);
+  }, [showError, showSuccess, state]);
 
   const handleCopyHomebrewCommand = useCallback(async () => {
     try {
@@ -104,9 +109,14 @@ export function BetaUpdateNotice() {
           ))}
         </ul>
       )}
-      <button type="button" className="on-button-secondary on-beta-update-button" onClick={() => void handleDownload()}>
+      <button
+        type="button"
+        className="on-button-secondary on-beta-update-button"
+        onClick={() => void handleDownload()}
+        disabled={isDownloading || !download}
+      >
         <Download className="h-4 w-4" strokeWidth={1.9} />
-        {download ? `Download ${manifest.version}` : "No build for this device"}
+        {isDownloading ? "Verifying download" : download ? `Download ${manifest.version}` : "No build for this device"}
       </button>
       {download?.size && <div className="on-beta-update-size">{download.label} - {download.size}</div>}
       <div className="on-beta-update-steps">

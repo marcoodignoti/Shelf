@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const rendererUrl = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:1420";
+const rendererTimeoutMs = Number(process.env.ELECTRON_RENDERER_TIMEOUT_MS || 90_000);
 const renderer = new URL(rendererUrl);
 const electronDir = path.join(root, "electron");
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -124,7 +125,7 @@ async function run() {
     if (!shuttingDown) shutdown(code ?? 1);
   });
 
-  await waitForRenderer(rendererUrl);
+  await waitForRenderer(rendererUrl, rendererTimeoutMs);
   startElectron();
 
   watcher = fs.watch(electronDir, (_eventType, filename) => {

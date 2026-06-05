@@ -7,10 +7,14 @@ import {
   clampStudioPanelRatio,
   clampStudioZoom,
   isStudioPdfPageCountAllowed,
+  STUDIO_PDF_MAX_CANVAS_PIXELS,
+  STUDIO_PDF_MAX_PAGE_EDGE_PX,
   MAX_STUDIO_PDF_PAGES,
   STUDIO_PDF_CONTINUOUS_OVERSCAN_PAGES,
+  studioPdfCanvasPixelRatio,
   studioPanelRatioFromPointer,
   studioPdfSrc,
+  studioPdfViewportScale,
 } from "./studio";
 
 const studioDocument = {
@@ -36,7 +40,7 @@ function withDesktopBridge(work: () => void): void {
       invoke: async () => null,
       open: async () => null,
       save: async () => null,
-      fileSrc: (filePath: string) => `file://${filePath}`,
+      fileSrc: () => "opennotion-app://asset/mock",
       studioPdfSrc: (documentId: string) => `http://127.0.0.1:49152/studio-document/${documentId}/source.pdf`,
     },
   };
@@ -98,6 +102,28 @@ describe("studio viewer helpers", () => {
     expect(window.afterHeight).toBeGreaterThan(0);
   });
 
+  it("caps huge PDF page viewports before rendering canvas pixels", () => {
+    const scale = studioPdfViewportScale({ width: 12_000, height: 16_000 });
+    const displayWidth = 12_000 * scale;
+    const displayHeight = 16_000 * scale;
+
+    expect(scale).toBeLessThan(1);
+    expect(Math.max(displayWidth, displayHeight)).toBeLessThanOrEqual(STUDIO_PDF_MAX_PAGE_EDGE_PX);
+    expect(displayWidth * displayHeight).toBeLessThanOrEqual(STUDIO_PDF_MAX_CANVAS_PIXELS);
+  });
+
+  it("reduces device pixel ratio when a PDF canvas would exceed the raster budget", () => {
+    const pixelRatio = studioPdfCanvasPixelRatio({
+      width: STUDIO_PDF_MAX_PAGE_EDGE_PX,
+      height: STUDIO_PDF_MAX_PAGE_EDGE_PX,
+      devicePixelRatio: 2,
+    });
+
+    expect(pixelRatio).toBeLessThan(2);
+    expect(STUDIO_PDF_MAX_PAGE_EDGE_PX * pixelRatio * STUDIO_PDF_MAX_PAGE_EDGE_PX * pixelRatio)
+      .toBeLessThanOrEqual(STUDIO_PDF_MAX_CANVAS_PIXELS);
+  });
+
   it("builds a PDF hash with persisted page and zoom", () => {
     expect(buildStudioPdfHash({ page: 3, zoom: 150 })).toBe("#page=3&zoom=150");
   });
@@ -119,8 +145,8 @@ describe("studio viewer helpers", () => {
   });
 
   it("builds panel columns based on PDF side", () => {
-    expect(buildStudioPanelGridColumns("pdf-left", 60)).toBe("60% 6px 40%");
-    expect(buildStudioPanelGridColumns("note-left", 60)).toBe("40% 6px 60%");
+    expect(buildStudioPanelGridColumns("pdf-left", 60)).toBe("minmax(0, 60fr) 6px minmax(0, 40fr)");
+    expect(buildStudioPanelGridColumns("note-left", 60)).toBe("minmax(0, 40fr) 6px minmax(0, 60fr)");
   });
 
   it("calculates PDF ratio from pointer for either panel order", () => {

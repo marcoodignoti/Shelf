@@ -6,14 +6,15 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 - macOS unsigned Electron DMG for private testing
 - Windows unsigned Electron zip from GitHub Actions for private testing
-- assisted beta update checks with brief changelog and manual download
+- signed assisted beta update checks with SHA-256 verified downloads
+- ad-hoc macOS codesigning with hardened runtime enabled
 - explicit warning text for testers
 
 ## What This Does Not Solve
 
 - macOS Gatekeeper trust
 - macOS notarization
-- Windows installer packaging or SmartScreen trust
+- Windows installer packaging or SmartScreen trust without Authenticode certs
 - production-grade public distribution
 - silent auto-install updates
 
@@ -45,11 +46,30 @@ OpenNotion_0.1.1_win-x64.zip
 Generate the update manifest after packaging:
 
 ```sh
+OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
 npm run release:update-manifest
 ```
 
-Upload `beta-update.json` with the DMG and ZIP in the same GitHub Release. See
-[`docs/release/beta-updates.md`](beta-updates.md).
+Upload signed `beta-update.json` with the DMG and ZIP in the same GitHub
+Release. See [`docs/release/beta-updates.md`](beta-updates.md).
+
+## Optional Signing Credentials
+
+Free Apple accounts cannot produce Developer ID notarized builds. Current local
+macOS packaging uses ad-hoc signing with hardened runtime. If you later get a
+Developer ID certificate, set:
+
+```sh
+OPENNOTION_MAC_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+```
+
+Windows Authenticode signing is optional and only runs when certificate env vars
+exist:
+
+```sh
+OPENNOTION_WINDOWS_PFX_PATH=.secrets/windows-code-signing.pfx
+OPENNOTION_WINDOWS_PFX_PASSWORD=...
+```
 
 ## User Warning
 

@@ -7,7 +7,7 @@ const host = process.env.VITE_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   base: "./",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss({ optimize: false })],
 
   build: {
     chunkSizeWarningLimit: 2000,
@@ -43,6 +43,9 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    watch: {
+      ignored: ["**/dist-electron/**"],
+    },
     hmr: host
       ? {
           protocol: "ws",

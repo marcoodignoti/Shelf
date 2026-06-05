@@ -127,9 +127,9 @@ Generated artifact:
 dist-electron/OpenNotion_0.1.1_arm64.dmg
 ```
 
-Because the current macOS build is unsigned/ad-hoc and not notarized, macOS may
-show an unidentified developer warning. For private testing after copying the
-app to `/Applications`:
+Because the current macOS build is ad-hoc signed with hardened runtime and not
+notarized, macOS may show an unidentified developer warning. For private
+testing after copying the app to `/Applications`:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/OpenNotion.app
@@ -185,6 +185,13 @@ npm run release:package:macos
 npm run release:verify:macos
 ```
 
+Generate a signed beta update manifest after packaging:
+
+```sh
+OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
+npm run release:update-manifest
+```
+
 Windows packaging script, intended for Windows runners:
 
 ```sh
@@ -218,8 +225,9 @@ Key implementation areas:
 
 Current public-readiness level:
 
-- macOS public release: supported as unsigned DMG
+- macOS public release: supported as ad-hoc signed DMG
 - Windows public release: supported as unsigned portable zip
+- Beta update manifests: Ed25519 signed, with SHA-256 verified artifacts
 - Public notarized macOS release: not yet supported
 - Signed Windows installer: not yet supported
 - Hosted sync/account service: intentionally not present

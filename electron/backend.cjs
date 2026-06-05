@@ -1,13 +1,17 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { DatabaseSync } = require("node:sqlite");
-const { pathToFileURL } = require("node:url");
 
 const APP_SCHEMA_VERSION = "1";
+const APP_ASSET_PROTOCOL = "opennotion-app";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const STUDIO_PDF_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
+const UPDATE_ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
+const UPDATE_SIGNATURE_ALGORITHM = "ed25519";
 const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
 const BACKUP_MAX_PAGES = 5000;
 const BACKUP_MAX_ID_LENGTH = 512;
@@ -20,6 +24,10 @@ const UPDATE_MANIFEST_URLS = new Set([
   "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json",
   "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json",
 ]);
+const UPDATE_DOWNLOAD_URL_PATTERN =
+  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip)$/i;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
+const DEFAULT_UPDATE_PUBLIC_KEY_PATH = path.join(__dirname, "update-public-key.pem");
 
 const PAGE_COLUMNS =
   "id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at";
@@ -415,6 +423,79 @@ function validateManagedAssetPath(filePath, appConfigDir) {
   return canonicalPath;
 }
 
+function encodeAppAssetPath(filePath) {
+  return Buffer.from(filePath, "utf8").toString("base64url");
+}
+
+function decodeAppAssetPath(token) {
+  const encoded = String(token ?? "").trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(encoded)) {
+    throw new Error("asset URL token is invalid");
+  }
+  const decoded = Buffer.from(encoded, "base64url").toString("utf8");
+  if (!decoded) throw new Error("asset URL token is invalid");
+  return decoded;
+}
+
+function normalizePem(value) {
+  return String(value ?? "").replace(/\\n/g, "\n").trim();
+}
+
+function updateManifestPublicKey(configuredKey) {
+  if (configuredKey) return normalizePem(configuredKey);
+  if (process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH) {
+    return normalizePem(fs.readFileSync(path.resolve(process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH), "utf8"));
+  }
+  if (process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM) {
+    return normalizePem(process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM);
+  }
+  return normalizePem(fs.readFileSync(DEFAULT_UPDATE_PUBLIC_KEY_PATH, "utf8"));
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  throw new Error("Update manifest contains unsupported data");
+}
+
+function signedManifestPayload(value, publicKeyPem) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid signed update manifest");
+  }
+
+  const envelope = value;
+  if (envelope.signatureAlgorithm !== UPDATE_SIGNATURE_ALGORITHM) {
+    throw new Error("Invalid update manifest signature algorithm");
+  }
+  if (!envelope.payload || typeof envelope.payload !== "object" || Array.isArray(envelope.payload)) {
+    throw new Error("Invalid signed update manifest payload");
+  }
+  if (typeof envelope.signature !== "string" || !envelope.signature.trim()) {
+    throw new Error("Invalid update manifest signature");
+  }
+
+  const payloadBytes = Buffer.from(canonicalJson(envelope.payload), "utf8");
+  const signature = Buffer.from(envelope.signature, "base64");
+  const verified = crypto.verify(null, payloadBytes, crypto.createPublicKey(publicKeyPem), signature);
+  if (!verified) throw new Error("Update manifest signature verification failed");
+  return envelope.payload;
+}
+
+function updateArtifactFileName(parsedUrl) {
+  const fileName = decodeURIComponent(path.basename(parsedUrl.pathname));
+  if (!/^OpenNotion_[a-zA-Z0-9._-]+\.(dmg|zip)$/i.test(fileName)) {
+    throw new Error("update artifact filename is not trusted");
+  }
+  return fileName;
+}
+
 function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
   if (!fs.existsSync(storedFilePath)) return;
   const storedPath = validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot);
@@ -423,8 +504,10 @@ function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
 }
 
 class OpenNotionBackend {
-  constructor({ appConfigDir, openPath, revealPath, openExternalUrl }) {
+  constructor({ appConfigDir, downloadsDir, openPath, revealPath, openExternalUrl, updateManifestPublicKey: publicKey }) {
     this.appConfigDir = appConfigDir;
+    this.downloadsDir = downloadsDir || path.join(appConfigDir, "downloads");
+    this.updateManifestPublicKey = updateManifestPublicKey(publicKey);
     this.db = openDatabase(appConfigDir);
     this.openPath = openPath || (() => Promise.resolve(""));
     this.revealPath = revealPath || (() => {});
@@ -469,6 +552,7 @@ class OpenNotionBackend {
       import_editor_image: (args) => this.importEditorImage(args),
       open_external_url: (args) => this.openExternalUrl(args),
       fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
+      download_update_artifact: (args) => this.downloadUpdateArtifact(args),
       show_character_palette: () => null,
     };
   }
@@ -500,7 +584,12 @@ class OpenNotionBackend {
   }
 
   fileSrc(filePath) {
-    return pathToFileURL(validateManagedAssetPath(filePath, this.appConfigDir)).toString();
+    const canonicalPath = validateManagedAssetPath(filePath, this.appConfigDir);
+    return `${APP_ASSET_PROTOCOL}://asset/${encodeAppAssetPath(canonicalPath)}`;
+  }
+
+  resolveManagedAssetPath(assetPathToken) {
+    return validateManagedAssetPath(decodeAppAssetPath(assetPathToken), this.appConfigDir);
   }
 
   async openExternalUrl({ url }) {
@@ -536,10 +625,73 @@ class OpenNotionBackend {
       throw new Error("Update manifest is too large");
     }
 
+    let signedManifest;
     try {
-      return JSON.parse(text);
+      signedManifest = JSON.parse(text);
     } catch {
-      throw new Error("Invalid update manifest JSON");
+      throw new Error("Invalid signed update manifest");
+    }
+    return signedManifestPayload(signedManifest, this.updateManifestPublicKey);
+  }
+
+  async downloadUpdateArtifact({ url, sha256 }) {
+    const parsed = new URL(String(url ?? ""));
+    const expectedSha256 = String(sha256 ?? "").trim().toLowerCase();
+    if (!UPDATE_DOWNLOAD_URL_PATTERN.test(parsed.toString())) {
+      throw new Error("update download URL is not trusted");
+    }
+    if (!SHA256_PATTERN.test(expectedSha256)) {
+      throw new Error("update checksum is invalid");
+    }
+
+    const fileName = updateArtifactFileName(parsed);
+    fs.mkdirSync(this.downloadsDir, { recursive: true });
+    const finalPath = path.join(this.downloadsDir, fileName);
+    const tempPath = path.join(this.downloadsDir, `.${fileName}.${process.pid}.${Date.now()}.download`);
+
+    try {
+      const response = await fetch(parsed.toString(), {
+        headers: { accept: "application/octet-stream" },
+        signal: AbortSignal.timeout(600_000),
+      });
+      if (!response.ok) throw new Error(`Update download failed (${response.status})`);
+      if (!response.body) throw new Error("Update download response is empty");
+
+      const contentLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
+      if (Number.isFinite(contentLength) && contentLength > UPDATE_ARTIFACT_MAX_BYTES) {
+        throw new Error("Update download is too large");
+      }
+
+      const hash = crypto.createHash("sha256");
+      let bytes = 0;
+
+      await pipeline(
+        Readable.fromWeb(response.body),
+        async function* verifyChunks(source) {
+          for await (const chunk of source) {
+            const buffer = Buffer.from(chunk);
+            bytes += buffer.length;
+            if (bytes > UPDATE_ARTIFACT_MAX_BYTES) throw new Error("Update download is too large");
+            hash.update(buffer);
+            yield buffer;
+          }
+        },
+        fs.createWriteStream(tempPath, { flags: "w" })
+      );
+
+      const actualSha256 = hash.digest("hex");
+      if (actualSha256 !== expectedSha256) {
+        throw new Error("Update download checksum mismatch");
+      }
+
+      fs.rmSync(finalPath, { force: true });
+      fs.renameSync(tempPath, finalPath);
+      const error = await this.openPath(finalPath);
+      if (error) throw new Error(error);
+      return { path: finalPath, bytes, sha256: actualSha256 };
+    } catch (error) {
+      fs.rmSync(tempPath, { force: true });
+      throw error;
     }
   }
 
