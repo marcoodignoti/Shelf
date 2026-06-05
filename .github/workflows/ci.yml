@@ -94,6 +94,18 @@ jobs:
           path: dist-electron/OpenNotion_*_win-x64.zip
           if-no-files-found: error
 
+      - name: Package Windows installer
+        run: npm run release:package:windows:installer
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenNotion_win-x64_installer
+          path: |
+            dist-electron/builder/OpenNotion_*_setup_win-x64.exe
+            dist-electron/builder/latest.yml
+          if-no-files-found: error
+
       - name: Authenticode dry run
         shell: pwsh
         timeout-minutes: 5

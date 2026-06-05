@@ -7,6 +7,7 @@ import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { HomeView } from "./components/HomeView";
+import type { DesktopUpdateInfo } from "./lib/desktop";
 
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
 const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
@@ -34,6 +35,8 @@ export default function App() {
   const updateStudioViewerAction = useAppStore((state) => state.updateStudioViewerAction);
   const createMissingStudioNoteAction = useAppStore((state) => state.createMissingStudioNoteAction);
   const replaceStudioPdfAction = useAppStore((state) => state.replaceStudioPdfAction);
+  const showSuccess = useAppStore((state) => state.showSuccess);
+  const showError = useAppStore((state) => state.showError);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -79,6 +82,27 @@ export default function App() {
     window.addEventListener("contextmenu", preventNativeContextMenu);
     return () => window.removeEventListener("contextmenu", preventNativeContextMenu);
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.openNotion?.onDesktopUpdate?.((eventName, payload) => {
+      const updateInfo = payload && typeof payload === "object" ? payload as DesktopUpdateInfo : {};
+      const version = updateInfo.version ? ` ${updateInfo.version}` : "";
+      if (eventName === "desktop-update-available") {
+        showSuccess(`Update${version} available. Downloading in background.`);
+      }
+      if (eventName === "desktop-update-downloaded") {
+        showSuccess(`Update${version} ready. It will install after you quit OpenNotion.`);
+      }
+      if (eventName === "desktop-update-error") {
+        const message = typeof payload === "string" ? payload : "Windows update failed.";
+        showError(message);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [showError, showSuccess]);
 
   const currentPage = useMemo(
     () => pages.find(p => p.id === currentPageId),

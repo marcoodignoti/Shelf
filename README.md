@@ -37,8 +37,8 @@ SQLite.
 - **Fast navigation**: sidebar, recents, favorites, full workspace search, and
   command-style page switching.
 - **Local media**: paste or select images and keep them in local app storage.
-- **Desktop packaging**: unsigned macOS DMG today, unsigned Windows portable
-  zip through GitHub Actions.
+- **Desktop packaging**: unsigned macOS DMG, Windows portable zip, and Windows
+  NSIS installer through GitHub Actions.
 
 ## Product Tour
 
@@ -137,13 +137,26 @@ xattr -dr com.apple.quarantine /Applications/OpenNotion.app
 
 ### Windows
 
-Download `OpenNotion_0.1.1_win-x64.zip` from the latest GitHub release.
+Download the Windows installer from the latest GitHub release:
+
+```text
+OpenNotion_0.1.3_setup_win-x64.exe
+```
+
+The installer checks for newer Windows releases in background, downloads them
+automatically, and installs on app quit.
+
+Portable compatibility build:
+
+```text
+OpenNotion_0.1.3_win-x64.zip
+```
 
 1. Extract the zip.
 2. Run `OpenNotion.exe`.
 
-This is a portable unsigned build, not an installer. Windows SmartScreen may
-show an untrusted app warning.
+Both Windows builds are unsigned. Windows SmartScreen may show an untrusted app
+warning until Authenticode signing is configured.
 
 ## Development
 
@@ -196,6 +209,7 @@ Windows packaging script, intended for Windows runners:
 
 ```sh
 npm run release:package:windows
+npm run release:package:windows:installer
 ```
 
 ## Architecture
@@ -217,7 +231,7 @@ Key implementation areas:
 
 - `src/` - React workspace, editor, Studio, state, tests
 - `electron/` - Electron main/preload/backend and packaged-app smokes
-- `scripts/` - macOS DMG, Windows portable package, release verification
+- `scripts/` - macOS DMG, Windows packages, release verification
 - `tests/e2e/` - production-preview browser flows
 - `docs/` - release, testing, migration, and data-location notes
 
@@ -226,10 +240,10 @@ Key implementation areas:
 Current public-readiness level:
 
 - macOS public release: supported as ad-hoc signed DMG
-- Windows public release: supported as unsigned portable zip
+- Windows public release: supported as unsigned portable zip and unsigned NSIS installer
 - Beta update manifests: Ed25519 signed, with SHA-256 verified artifacts
 - Public notarized macOS release: not yet supported
-- Signed Windows installer: not yet supported
+- Authenticode-signed Windows installer: not yet supported
 - Hosted sync/account service: intentionally not present
 
 Before a broad public release, profile startup time, memory, long editing

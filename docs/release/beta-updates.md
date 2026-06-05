@@ -2,10 +2,12 @@
 
 OpenNotion uses signed assisted beta updates for testers.
 
-This is not a silent auto-updater. Current macOS builds are ad-hoc signed and
-Windows builds are unsigned, so the app checks a small GitHub Release manifest,
-verifies its Ed25519 signature, shows a brief changelog, downloads the matching
-DMG or ZIP, and verifies the artifact SHA-256 before opening it.
+Current macOS builds are ad-hoc signed and Windows builds are unsigned. macOS
+and portable Windows builds check a small GitHub Release manifest, verify its
+Ed25519 signature, show a brief changelog, download the matching DMG or ZIP, and
+verify the artifact SHA-256 before opening it. Windows installer builds also use
+`electron-updater` with the GitHub Release `latest.yml` file to download
+installer updates in background and install them on app quit.
 
 ## Tester Flow
 
@@ -19,7 +21,9 @@ DMG or ZIP, and verifies the artifact SHA-256 before opening it.
 4. Tester replaces the app manually.
 
 On macOS, testers can alternatively use the Homebrew beta cask documented in
-[`homebrew.md`](homebrew.md). Windows testers use the guided ZIP download.
+[`homebrew.md`](homebrew.md). Windows portable testers use the guided ZIP
+download. Windows installer testers get background downloads and install-on-quit
+updates.
 
 ## Create Manifest
 
@@ -60,16 +64,29 @@ Without that flag, the manifest includes the artifacts currently present under
 `dist-electron/`. This supports macOS-only local dry-runs before the Windows ZIP
 is produced by GitHub Actions.
 
-Upload the DMG, ZIP, and release-local manifest to the versioned GitHub Release:
+Upload the DMG, ZIP, installer, `latest.yml`, and release-local manifest to the
+versioned GitHub Release:
 
 ```text
-OpenNotion_0.1.1_arm64.dmg
-OpenNotion_0.1.1_win-x64.zip
+OpenNotion_0.1.3_arm64.dmg
+OpenNotion_0.1.3_win-x64.zip
+OpenNotion_0.1.3_setup_win-x64.exe
+latest.yml
 beta-update.json
 ```
 
-Then upload the same `beta-update.json` to the `beta` release, replacing the
-old asset. The app checks this deterministic channel URL first:
+For app versions that require signed manifests, upload the same
+`beta-update.json` to the `beta` release, replacing the old asset. For older
+compat builds that still expect an unsigned payload, generate:
+
+```sh
+npm run release:update-manifest:compat
+```
+
+Then upload `dist-electron/beta-update-compat.json` to the `beta` release as the
+asset name `beta-update.json`.
+
+The app checks this deterministic channel URL first:
 
 ```text
 https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json

@@ -38,14 +38,59 @@
     "electron:package:dir": "npm run electron:clean && npm run build && node scripts/electron-package-dir.cjs",
     "electron:package:dmg": "npm run electron:package:dir && node scripts/electron-package-dmg.cjs",
     "electron:package:win": "npm run electron:clean && npm run build && node scripts/electron-package-win.cjs",
+    "electron:package:win:installer": "npm run electron:clean && npm run build && electron-builder --win nsis --x64 --publish never",
     "electron:build": "npm run electron:package:dmg",
     "release:package:electron": "npm run electron:package:dmg",
     "release:package:desktop": "npm run electron:package:dmg",
     "release:package:macos": "npm run electron:package:dmg",
     "release:package:windows": "npm run electron:package:win",
+    "release:package:windows:installer": "npm run electron:package:win:installer",
     "release:update-keypair": "node scripts/generate-update-keypair.cjs",
     "release:update-manifest": "node scripts/write-beta-update-manifest.cjs",
+    "release:update-manifest:compat": "node scripts/write-beta-compat-manifest.cjs",
     "release:verify:macos": "node scripts/electron-verify-macos.cjs"
+  },
+  "build": {
+    "appId": "org.opennotion.desktop",
+    "productName": "OpenNotion",
+    "directories": {
+      "output": "dist-electron/builder"
+    },
+    "asar": false,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "marcoodignoti",
+        "repo": "OpenNotion"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/app-icon.ico",
+      "artifactName": "OpenNotion_${version}_setup_win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
   },
   "dependencies": {
     "@blocknote/core": "0.51.0",
@@ -54,6 +99,7 @@
     "@mantine/core": "9.2.1",
     "@mantine/hooks": "9.2.1",
     "clsx": "2.1.1",
+    "electron-updater": "^6.8.3",
     "katex": "0.17.0",
     "lucide-react": "1.16.0",
     "pdfjs-dist": "5.7.284",
@@ -74,6 +120,7 @@
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "electron": "^40.10.2",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.5.14",
     "rcedit": "^5.0.2",
     "tailwindcss": "^4.3.0",

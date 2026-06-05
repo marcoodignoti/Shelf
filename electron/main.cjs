@@ -15,6 +15,7 @@ let mainWindow = null;
 let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
+let autoUpdater = null;
 
 protocol.registerSchemesAsPrivileged([{
   scheme: APP_PROTOCOL,
@@ -442,6 +443,64 @@ function createMainWindow() {
   });
 }
 
+function notifyRenderer(channel, payload = null) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(channel, payload);
+}
+
+function configureWindowsAutoUpdater() {
+  if (process.platform !== "win32" || !app.isPackaged) return;
+
+  try {
+    ({ autoUpdater } = require("electron-updater"));
+  } catch (error) {
+    console.warn("[updater] electron-updater unavailable", error);
+    return;
+  }
+
+  autoUpdater.allowPrerelease = true;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    notifyRenderer("desktop-update-checking");
+  });
+  autoUpdater.on("update-available", (info) => {
+    notifyRenderer("desktop-update-available", {
+      version: info.version,
+      releaseName: info.releaseName,
+      releaseDate: info.releaseDate,
+    });
+  });
+  autoUpdater.on("update-not-available", () => {
+    notifyRenderer("desktop-update-not-available");
+  });
+  autoUpdater.on("download-progress", (progress) => {
+    notifyRenderer("desktop-update-download-progress", {
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    notifyRenderer("desktop-update-downloaded", {
+      version: info.version,
+      releaseName: info.releaseName,
+      releaseDate: info.releaseDate,
+    });
+  });
+  autoUpdater.on("error", (error) => {
+    console.warn("[updater] Windows auto update failed", error);
+    notifyRenderer("desktop-update-error", error instanceof Error ? error.message : "Windows auto update failed");
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+      console.warn("[updater] Windows update check failed", error);
+    });
+  }, 5000);
+}
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -557,6 +616,7 @@ app.whenReady().then(async () => {
   createBackend();
   await startStudioPdfServer();
   createMainWindow();
+  configureWindowsAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

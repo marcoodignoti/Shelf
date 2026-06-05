@@ -14,6 +14,19 @@ export interface SaveDialogOptions {
 }
 
 type OpenDialogResult = string | string[] | null;
+export type DesktopUpdateEventName =
+  | "desktop-update-checking"
+  | "desktop-update-available"
+  | "desktop-update-not-available"
+  | "desktop-update-download-progress"
+  | "desktop-update-downloaded"
+  | "desktop-update-error";
+
+export interface DesktopUpdateInfo {
+  version?: string;
+  releaseName?: string;
+  releaseDate?: string;
+}
 
 interface OpenNotionDesktopBridge {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -21,6 +34,7 @@ interface OpenNotionDesktopBridge {
   save(options?: SaveDialogOptions): Promise<string | null>;
   fileSrc(filePath: string): string;
   studioPdfSrc?(documentId: string): string;
+  onDesktopUpdate?(callback: (eventName: DesktopUpdateEventName, payload: unknown) => void): () => void;
 }
 
 declare global {

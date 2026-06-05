@@ -6,7 +6,9 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 - macOS ad-hoc signed Electron DMG for private testing
 - Windows unsigned Electron zip from GitHub Actions for private testing
+- Windows unsigned NSIS installer from GitHub Actions for private testing
 - signed assisted beta update checks with SHA-256 verified downloads
+- Windows installer background downloads with install-on-quit updates
 - ad-hoc macOS codesigning with hardened runtime enabled
 - explicit warning text for testers
 
@@ -14,9 +16,9 @@ Unsigned beta releases are for private testing before paid signing credentials e
 
 - macOS Gatekeeper trust
 - macOS notarization
-- Windows installer packaging or SmartScreen trust without Authenticode certs
+- Windows SmartScreen trust without Authenticode certs
 - production-grade public distribution
-- silent auto-install updates
+- macOS silent auto-install updates without Developer ID and notarization
 
 ## Build Locally
 
@@ -36,11 +38,13 @@ dist-electron/mac-arm64/OpenNotion.app
 dist-electron/OpenNotion_0.1.1_arm64.dmg
 ```
 
-Build the unsigned Windows zip from GitHub Actions by running the `Windows package`
-job. It uploads:
+Build the unsigned Windows zip and installer from GitHub Actions by running the
+`Windows package` job. It uploads:
 
 ```text
-OpenNotion_0.1.1_win-x64.zip
+OpenNotion_0.1.3_win-x64.zip
+OpenNotion_0.1.3_setup_win-x64.exe
+latest.yml
 ```
 
 Generate the update manifest after packaging:
@@ -54,8 +58,10 @@ Local macOS dry-runs can generate a manifest with only the DMG present. Full
 multi-platform releases should set `OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS=1`
 after the Windows ZIP exists.
 
-Upload signed `beta-update.json` with the DMG and ZIP in the same GitHub
-Release. See [`docs/release/beta-updates.md`](beta-updates.md).
+Upload signed `beta-update.json` with the DMG, ZIP, installer, and `latest.yml`
+in the same GitHub Release. Then update the stable `beta` release manifest too;
+otherwise existing beta apps can keep seeing an old version. See
+[`docs/release/beta-updates.md`](beta-updates.md).
 
 ## Optional Signing Credentials
 

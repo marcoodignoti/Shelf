@@ -1,5 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const DESKTOP_UPDATE_CHANNELS = new Set([
+  "desktop-update-checking",
+  "desktop-update-available",
+  "desktop-update-not-available",
+  "desktop-update-download-progress",
+  "desktop-update-downloaded",
+  "desktop-update-error",
+]);
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -44,5 +53,19 @@ contextBridge.exposeInMainWorld("openNotion", {
       throw new Error("document id must be a string");
     }
     return studioPdfUrl(documentId);
+  },
+  onDesktopUpdate(callback) {
+    if (typeof callback !== "function") throw new Error("callback must be a function");
+    const listeners = [];
+    for (const channel of DESKTOP_UPDATE_CHANNELS) {
+      const listener = (_event, payload) => callback(channel, payload ?? null);
+      ipcRenderer.on(channel, listener);
+      listeners.push([channel, listener]);
+    }
+    return () => {
+      for (const [channel, listener] of listeners) {
+        ipcRenderer.removeListener(channel, listener);
+      }
+    };
   },
 });
