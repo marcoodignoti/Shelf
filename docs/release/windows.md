@@ -8,11 +8,11 @@ OpenNotion's Windows release ships two artifacts from GitHub Actions:
 ## GitHub Actions Artifact
 
 The `Windows package` job in `.github/workflows/ci.yml` runs on
-`windows-latest` and uploads:
+`windows-2025` and uploads:
 
 ```text
-OpenNotion_0.1.3_win-x64.zip
-OpenNotion_0.1.3_setup_win-x64.exe
+OpenNotion_0.1.4_win-x64.zip
+OpenNotion_0.1.4_setup_win-x64.exe
 latest.yml
 ```
 
@@ -45,7 +45,7 @@ dist-electron/win-x64/OpenNotion/
 Generated installer files:
 
 ```text
-dist-electron/builder/OpenNotion_0.1.3_setup_win-x64.exe
+dist-electron/builder/OpenNotion_0.1.4_setup_win-x64.exe
 dist-electron/builder/latest.yml
 ```
 

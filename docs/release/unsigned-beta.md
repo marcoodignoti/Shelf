@@ -42,8 +42,8 @@ Build the unsigned Windows zip and installer from GitHub Actions by running the
 `Windows package` job. It uploads:
 
 ```text
-OpenNotion_0.1.3_win-x64.zip
-OpenNotion_0.1.3_setup_win-x64.exe
+OpenNotion_0.1.4_win-x64.zip
+OpenNotion_0.1.4_setup_win-x64.exe
 latest.yml
 ```
 

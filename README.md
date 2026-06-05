@@ -140,7 +140,7 @@ xattr -dr com.apple.quarantine /Applications/OpenNotion.app
 Download the Windows installer from the latest GitHub release:
 
 ```text
-OpenNotion_0.1.3_setup_win-x64.exe
+OpenNotion_0.1.4_setup_win-x64.exe
 ```
 
 The installer checks for newer Windows releases in background, downloads them
@@ -149,7 +149,7 @@ automatically, and installs on app quit.
 Portable compatibility build:
 
 ```text
-OpenNotion_0.1.3_win-x64.zip
+OpenNotion_0.1.4_win-x64.zip
 ```
 
 1. Extract the zip.

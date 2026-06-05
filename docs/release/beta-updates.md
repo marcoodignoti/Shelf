@@ -68,9 +68,9 @@ Upload the DMG, ZIP, installer, `latest.yml`, and release-local manifest to the
 versioned GitHub Release:
 
 ```text
-OpenNotion_0.1.3_arm64.dmg
-OpenNotion_0.1.3_win-x64.zip
-OpenNotion_0.1.3_setup_win-x64.exe
+OpenNotion_0.1.4_arm64.dmg
+OpenNotion_0.1.4_win-x64.zip
+OpenNotion_0.1.4_setup_win-x64.exe
 latest.yml
 beta-update.json
 ```
