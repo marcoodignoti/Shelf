@@ -2703,6 +2703,16 @@
     padding-inline: 0 !important;
   }
 
+  .on-page-editor-blocks[data-editor-media-drop="active"]::after {
+    content: "";
+    position: absolute;
+    inset: 8px 0 8px 40px;
+    pointer-events: none;
+    border: 1px dashed color-mix(in srgb, var(--primary) 62%, transparent);
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    border-radius: 8px;
+  }
+
   .dark .bn-container,
   .dark .bn-editor {
     background: transparent !important;

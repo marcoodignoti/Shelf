@@ -419,6 +419,33 @@ test("supports markdown shortcuts in the page editor", async ({ page }) => {
   );
 });
 
+test("imports dropped image and video files into the editor", async ({ page }) => {
+  const title = "Media Drop Smoke";
+  await createPageAndFocusEditor(page, title);
+  const dropTarget = page.locator(".on-page-editor-blocks");
+
+  await dropTarget.evaluate((element) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File(["image"], "drop.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect(dropTarget).toHaveAttribute("data-editor-media-drop", "active");
+
+  await dropTarget.evaluate((element) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File(["image"], "drop.png", { type: "image/png" }));
+    dataTransfer.items.add(new File(["video"], "drop.mp4", { type: "video/mp4" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+
+  await expect.poll(async () => storedEditorBlocks(page, title)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "image" }),
+      expect.objectContaining({ type: "video" }),
+    ])
+  );
+});
+
 test("keeps note scrolling stable with hover heading rail and hidden native scrollbar", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 820 });
   await page.goto("/", { waitUntil: "domcontentloaded" });

@@ -20,13 +20,13 @@ import {
 } from "@blocknote/react";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, Video, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { invoke, openDialog } from "../lib/desktop";
-import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
+import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
@@ -440,6 +440,24 @@ async function pickEditorMediaPaths(kind: "image" | "video"): Promise<string[]> 
 
   if (!selected) return [];
   return Array.isArray(selected) ? selected : [selected];
+}
+
+function dataTransferFiles(dataTransfer: DataTransfer): File[] {
+  const files = Array.from(dataTransfer.files ?? []);
+  if (files.length > 0) return files;
+
+  return Array.from(dataTransfer.items ?? [])
+    .map((item) => item.kind === "file" ? item.getAsFile() : null)
+    .filter((file): file is File => file !== null);
+}
+
+function dataTransferHasSupportedMedia(dataTransfer: DataTransfer): boolean {
+  const files = dataTransferFiles(dataTransfer);
+  if (files.some((file) => editorMediaKindForFile(file))) return true;
+
+  return Array.from(dataTransfer.items ?? []).some((item) =>
+    item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))
+  );
 }
 
 function insertEditorMediaBlocks(editor: BlockNoteEditor<any, any, any>, media: EditorMediaBlock[]) {
@@ -901,6 +919,7 @@ export function Editor({
   const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
   const [draggedSubpageId, setDraggedSubpageId] = useState<string | null>(null);
   const [subpageDropTarget, setSubpageDropTarget] = useState<SubpageDropTarget | null>(null);
+  const [isMediaDropActive, setIsMediaDropActive] = useState(false);
   const [saveState, dispatchSaveState] = useReducer(editorSaveReducer, { status: "saved" });
   const subpageDragSessionRef = useRef<SubpageDragSession | null>(null);
   const subpageDropTargetRef = useRef<SubpageDropTarget | null>(null);
@@ -1005,6 +1024,60 @@ export function Editor({
   const pageLinkItems = useMemo(
     () => openNotionPageLinkItems(editor, pages, page.id),
     [editor, page.id, pages]
+  );
+  const importDroppedMediaFiles = useCallback(
+    async (files: File[]) => {
+      const mediaFiles = files
+        .map((file) => ({ file, kind: editorMediaKindForFile(file) }))
+        .filter((item): item is { file: File; kind: EditorMediaKind } => item.kind !== null);
+
+      if (mediaFiles.length === 0) {
+        showError("Drop PNG, JPG, WebP, GIF, MP4, M4V, MOV, or WebM files.");
+        return;
+      }
+
+      try {
+        const media = await Promise.all(
+          mediaFiles.map(async ({ file, kind }) => {
+            const importedPath = await importEditorMedia(file, page.id);
+            return editorMediaBlockProps(
+              kind,
+              file.name || (kind === "video" ? "Video" : "Image"),
+              coverImageSrc(importedPath)
+            );
+          })
+        );
+
+        insertEditorMediaBlocks(editor, media);
+        showSuccess(`${media.length} media file${media.length === 1 ? "" : "s"} imported.`);
+      } catch (error) {
+        showError(editorMediaUserMessage(error));
+      }
+    },
+    [editor, page.id, showError, showSuccess]
+  );
+  const handleMediaDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!dataTransferHasSupportedMedia(event.dataTransfer)) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsMediaDropActive(true);
+  }, []);
+  const handleMediaDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
+    setIsMediaDropActive(false);
+  }, []);
+  const handleMediaDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      const files = dataTransferFiles(event.dataTransfer);
+      if (files.length === 0) return;
+
+      event.preventDefault();
+      setIsMediaDropActive(false);
+      void importDroppedMediaFiles(files);
+    },
+    [importDroppedMediaFiles]
   );
   const slashMenuFloatingOptions = useMemo(
     () => ({
@@ -2044,7 +2117,14 @@ export function Editor({
             })}
           </div>
         ) : null}
-        <div className="on-page-editor-blocks relative -ml-10 flex-1 overflow-visible bg-transparent pl-10">
+        <div
+          className="on-page-editor-blocks relative -ml-10 flex-1 overflow-visible bg-transparent pl-10"
+          data-editor-media-drop={isMediaDropActive ? "active" : undefined}
+          onDragEnter={handleMediaDragOver}
+          onDragOver={handleMediaDragOver}
+          onDragLeave={handleMediaDragLeave}
+          onDrop={handleMediaDrop}
+        >
           <BlockNoteView
             editor={editor}
             theme={blockNoteTheme}
