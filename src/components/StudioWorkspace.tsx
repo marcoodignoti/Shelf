@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeftRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, Link2, PanelLeft, Plus, RotateCcw, Search, Square, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import type { TouchEvent, WheelEvent } from "react";
+import type { TouchEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
@@ -7,7 +7,6 @@ import { createStudioNotePage, Page } from "../lib/db";
 import { useAppStore } from "../store/useAppStore";
 import {
   buildStudioPanelGridColumns,
-  buildStudioContinuousPageWindow,
   clampStudioPage,
   clampStudioPanelRatio,
   clampStudioZoom,
@@ -76,6 +75,8 @@ export function StudioWorkspace({
   const persistedZoom = clampStudioZoom(document.viewer_zoom);
   const [localZoom, setLocalZoom] = useState(persistedZoom);
   const currentZoom = localZoom;
+  const [targetPdfPage, setTargetPdfPage] = useState(currentPage);
+  const [visiblePdfPage, setVisiblePdfPage] = useState(currentPage);
   const [pageDraft, setPageDraft] = useState(String(currentPage));
   const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
   const [viewMode, setViewMode] = useState<StudioViewMode>(() => getStoredViewMode(document.id));
@@ -135,12 +136,20 @@ export function StudioWorkspace({
       })
       .slice(0, 8);
   }, [existingPageQuery, linkedPageIds, pages]);
+  const normalizePdfPage = useCallback((page: number) => {
+    const viewerPage = clampStudioPage(page);
+    return pdfPageCount ? Math.min(viewerPage, pdfPageCount) : viewerPage;
+  }, [pdfPageCount]);
+  const activePdfPage = normalizePdfPage(visiblePdfPage);
 
   useEffect(() => {
-    setPageDraft(String(currentPage));
+    const viewerPage = normalizePdfPage(currentPage);
+    setTargetPdfPage(viewerPage);
+    setVisiblePdfPage(viewerPage);
+    setPageDraft(String(viewerPage));
     setPdfLoadFailed(false);
     setPdfLoadError(null);
-  }, [currentPage, pdfSrc, document.updated_at]);
+  }, [currentPage, normalizePdfPage, pdfSrc]);
 
   useEffect(() => {
     setPdfPanelRatio(getStoredPanelRatio(document.id));
@@ -197,10 +206,18 @@ export function StudioWorkspace({
   }, []);
 
   const updatePage = useCallback((page: number) => {
-    const viewerPage = clampStudioPage(page);
+    const viewerPage = normalizePdfPage(page);
+    setTargetPdfPage(viewerPage);
+    setVisiblePdfPage(viewerPage);
     setPageDraft(String(viewerPage));
     onUpdateViewer(document.id, { viewer_page: viewerPage });
-  }, [document.id, onUpdateViewer]);
+  }, [document.id, normalizePdfPage, onUpdateViewer]);
+
+  const updateVisiblePdfPage = useCallback((page: number) => {
+    const viewerPage = normalizePdfPage(page);
+    setVisiblePdfPage((currentPage) => currentPage === viewerPage ? currentPage : viewerPage);
+    setPageDraft((currentDraft) => currentDraft === String(viewerPage) ? currentDraft : String(viewerPage));
+  }, [normalizePdfPage]);
 
   const handlePdfLoad = useCallback((pageCount: number) => {
     setPdfLoadFailed(false);
@@ -303,7 +320,10 @@ export function StudioWorkspace({
     setPdfDisplayMode(mode);
     storePdfDisplayMode(document.id, mode);
     setIsPdfViewMenuOpen(false);
-  }, [document.id]);
+    if (mode !== "continuous") {
+      updatePage(activePdfPage);
+    }
+  }, [activePdfPage, document.id, updatePage]);
 
   useEffect(() => {
     const handlePdfDisplayModeShortcut = (event: KeyboardEvent) => {
@@ -379,12 +399,13 @@ export function StudioWorkspace({
           key={`${document.id}-${document.stored_file_path}`}
           src={pdfSrc}
           title={document.title}
-          page={currentPage}
+          page={targetPdfPage}
           zoom={currentZoom}
           displayMode={pdfDisplayMode}
           onLoad={handlePdfLoad}
           onError={handlePdfError}
           onZoomChange={updateZoom}
+          onVisiblePageChange={updateVisiblePdfPage}
         />
       )}
     </section>
@@ -439,7 +460,7 @@ export function StudioWorkspace({
                 type="button"
                 className="on-studio-linked-page-action"
                 disabled={isCreatingLinkedPage}
-                onClick={() => void handleCreateLinkedNote(currentPage)}
+                onClick={() => void handleCreateLinkedNote(activePdfPage)}
                 title="Bookmark current PDF page"
               >
                 <Bookmark className="h-3.5 w-3.5" />
@@ -492,8 +513,8 @@ export function StudioWorkspace({
                         <button
                           type="button"
                           className="on-studio-link-picker-bookmark"
-                          title={`Bookmark page ${currentPage}`}
-                          onClick={() => void handleLinkExistingPage(candidate, currentPage)}
+                          title={`Bookmark page ${activePdfPage}`}
+                          onClick={() => void handleLinkExistingPage(candidate, activePdfPage)}
                         >
                           <Bookmark className="h-3.5 w-3.5" />
                         </button>
@@ -543,34 +564,39 @@ export function StudioWorkspace({
                 <button
                   className="on-icon-button"
                   title="Previous page"
-                  onClick={() => updatePage(currentPage - 1)}
+                  onClick={() => updatePage(activePdfPage - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <input
-                  className="on-studio-page-input"
-                  aria-label={pdfPageCount ? `Current PDF page of ${pdfPageCount}` : "Current PDF page"}
-                  inputMode="numeric"
-                  value={pageDraft}
-                  onChange={(event) => setPageDraft(event.target.value)}
-                  onBlur={commitPageDraft}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      commitPageDraft();
-                    }
-                    if (event.key === "Escape") {
-                      setPageDraft(String(currentPage));
-                    }
-                  }}
-                />
-                {pdfPageCount ? (
-                  <span className="on-studio-page-total">/ {pdfPageCount}</span>
-                ) : null}
+                <div className="on-studio-page-indicator">
+                  <input
+                    className="on-studio-page-input"
+                    aria-label={pdfPageCount ? `Current PDF page of ${pdfPageCount}` : "Current PDF page"}
+                    inputMode="numeric"
+                    value={pageDraft}
+                    onChange={(event) => setPageDraft(event.target.value)}
+                    onBlur={commitPageDraft}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitPageDraft();
+                      }
+                      if (event.key === "Escape") {
+                        setPageDraft(String(activePdfPage));
+                      }
+                    }}
+                  />
+                  {pdfPageCount ? (
+                    <>
+                      <span className="on-studio-page-slash">/</span>
+                      <span className="on-studio-page-total">{pdfPageCount}</span>
+                    </>
+                  ) : null}
+                </div>
                 <button
                   className="on-icon-button"
                   title="Next page"
-                  onClick={() => updatePage(currentPage + 1)}
+                  onClick={() => updatePage(activePdfPage + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -768,6 +794,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   onLoad,
   onError,
   onZoomChange,
+  onVisiblePageChange,
 }: {
   src: string;
   title: string;
@@ -777,21 +804,19 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   onLoad: (pageCount: number) => void;
   onError: (message?: string) => void;
   onZoomChange: (zoom: number) => void;
+  onVisiblePageChange: (page: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const reportedVisiblePageRef = useRef(page);
+  const pendingScrollTargetPageRef = useRef<number | null>(null);
+  const suppressVisiblePageUpdatesUntilRef = useRef(0);
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [scrollWindow, setScrollWindow] = useState({ top: 0, height: 0 });
 
   const updateScrollWindow = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    setScrollWindow({
-      top: element.scrollTop,
-      height: element.clientHeight,
-    });
+    // Keeps call sites explicit while continuous mode reads DOM directly.
   }, []);
 
   const updateZoomFromPoint = useCallback((nextZoom: number, clientX: number, clientY: number) => {
@@ -814,17 +839,49 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     });
   }, [onZoomChange, zoom]);
 
-  const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey && !event.metaKey) return;
+  const handleWheel = useCallback((event: WheelEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      updateZoomFromPoint(zoom + direction, event.clientX, event.clientY);
+      return;
+    }
 
-    event.preventDefault();
-    const direction = event.deltaY < 0 ? 1 : -1;
-    updateZoomFromPoint(zoom + direction, event.clientX, event.clientY);
-  }, [updateZoomFromPoint, zoom]);
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    if (scrollElement.scrollTop <= 0 && event.deltaY < 0) {
+      event.preventDefault();
+      scrollElement.scrollTop = 0;
+      updateScrollWindow();
+    }
+  }, [updateScrollWindow, updateZoomFromPoint, zoom]);
+
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+
+    scrollElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => scrollElement.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
 
   const handleScroll = useCallback(() => {
     updateScrollWindow();
-  }, [updateScrollWindow]);
+    if (displayMode !== "continuous") return;
+    if (pendingScrollTargetPageRef.current !== null) return;
+    if (performance.now() < suppressVisiblePageUpdatesUntilRef.current) return;
+
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    if (scrollElement.scrollTop < 0) {
+      scrollElement.scrollTop = 0;
+      return;
+    }
+    const nextPage = visiblePdfPageFromScroll(scrollElement, pageCount, zoom);
+    if (!nextPage || nextPage === reportedVisiblePageRef.current) return;
+
+    reportedVisiblePageRef.current = nextPage;
+    onVisiblePageChange(nextPage);
+  }, [displayMode, onVisiblePageChange, pageCount, updateScrollWindow, zoom]);
 
   const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
     if (event.touches.length !== 2) {
@@ -855,6 +912,10 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   const clearPinch = useCallback(() => {
     pinchRef.current = null;
   }, []);
+
+  useEffect(() => {
+    reportedVisiblePageRef.current = page;
+  }, [page]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -907,46 +968,63 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     };
   }, [onError, onLoad, src]);
 
-  const continuousPageWindow = useMemo(() => {
-    if (!pageCount || displayMode !== "continuous") return null;
-    return buildStudioContinuousPageWindow({
-      pageCount,
-      page,
-      scrollTop: scrollWindow.top,
-      viewportHeight: scrollWindow.height,
-      zoom,
-    });
-  }, [displayMode, page, pageCount, scrollWindow.height, scrollWindow.top, zoom]);
-
   const visiblePages = useMemo(() => {
     if (!pageCount) return [clampStudioPage(page)];
 
     const currentPage = Math.min(clampStudioPage(page), pageCount);
+    if (displayMode === "continuous") {
+      return Array.from({ length: pageCount }, (_value, index) => index + 1);
+    }
     if (displayMode === "single") return [currentPage];
     if (displayMode === "two-page") {
       return [currentPage, currentPage + 1].filter((pageNumber) => pageNumber <= pageCount);
     }
 
-    return continuousPageWindow?.pages ?? [currentPage];
-  }, [continuousPageWindow, displayMode, page, pageCount]);
+    return [currentPage];
+  }, [displayMode, page, pageCount]);
 
   useEffect(() => {
-    if (displayMode !== "continuous") return;
-    requestAnimationFrame(() => {
+    if (displayMode !== "continuous" || !pageCount) return;
+    const currentPage = Math.min(clampStudioPage(page), pageCount);
+    pendingScrollTargetPageRef.current = currentPage;
+    reportedVisiblePageRef.current = currentPage;
+    suppressVisiblePageUpdatesUntilRef.current = performance.now() + 1_800;
+
+    let attempts = 0;
+    const scrollToPendingPage = () => {
+      attempts += 1;
       const scrollElement = scrollRef.current;
       if (!scrollElement) return;
-      const currentPage = pageCount ? Math.min(clampStudioPage(page), pageCount) : clampStudioPage(page);
-      const pageElement = scrollElement.querySelector<HTMLElement>(`[data-pdf-page='${currentPage}']`);
-      if (pageElement) {
-        pageElement.scrollIntoView({ block: "start" });
+      const finishTargetScroll = () => {
+        pendingScrollTargetPageRef.current = null;
+        reportedVisiblePageRef.current = currentPage;
+        suppressVisiblePageUpdatesUntilRef.current = performance.now() + 220;
+        onVisiblePageChange(currentPage);
         updateScrollWindow();
+      };
+      const pageElement = scrollElement.querySelector<HTMLElement>(`[data-pdf-page='${currentPage}']`);
+      if (!pageElement && attempts < 90) {
+        requestAnimationFrame(scrollToPendingPage);
         return;
       }
+      if (!pageElement) {
+        finishTargetScroll();
+        return;
+      }
+      const isTargetReady = pageElement.dataset.pdfRendered === "true";
+      if (!isTargetReady && attempts < 90) {
+        requestAnimationFrame(scrollToPendingPage);
+        return;
+      }
+      const scrollRect = scrollElement.getBoundingClientRect();
+      const pageRect = pageElement.getBoundingClientRect();
+      const pageTop = pageRect.top - scrollRect.top + scrollElement.scrollTop;
+      scrollElement.scrollTop = currentPage <= 1 ? 0 : Math.max(0, pageTop);
+      finishTargetScroll();
+    };
 
-      scrollElement.scrollTop = (currentPage - 1) * estimatedStudioPdfPageSlotHeight(zoom);
-      updateScrollWindow();
-    });
-  }, [displayMode, page, pageCount, updateScrollWindow, zoom]);
+    requestAnimationFrame(scrollToPendingPage);
+  }, [displayMode, onVisiblePageChange, page, pageCount, updateScrollWindow]);
 
   return (
     <div
@@ -954,7 +1032,6 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       className="on-scroll-fade on-scroll-fade-pdf relative h-full w-full overflow-auto bg-zinc-100"
       data-pdf-view-mode={displayMode}
       onScroll={handleScroll}
-      onWheel={handleWheel}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={clearPinch}
@@ -966,9 +1043,6 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
         </div>
       ) : null}
       <div className={`on-studio-pdf-pages on-studio-pdf-pages-${displayMode}`}>
-        {continuousPageWindow?.beforeHeight ? (
-          <div className="on-studio-pdf-window-spacer" style={{ height: continuousPageWindow.beforeHeight }} />
-        ) : null}
         {pdfDocument ? visiblePages.map((pageNumber) => (
           <StudioPdfPageCanvas
             key={`${displayMode}-${pageNumber}`}
@@ -980,9 +1054,6 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
             onError={onError}
           />
         )) : null}
-        {continuousPageWindow?.afterHeight ? (
-          <div className="on-studio-pdf-window-spacer" style={{ height: continuousPageWindow.afterHeight }} />
-        ) : null}
       </div>
     </div>
   );
@@ -1007,6 +1078,7 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [shouldRender, setShouldRender] = useState(eager);
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
+  const [renderedKey, setRenderedKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (eager) {
@@ -1033,12 +1105,14 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
 
     let isCancelled = false;
     let activeRenderTask: pdfjsLib.RenderTask | null = null;
+    const nextRenderedKey = `${pageNumber}:${clampStudioZoom(zoom)}`;
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) {
       onError();
       return;
     }
+    setRenderedKey(null);
 
     const render = async () => {
       const pdfPage = await pdfDocument.getPage(pageNumber);
@@ -1070,6 +1144,7 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
 
       if (!isCancelled) {
         setPageSize({ width: viewport.width, height: viewport.height });
+        setRenderedKey(nextRenderedKey);
       }
     };
 
@@ -1096,6 +1171,7 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
       ref={containerRef}
       className="on-studio-pdf-page relative flex-shrink-0 bg-white shadow-sm ring-1 ring-black/10"
       data-pdf-page={pageNumber}
+      data-pdf-rendered={renderedKey === `${pageNumber}:${clampStudioZoom(zoom)}` ? "true" : "false"}
       style={{ width: size.width, height: size.height }}
     >
       <canvas
@@ -1109,6 +1185,34 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
 
 function touchDistance(first: Pick<Touch, "clientX" | "clientY">, second: Pick<Touch, "clientX" | "clientY">): number {
   return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+}
+
+function visiblePdfPageFromScroll(scrollElement: HTMLElement, pageCount: number | null, zoom: number): number | null {
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const anchorY = scrollRect.top + scrollRect.height * 0.35;
+  const pageElements = Array.from(scrollElement.querySelectorAll<HTMLElement>("[data-pdf-page]"));
+  let nearestPage: number | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const pageElement of pageElements) {
+    const pageNumber = Number(pageElement.dataset.pdfPage);
+    if (!Number.isInteger(pageNumber)) continue;
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const distance = anchorY >= pageRect.top && anchorY <= pageRect.bottom
+      ? 0
+      : Math.min(Math.abs(anchorY - pageRect.top), Math.abs(anchorY - pageRect.bottom));
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestPage = pageNumber;
+    }
+  }
+
+  if (nearestPage) return pageCount ? Math.min(nearestPage, pageCount) : nearestPage;
+  if (!pageCount) return null;
+
+  const estimatedPage = Math.floor(scrollElement.scrollTop / estimatedStudioPdfPageSlotHeight(zoom)) + 1;
+  return Math.min(Math.max(1, estimatedPage), pageCount);
 }
 
 function StudioSplitter({ onPointerDown }: { onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }) {

@@ -28,7 +28,7 @@ import { defaultDatabaseSchema } from "../lib/database";
 import { invoke, openDialog } from "../lib/desktop";
 import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT } from "../lib/editorLinks";
+import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
@@ -1279,6 +1279,14 @@ export function Editor({
     const content = JSON.stringify(editor.document as Block[]);
     queueSave({ content, search_text: pageContentToSearchText(content) });
   }, [editor, page.id, queueSave]);
+
+  useEffect(() => {
+    const synced = syncPageLinkInlineContentInEditor(editor, pages);
+    if (!synced) return;
+
+    const content = JSON.stringify(editor.document as Block[]);
+    queueSave({ content, search_text: pageContentToSearchText(content) });
+  }, [editor, pages, queueSave]);
 
   const handleIconChange = (value: string) => {
     const nextIcon = normalizePageIcon(value) || "";

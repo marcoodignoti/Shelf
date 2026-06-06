@@ -126,12 +126,9 @@ describe("beta update manifest", () => {
     });
   });
 
-  it("falls back to the legacy manifest URL when the beta channel URL is unavailable", async () => {
+  it("uses the signed latest manifest URL before the beta channel fallback", async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes("/releases/download/beta/")) {
-        return { ok: false, status: 404 };
-      }
-
+      expect(url).toContain("/releases/latest/download/");
       return {
         ok: true,
         json: async () => ({
@@ -154,23 +151,29 @@ describe("beta update manifest", () => {
       status: "available",
       manifest: { version: "99.0.0" },
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the newest valid manifest when the beta channel is stale", async () => {
-    const fetchMock = vi.fn(async (url: string) => ({
-      ok: true,
-      json: async () => ({
-        version: url.includes("/releases/download/beta/") ? "0.1.0" : "99.0.0",
-        channel: "beta",
-        publishedAt: "2026-06-04T00:00:00.000Z",
-        title: "OpenNotion",
-        summary: "Newest manifest test.",
-        downloads: {
-          macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA },
-        },
-      }),
-    }));
+  it("falls back to the beta channel manifest URL when the latest URL is unavailable", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/releases/latest/download/")) {
+        return { ok: false, status: 404 };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          version: "99.0.0",
+          channel: "beta",
+          publishedAt: "2026-06-04T00:00:00.000Z",
+          title: "OpenNotion",
+          summary: "Fallback manifest test.",
+          downloads: {
+            macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA },
+          },
+        }),
+      };
+    });
 
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("navigator", { platform: "MacIntel", userAgent: "macOS" });
@@ -179,5 +182,6 @@ describe("beta update manifest", () => {
       status: "available",
       manifest: { version: "99.0.0" },
     });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

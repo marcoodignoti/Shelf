@@ -1,9 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const tinyPdfFixture = Buffer.from(
-  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
-  "base64"
-);
+const tinyPdfFixture = createBlankPdfFixture(1);
+const multiPagePdfFixture = createBlankPdfFixture(8);
+
+function createBlankPdfFixture(pageCount: number): Buffer {
+  const safePageCount = Math.max(1, Math.floor(pageCount));
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${Array.from({ length: safePageCount }, (_, index) => `${index + 3} 0 R`).join(" ")}] /Count ${safePageCount} >>`,
+    ...Array.from({ length: safePageCount }, () => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"),
+  ];
+  const offsets = [0];
+  let body = "%PDF-1.4\n";
+  for (const [index, object] of objects.entries()) {
+    offsets[index + 1] = Buffer.byteLength(body, "utf8");
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(body, "utf8");
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objects.length; index += 1) {
+    body += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, "utf8");
+}
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/civil-law.pdf*", async (route) => {
@@ -697,6 +717,104 @@ test("switches Studio PDF view mode between continuous, single page, and two pag
 
   await page.keyboard.press("Meta+1");
   await expect(page.locator("[data-pdf-view-mode='continuous']")).toBeVisible();
+});
+
+test("updates continuous PDF page indicator without persisting scroll as a page jump", async ({ page }) => {
+  await page.unroute("**/civil-law.pdf*");
+  await page.route("**/civil-law.pdf*", async (route) => {
+    await route.fulfill({
+      body: multiPagePdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
+
+  const viewer = page.locator("[data-pdf-view-mode='continuous']");
+  await viewer.evaluate((element) => {
+    element.scrollTop = Math.max(element.clientHeight * 2.2, 900);
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await page.waitForTimeout(100);
+  await viewer.evaluate((element) => {
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await expect.poll(async () => Number(await page.locator(".on-studio-page-input").inputValue())).toBeGreaterThan(1);
+  await expect.poll(async () => page.evaluate(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      viewer_page: number;
+    }>;
+    return documents[0]?.viewer_page;
+  })).toBe(1);
+});
+
+test("keeps continuous PDF visible when changing page from toolbar arrows", async ({ page }) => {
+  await page.unroute("**/civil-law.pdf*");
+  await page.route("**/civil-law.pdf*", async (route) => {
+    await route.fulfill({
+      body: multiPagePdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
+
+  const viewer = page.locator("[data-pdf-view-mode='continuous']");
+  await viewer.hover();
+  await page.mouse.wheel(0, -900);
+  await expect.poll(async () => viewer.evaluate((element) => element.scrollTop)).toBe(0);
+
+  await page.getByTitle("Next page").click();
+  await expect(page.locator(".on-studio-page-input")).toHaveValue("2");
+  await expect(page.locator("[data-pdf-page='2']")).toBeVisible();
+  await expect(page.locator("[data-pdf-page='2']")).toHaveAttribute("data-pdf-rendered", "true");
+  await expect.poll(async () => viewer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await viewer.evaluate((element) => {
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await expect(page.locator(".on-studio-page-input")).toHaveValue("2");
+  await expect.poll(async () => page.evaluate(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      viewer_page: number;
+    }>;
+    return documents[0]?.viewer_page;
+  })).toBe(2);
+});
+
+test("blocks continuous PDF overscroll above the first page", async ({ page }) => {
+  await page.unroute("**/civil-law.pdf*");
+  await page.route("**/civil-law.pdf*", async (route) => {
+    await route.fulfill({
+      body: multiPagePdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-page-input")).toHaveValue("1");
+  await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
+
+  const viewer = page.locator("[data-pdf-view-mode='continuous']");
+  await expect.poll(async () => viewer.evaluate((element) => getComputedStyle(element).overscrollBehaviorY)).toBe("none");
+  await viewer.hover();
+  await page.mouse.wheel(0, -900);
+
+  await expect(page.locator(".on-studio-page-input")).toHaveValue("1");
+  await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
+  await expect.poll(async () => viewer.evaluate((element) => element.scrollTop)).toBe(0);
 });
 
 test("creates a missing Studio note only from the notes panel fallback action", async ({ page }) => {

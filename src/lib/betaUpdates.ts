@@ -3,11 +3,11 @@ import packageJson from "../../package.json";
 export const CURRENT_APP_VERSION = packageJson.version;
 export const BETA_CHANNEL_MANIFEST_URL =
   "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json";
-export const LEGACY_LATEST_MANIFEST_URL =
+export const LATEST_RELEASE_MANIFEST_URL =
   "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json";
 export const DEFAULT_UPDATE_MANIFEST_URLS = [
+  LATEST_RELEASE_MANIFEST_URL,
   BETA_CHANNEL_MANIFEST_URL,
-  LEGACY_LATEST_MANIFEST_URL,
 ];
 
 export type BetaUpdateDownload = {
@@ -173,29 +173,25 @@ export async function checkForBetaUpdate(): Promise<BetaUpdateState> {
   if (urls.length === 0) return { status: "disabled" };
 
   let lastError: unknown = null;
-  let newestManifest: BetaUpdateManifest | null = null;
   try {
     for (const url of urls) {
       try {
         const manifest = parseBetaUpdateManifest(await fetchManifest(url));
-        if (!newestManifest || compareVersions(manifest.version, newestManifest.version) > 0) {
-          newestManifest = manifest;
+        if (compareVersions(manifest.version, CURRENT_APP_VERSION) <= 0) {
+          return { status: "current" };
         }
+
+        return {
+          status: "available",
+          manifest,
+          download: downloadForCurrentPlatform(manifest),
+        };
       } catch (error: unknown) {
         lastError = error;
       }
     }
 
-    if (!newestManifest) throw lastError ?? new Error("Update check failed");
-    if (compareVersions(newestManifest.version, CURRENT_APP_VERSION) <= 0) {
-      return { status: "current" };
-    }
-
-    return {
-      status: "available",
-      manifest: newestManifest,
-      download: downloadForCurrentPlatform(newestManifest),
-    };
+    throw lastError ?? new Error("Update check failed");
   } catch (error: unknown) {
     return {
       status: "error",

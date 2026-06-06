@@ -1,6 +1,9 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
+
+const require = createRequire(import.meta.url);
+const tailwindcss = require("@tailwindcss/vite").default as typeof import("@tailwindcss/vite").default;
 
 const host = process.env.VITE_DEV_HOST;
 

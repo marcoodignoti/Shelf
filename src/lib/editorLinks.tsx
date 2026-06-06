@@ -1,10 +1,12 @@
 import { BlockNoteEditor } from "@blocknote/core";
 import { createReactInlineContentSpec } from "@blocknote/react";
-import { ExternalLink, FileText } from "lucide-react";
+import { FileText, Smile } from "lucide-react";
 import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
 import type { Page } from "./db";
+import { invoke } from "./desktop";
+import { normalizePageIcon } from "./pageMetadata";
 
 export const OPEN_PAGE_LINK_EVENT = "opennotion:open-page-link";
 
@@ -12,6 +14,7 @@ type PageLinkProps = {
   pageId: string;
   title: string;
   icon: string;
+  iconOverride?: string;
   kind: string;
   label: string;
 };
@@ -45,6 +48,9 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
       icon: {
         default: "",
       },
+      iconOverride: {
+        default: "",
+      },
       kind: {
         default: "note",
       },
@@ -58,21 +64,32 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
       const props = inlineContent.props as PageLinkProps;
       const title = props.title || "Untitled";
       const label = props.label || title;
-      const icon = props.icon || "";
+      const icon = props.iconOverride || props.icon || "";
       const [isOpen, setIsOpen] = useState(false);
       const triggerRef = useRef<HTMLButtonElement>(null);
+      const iconInputRef = useRef<HTMLInputElement>(null);
       const closeTimerRef = useRef<number | null>(null);
+      const suppressPreviewRef = useRef(false);
 
       useEffect(() => () => clearTimer(closeTimerRef), []);
 
       const openPreview = () => {
+        if (suppressPreviewRef.current) return;
         clearTimer(closeTimerRef);
         setIsOpen(true);
       };
 
       const closePreviewSoon = () => {
+        suppressPreviewRef.current = false;
         clearTimer(closeTimerRef);
         closeTimerRef.current = window.setTimeout(() => setIsOpen(false), 140);
+      };
+
+      const openPage = () => {
+        suppressPreviewRef.current = true;
+        clearTimer(closeTimerRef);
+        setIsOpen(false);
+        dispatchOpenPage(props.pageId);
       };
 
       const updateProps = (updates: Partial<PageLinkProps>) => {
@@ -82,6 +99,19 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
             ...props,
             ...updates,
           },
+        });
+      };
+
+      const updateIconOverride = (value: string) => {
+        updateProps({ iconOverride: normalizePageIcon(value) || "" });
+      };
+
+      const openNativeIconPicker = () => {
+        const input = iconInputRef.current;
+        input?.focus();
+        input?.setSelectionRange(0, input.value.length);
+        void invoke("show_character_palette").catch((error: unknown) => {
+          console.error("Failed to open character palette:", error);
         });
       };
 
@@ -105,14 +135,13 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              openPreview();
+              openPage();
             }}
             onKeyDown={(event) => {
               event.stopPropagation();
               if (event.key === "Enter") {
                 event.preventDefault();
-                dispatchOpenPage(props.pageId);
-                setIsOpen(false);
+                openPage();
               }
             }}
           >
@@ -126,7 +155,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
           <FloatingPopover
             anchorElement={triggerRef.current}
             open={isOpen}
-            width={280}
+            width={260}
             zIndex={230}
             onOpenChange={setIsOpen}
             className="on-page-link-popover"
@@ -139,50 +168,58 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
               onPointerDown={(event) => event.stopPropagation()}
             >
               <div className="on-page-link-preview-row">
-                <div className="on-page-link-preview-icon">
+                <button
+                  type="button"
+                  className="on-page-link-preview-icon"
+                  title="Change link icon"
+                  onClick={openNativeIconPicker}
+                >
                   {icon ? <span>{icon}</span> : <FileText className="h-4 w-4" />}
-                </div>
+                </button>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">{label}</div>
                   <div className="truncate text-xs text-muted-foreground">{pageKindLabel(props.kind)}</div>
                 </div>
-                <button
-                  type="button"
-                  className="on-page-link-open"
-                  title="Open page"
-                  onClick={() => {
-                    dispatchOpenPage(props.pageId);
-                    setIsOpen(false);
-                  }}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </button>
               </div>
-              <input
-                className="on-page-link-input"
-                value={props.label}
-                placeholder={title}
-                aria-label="Page link label"
-                spellCheck={false}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-                  if (event.key === "Escape") setIsOpen(false);
-                }}
-                onChange={(event) => updateProps({ label: event.currentTarget.value })}
-              />
-              <input
-                className="on-page-link-input on-page-link-icon-input"
-                value={props.icon}
-                placeholder="Icon"
-                aria-label="Page link icon"
-                spellCheck={false}
-                maxLength={4}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-                  if (event.key === "Escape") setIsOpen(false);
-                }}
-                onChange={(event) => updateProps({ icon: event.currentTarget.value })}
-              />
+              <div className="on-page-link-fields">
+                <input
+                  className="on-page-link-input"
+                  value={props.label}
+                  placeholder={title}
+                  aria-label="Page link label"
+                  spellCheck={false}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Escape") setIsOpen(false);
+                  }}
+                  onChange={(event) => updateProps({ label: event.currentTarget.value })}
+                />
+                <div className="on-page-link-icon-row">
+                  <button
+                    type="button"
+                    className="on-page-link-picker-button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={openNativeIconPicker}
+                  >
+                    <Smile className="h-3.5 w-3.5" />
+                    <span>Native picker</span>
+                  </button>
+                  <input
+                    ref={iconInputRef}
+                    className="on-page-link-input on-page-link-icon-input"
+                    value={icon}
+                    placeholder="Icon"
+                    aria-label="Page link icon"
+                    spellCheck={false}
+                    maxLength={4}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Escape") setIsOpen(false);
+                    }}
+                    onChange={(event) => updateIconOverride(event.currentTarget.value)}
+                  />
+                </div>
+              </div>
             </div>
           </FloatingPopover>
         </span>
@@ -231,6 +268,7 @@ export function insertPageLinkInlineContent(editor: BlockNoteEditor<any, any, an
           pageId: page.id,
           title: page.title || "Untitled",
           icon: page.icon || "",
+          iconOverride: "",
           kind: page.page_kind,
           label: "",
         },
@@ -239,4 +277,51 @@ export function insertPageLinkInlineContent(editor: BlockNoteEditor<any, any, an
     ] as never,
     { updateSelection: true }
   );
+}
+
+export function syncPageLinkInlineContentInEditor(editor: BlockNoteEditor<any, any, any>, pages: Page[]): boolean {
+  const pagesById = new Map(pages.map((page) => [page.id, page]));
+  let changed = false;
+
+  const syncBlocks = (blocks: Array<any>) => {
+    for (const block of blocks) {
+      if (Array.isArray(block.content)) {
+        let contentChanged = false;
+        const nextContent = block.content.map((item: unknown) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+          const inline = item as { type?: string; props?: Record<string, unknown> };
+          if (inline.type !== "pageLink" || !inline.props || typeof inline.props.pageId !== "string") return item;
+
+          const page = pagesById.get(inline.props.pageId);
+          if (!page) return item;
+
+          const nextProps = {
+            ...inline.props,
+            title: page.title || "Untitled",
+            icon: page.icon || "",
+            kind: page.page_kind,
+          };
+          if (
+            nextProps.title === inline.props.title &&
+            nextProps.icon === inline.props.icon &&
+            nextProps.kind === inline.props.kind
+          ) {
+            return item;
+          }
+
+          contentChanged = true;
+          return { ...inline, props: nextProps };
+        });
+
+        if (contentChanged) {
+          changed = true;
+          editor.updateBlock(block, { content: nextContent } as never);
+        }
+      }
+      if (Array.isArray(block.children)) syncBlocks(block.children);
+    }
+  };
+
+  syncBlocks(editor.document as Array<any>);
+  return changed;
 }

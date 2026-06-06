@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const http = require("node:http");
+const net = require("node:net");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
@@ -10,6 +11,7 @@ const rendererUrl = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:1420"
 const rendererTimeoutMs = Number(process.env.ELECTRON_RENDERER_TIMEOUT_MS || 90_000);
 const renderer = new URL(rendererUrl);
 const electronDir = path.join(root, "electron");
+const viteCacheDir = path.join(root, "node_modules", ".vite");
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const electronBin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "electron.cmd" : "electron");
 
@@ -24,11 +26,33 @@ function spawnProcess(command, args, options = {}) {
   return spawn(command, args, {
     cwd: root,
     stdio: "inherit",
+    detached: process.platform !== "win32",
     ...options,
     env: {
       ...process.env,
       ...options.env,
     },
+  });
+}
+
+function isRendererListening(url) {
+  return new Promise((resolve) => {
+    const target = new URL(url);
+    const socket = net.createConnection({
+      host: target.hostname,
+      port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+    });
+
+    socket.on("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+
+    socket.on("error", () => resolve(false));
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      resolve(false);
+    });
   });
 }
 
@@ -57,6 +81,14 @@ function waitForRenderer(url, timeoutMs = 30_000) {
 
     probe();
   });
+}
+
+function removeStaleViteOptimizerTemps() {
+  if (!fs.existsSync(viteCacheDir)) return;
+  for (const entry of fs.readdirSync(viteCacheDir)) {
+    if (!entry.startsWith("deps_temp_")) continue;
+    fs.rmSync(path.join(viteCacheDir, entry), { recursive: true, force: true });
+  }
 }
 
 function startElectron() {
@@ -96,9 +128,23 @@ function queueElectronRestart() {
   }, 150);
 }
 
+function signalChild(child, signal, force = false) {
+  if (!child || (!force && child.killed)) return;
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall through to killing only the direct child.
+    }
+  }
+  child.kill(signal);
+}
+
 function stopChild(child) {
   if (!child || child.killed) return;
-  child.kill();
+  signalChild(child, "SIGTERM");
+  setTimeout(() => signalChild(child, "SIGKILL", true), 1_000).unref();
 }
 
 function shutdown(code = 0) {
@@ -112,6 +158,11 @@ function shutdown(code = 0) {
 }
 
 async function run() {
+  if (await isRendererListening(rendererUrl)) {
+    throw new Error(`[electron:dev] renderer URL already in use: ${rendererUrl}. Stop the old dev server first.`);
+  }
+
+  removeStaleViteOptimizerTemps();
   viteProcess = spawnProcess(npmBin, [
     "run",
     "dev",
@@ -120,6 +171,7 @@ async function run() {
     renderer.hostname,
     "--port",
     renderer.port || "1420",
+    "--force",
   ]);
   viteProcess.on("exit", (code) => {
     if (!shuttingDown) shutdown(code ?? 1);

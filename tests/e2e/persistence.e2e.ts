@@ -666,9 +666,12 @@ test("inserts inline page links with hover preview and custom label", async ({ p
   const pageLink = page.getByLabel("Page link: Target Page");
   await expect(pageLink).toBeVisible();
   await pageLink.hover();
-  await expect(page.getByTitle("Open page")).toBeVisible();
+  await expect(page.getByTitle("Change link icon")).toBeVisible();
   await page.getByLabel("Page link label").fill("Target Alias");
   await expect(page.getByLabel("Page link: Target Alias")).toBeVisible();
+  await page.getByRole("button", { name: "Native picker" }).click();
+  const linkIconInput = page.getByLabel("Page link icon");
+  await expect(linkIconInput).toBeFocused();
 
   await page.waitForFunction(
     ({ key }) => {
@@ -679,6 +682,42 @@ test("inserts inline page links with hover preview and custom label", async ({ p
     },
     { key: storageKey }
   );
+
+  await page.keyboard.insertText("🧭");
+  await expect(page.getByLabel("Page link: Target Alias")).toContainText("🧭");
+  await page.getByLabel("Page link: Target Alias").click();
+  await expect(page.locator(".on-page-link-popover-panel")).toBeHidden();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Target Page");
+});
+
+test("refreshes inline page link previews when linked page metadata changes", async ({ page }) => {
+  await createPageAndFocusEditor(page, "Target Page");
+  await page.waitForFunction(
+    ({ key }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      return pages.some((page) => page.title === "Target Page");
+    },
+    { key: storageKey }
+  );
+  const sourceEditor = await createPageAndFocusEditor(page, "Source Page");
+
+  await sourceEditor.click();
+  await page.keyboard.type("@Target");
+  await expect(page.locator(".bn-suggestion-menu")).toContainText("Target Page");
+  await page.locator(".bn-suggestion-menu").getByText("Target Page", { exact: true }).click();
+
+  await page.getByLabel("Page link: Target Page").click();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Target Page");
+
+  await page.getByRole("button", { name: "Add icon" }).click();
+  await page.getByText("🧠").click();
+  await expect(page.getByRole("button", { name: "Change page icon" })).toHaveText("🧠");
+
+  await page.locator("[data-page-id]").filter({ hasText: "Source Page" }).first().click();
+  const refreshedLink = page.getByLabel("Page link: Target Page");
+  await expect(refreshedLink).toContainText("🧠");
+  await refreshedLink.hover();
+  await expect(page.locator(".on-page-link-preview-icon")).toContainText("🧠");
 });
 
 test("selects all editor blocks with command a", async ({ page }) => {

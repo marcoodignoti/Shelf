@@ -11,8 +11,10 @@ installer updates in background and install them on app quit.
 
 ## Tester Flow
 
-1. App starts and checks `beta-update.json` from the beta channel release.
-   Only the repository allowlisted GitHub Release URLs are accepted.
+1. App starts and checks the signed `beta-update.json` from the latest GitHub
+   Release, then falls back to the beta channel asset if the latest URL is
+   unavailable. Only the repository allowlisted GitHub Release URLs are
+   accepted.
 2. If the manifest version is newer than the installed `package.json` version,
    OpenNotion shows a beta update notice.
 3. Tester reads the short changelog and downloads the matching build.
@@ -75,25 +77,33 @@ latest.yml
 beta-update.json
 ```
 
-For app versions that require signed manifests, upload the same
-`beta-update.json` to the `beta` release, replacing the old asset. For older
-compat builds that still expect an unsigned payload, generate:
+For current app versions, upload the same signed `beta-update.json` to the
+`beta` release, replacing the old asset. Do not publish an unsigned payload as
+`beta-update.json`: signed builds reject it before update parsing.
+
+For older compat builds that still expect an unsigned payload, generate a
+separate compatibility file:
 
 ```sh
 npm run release:update-manifest:compat
 ```
 
-Then upload `dist-electron/beta-update-compat.json` to the `beta` release as the
-asset name `beta-update.json`.
+Keep `dist-electron/beta-update-compat.json` separate from the channel asset.
+Only use it for a legacy-only release path where no signed build will read that
+URL.
 
-The app checks this deterministic channel URL first:
+The app checks the signed latest-release URL first:
+
+```text
+https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json
+```
+
+The deterministic beta channel URL remains a fallback for GitHub latest-release
+edge cases:
 
 ```text
 https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json
 ```
-
-The legacy `releases/latest/download/beta-update.json` URL remains a fallback
-for older builds and GitHub cache edge cases.
 
 ## Manifest Format
 
