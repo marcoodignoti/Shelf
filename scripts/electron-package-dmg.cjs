@@ -16,6 +16,16 @@ function run(command, args) {
   }
 }
 
+function runResult(command, args) {
+  const result = spawnSync(command, args, { stdio: "inherit" });
+  if (result.error) throw result.error;
+  return result.status ?? 1;
+}
+
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
 function assertDarwin() {
   if (process.platform !== "darwin") {
     throw new Error("macOS DMG packaging requires darwin");
@@ -45,22 +55,37 @@ assertPackagedApp();
 fs.rmSync(dmgPath, { force: true });
 run("xattr", ["-cr", appDir]);
 
-const stagingDir = createDmgStagingDir();
-try {
-  run("hdiutil", [
-    "create",
-    "-volname",
-    "OpenNotion",
-    "-srcfolder",
-    stagingDir,
-    "-ov",
-    "-format",
-    "UDZO",
-    dmgPath,
-  ]);
-  run("hdiutil", ["verify", dmgPath]);
-} finally {
-  fs.rmSync(stagingDir, { recursive: true, force: true });
+let lastCreateStatus = 1;
+for (let attempt = 1; attempt <= 3; attempt += 1) {
+  const stagingDir = createDmgStagingDir();
+  try {
+    fs.rmSync(dmgPath, { force: true });
+    lastCreateStatus = runResult("hdiutil", [
+      "create",
+      "-volname",
+      "OpenNotion",
+      "-srcfolder",
+      stagingDir,
+      "-ov",
+      "-format",
+      "UDZO",
+      dmgPath,
+    ]);
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+  }
+
+  if (lastCreateStatus === 0) break;
+  if (attempt < 3) {
+    console.warn(`hdiutil create failed with exit code ${lastCreateStatus}; retrying (${attempt + 1}/3)`);
+    sleep(2000);
+  }
 }
+
+if (lastCreateStatus !== 0) {
+  throw new Error(`hdiutil create failed with exit code ${lastCreateStatus}`);
+}
+
+run("hdiutil", ["verify", dmgPath]);
 
 console.log(`Packaged ${dmgPath}`);
