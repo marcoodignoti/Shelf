@@ -186,6 +186,16 @@ test.beforeEach(async ({ page }) => {
           return null;
         }
 
+        if (cmd === "import_editor_image") {
+          if (args.fileName === "too-large.png") throw new Error("image must be 10 MB or smaller");
+          return `/mock/editor-images/${String(args.fileName ?? "image.png")}`;
+        }
+
+        if (cmd === "import_editor_video") {
+          if (args.fileName === "too-large.mp4") throw new Error("video must be 512 MB or smaller");
+          return `/mock/editor-videos/${String(args.fileName ?? "video.mp4")}`;
+        }
+
         if (cmd === "list_studio_documents" || cmd === "list_studio_projects" || cmd === "list_all_studio_document_page_links") {
           return [];
         }
@@ -776,6 +786,18 @@ test("renders inline math typed with dollar delimiters", async ({ page }) => {
 
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Math Smoke");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{B}")).toBeVisible();
+});
+
+test("shows a clear media import error notice", async ({ page }) => {
+  const editor = await createPageAndFocusEditor(page, "Media Error Notice Smoke");
+
+  await editor.evaluate((element) => {
+    const data = new DataTransfer();
+    data.items.add(new File(["oversized"], "too-large.png", { type: "image/png" }));
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.locator(".on-notice").filter({ hasText: "Image must be 10 MB or smaller." })).toBeVisible();
 });
 
 test("centers a block that contains inline math from the formatting toolbar", async ({ page }) => {
