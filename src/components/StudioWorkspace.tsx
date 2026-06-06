@@ -811,6 +811,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   const reportedVisiblePageRef = useRef(page);
   const pendingScrollTargetPageRef = useRef<number | null>(null);
   const suppressVisiblePageUpdatesUntilRef = useRef(0);
+  const visiblePageRefreshTimerRef = useRef<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -864,11 +865,9 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     return () => scrollElement.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
-  const handleScroll = useCallback(() => {
-    updateScrollWindow();
+  const commitVisiblePageFromScroll = useCallback(() => {
     if (displayMode !== "continuous") return;
     if (pendingScrollTargetPageRef.current !== null) return;
-    if (performance.now() < suppressVisiblePageUpdatesUntilRef.current) return;
 
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
@@ -881,7 +880,38 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
 
     reportedVisiblePageRef.current = nextPage;
     onVisiblePageChange(nextPage);
-  }, [displayMode, onVisiblePageChange, pageCount, updateScrollWindow, zoom]);
+  }, [displayMode, onVisiblePageChange, pageCount, zoom]);
+
+  const handleScroll = useCallback(() => {
+    updateScrollWindow();
+    if (displayMode !== "continuous") return;
+    if (pendingScrollTargetPageRef.current !== null) return;
+
+    const now = performance.now();
+    const suppressUntil = suppressVisiblePageUpdatesUntilRef.current;
+    if (now < suppressUntil) {
+      if (visiblePageRefreshTimerRef.current === null) {
+        visiblePageRefreshTimerRef.current = window.setTimeout(() => {
+          visiblePageRefreshTimerRef.current = null;
+          commitVisiblePageFromScroll();
+        }, Math.max(16, suppressUntil - now + 16));
+      }
+      return;
+    }
+
+    if (visiblePageRefreshTimerRef.current !== null) {
+      window.clearTimeout(visiblePageRefreshTimerRef.current);
+      visiblePageRefreshTimerRef.current = null;
+    }
+    commitVisiblePageFromScroll();
+  }, [commitVisiblePageFromScroll, displayMode, updateScrollWindow]);
+
+  useEffect(() => () => {
+    if (visiblePageRefreshTimerRef.current !== null) {
+      window.clearTimeout(visiblePageRefreshTimerRef.current);
+      visiblePageRefreshTimerRef.current = null;
+    }
+  }, []);
 
   const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
     if (event.touches.length !== 2) {

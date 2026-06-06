@@ -735,6 +735,7 @@ test("updates continuous PDF page indicator without persisting scroll as a page 
   await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
 
   const viewer = page.locator("[data-pdf-view-mode='continuous']");
+  await expect.poll(async () => viewer.evaluate((element) => element.scrollHeight > element.clientHeight * 2)).toBe(true);
   await viewer.evaluate((element) => {
     element.scrollTop = Math.max(element.clientHeight * 2.2, 900);
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
