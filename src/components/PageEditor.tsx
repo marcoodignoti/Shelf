@@ -942,14 +942,19 @@ export function Editor({
         initialContent,
         tabBehavior: "prefer-indent",
         uploadFile: async (file) => {
-          const kind = editorMediaKindForFile(file);
-          if (!kind) {
-            throw new Error("Only image and video uploads are supported");
+          try {
+            const kind = editorMediaKindForFile(file);
+            if (!kind) {
+              throw new Error("Only image and video uploads are supported");
+            }
+            const importedPath = kind === "video"
+              ? await importEditorVideo(file, page.id)
+              : await importEditorImage(file, page.id);
+            return coverImageSrc(importedPath);
+          } catch (error) {
+            showError(editorMediaUserMessage(error));
+            throw error;
           }
-          const importedPath = kind === "video"
-            ? await importEditorVideo(file, page.id)
-            : await importEditorImage(file, page.id);
-          return coverImageSrc(importedPath);
         },
         pasteHandler: ({ event, editor, defaultPasteHandler }) => {
           const mediaFiles = Array.from(event.clipboardData?.files ?? []).filter((file) => editorMediaKindForFile(file));

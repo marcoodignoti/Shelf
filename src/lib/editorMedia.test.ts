@@ -30,6 +30,12 @@ describe("editorMediaUserMessage", () => {
     expect(editorMediaUserMessage(new Error("image must be PNG, JPG, WebP, or GIF"))).toBe(
       "Image must be PNG, JPG, WebP, or GIF."
     );
+    expect(editorMediaUserMessage(new Error("content is not a supported image"))).toBe(
+      "Image content is not supported."
+    );
+    expect(editorMediaUserMessage(new Error("content is not a supported video"))).toBe(
+      "Video content is not supported."
+    );
     expect(editorMediaUserMessage(new Error("unknown"))).toBe("Could not import that media file.");
   });
 });
