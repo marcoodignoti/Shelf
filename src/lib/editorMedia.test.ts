@@ -38,6 +38,12 @@ describe("editorMediaUserMessage", () => {
     );
     expect(editorMediaUserMessage(new Error("unknown"))).toBe("Could not import that media file.");
   });
+
+  it("maps wrapped backend media errors to user messages", () => {
+    expect(editorMediaUserMessage(new Error("Error occurred: image must be 10 MB or smaller"))).toBe(
+      "Image must be 10 MB or smaller."
+    );
+  });
 });
 
 describe("editorMediaBlockProps", () => {

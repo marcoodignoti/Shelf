@@ -49,5 +49,8 @@ export function editorMediaBlockProps(kind: EditorMediaKind, name: string, url: 
 
 export function editorMediaUserMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return mediaUserMessages.get(message) ?? "Could not import that media file.";
+  for (const [backendMessage, userMessage] of mediaUserMessages) {
+    if (message.includes(backendMessage)) return userMessage;
+  }
+  return "Could not import that media file.";
 }
