@@ -8,10 +8,19 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-"));
 const updateSigningKey = crypto.generateKeyPairSync("ed25519");
 const updateManifestPublicKey = updateSigningKey.publicKey.export({ format: "pem", type: "spki" });
 const backend = new OpenNotionBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
+const onePixelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axL6wAAAABJRU5ErkJggg==",
+  "base64"
+);
 const tinyPdfFixture = Buffer.from(
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
   "base64"
 );
+const tinyMp4Header = Buffer.from([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+  0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x00, 0x01,
+  0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x31,
+]);
 
 function canonicalJson(value) {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -71,6 +80,24 @@ async function run() {
   const pages = await backend.invoke("list_pages");
   if (pages.length !== 1 || pages[0].title !== "Smoke") {
     throw new Error("list_pages after import failed");
+  }
+
+  const editorImagePath = await backend.invoke("import_editor_image", {
+    pageId: "page-1",
+    fileName: "inline.png",
+    bytes: Array.from(onePixelPng),
+  });
+  if (!fs.existsSync(editorImagePath)) {
+    throw new Error("import_editor_image did not write file");
+  }
+
+  const editorVideoPath = await backend.invoke("import_editor_video", {
+    pageId: "page-1",
+    fileName: "inline.mp4",
+    bytes: Array.from(tinyMp4Header),
+  });
+  if (!fs.existsSync(editorVideoPath)) {
+    throw new Error("import_editor_video did not write file");
   }
 
   await backend.invoke("create_page", {

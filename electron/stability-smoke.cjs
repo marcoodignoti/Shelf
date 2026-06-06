@@ -15,6 +15,11 @@ const tinyPdf = Buffer.from(
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
   "base64"
 );
+const tinyMp4Header = Buffer.from([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+  0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x00, 0x01,
+  0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x31,
+]);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -54,7 +59,7 @@ async function main() {
     await window.waitForLoadState("domcontentloaded", { timeout: 15000 });
 
     const result = await window.evaluate(
-      async ({ pngPath, badPngPath, pdfPath, invalidBackupPath, pngBytes }) => {
+      async ({ pngPath, badPngPath, pdfPath, invalidBackupPath, pngBytes, mp4Bytes }) => {
         const invoke = (command, args = {}) => window.openNotion.invoke(command, args);
         const now = new Date().toISOString();
         const pageId = crypto.randomUUID();
@@ -72,6 +77,11 @@ async function main() {
           pageId,
           fileName: "inline.png",
           bytes: pngBytes,
+        });
+        const editorVideoPath = await invoke("import_editor_video", {
+          pageId,
+          fileName: "inline.mp4",
+          bytes: mp4Bytes,
         });
 
         let invalidBackupError = "";
@@ -96,14 +106,15 @@ async function main() {
         });
         await invoke("delete_studio_document", { id: document.id });
 
-        return { coverPath, badCoverError, editorPath, invalidBackupError, unknownCommandError, storedPdfPath: document.stored_file_path };
+        return { coverPath, badCoverError, editorPath, editorVideoPath, invalidBackupError, unknownCommandError, storedPdfPath: document.stored_file_path };
       },
-      { pngPath, badPngPath, pdfPath, invalidBackupPath, pngBytes: Array.from(onePixelPng) }
+      { pngPath, badPngPath, pdfPath, invalidBackupPath, pngBytes: Array.from(onePixelPng), mp4Bytes: Array.from(tinyMp4Header) }
     );
 
     assert(fs.existsSync(result.coverPath), "Cover image was not copied");
     assert(result.badCoverError.includes("supported image"), `Bad cover was not rejected: ${result.badCoverError}`);
     assert(fs.existsSync(result.editorPath), "Editor image was not written");
+    assert(fs.existsSync(result.editorVideoPath), "Editor video was not written");
     assert(result.invalidBackupError.includes("not valid JSON"), `Invalid backup was not rejected: ${result.invalidBackupError}`);
     assert(result.unknownCommandError.includes("unknown command"), `Unknown command was not rejected: ${result.unknownCommandError}`);
     assert(!fs.existsSync(result.storedPdfPath), "Studio delete did not remove copied PDF");

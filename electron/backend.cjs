@@ -9,6 +9,7 @@ const APP_SCHEMA_VERSION = "1";
 const APP_ASSET_PROTOCOL = "opennotion-app";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const STUDIO_PDF_MAX_BYTES = 512 * 1024 * 1024;
+const EDITOR_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
 const UPDATE_ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_SIGNATURE_ALGORITHM = "ed25519";
@@ -398,6 +399,54 @@ function validatedEditorImageExtension(fileName, bytes) {
   return extension;
 }
 
+function validatedEditorImageSource(filePath) {
+  return validatedCoverExtension(String(filePath ?? ""), COVER_IMAGE_MAX_BYTES);
+}
+
+function allowedEditorVideoExtension(fileName) {
+  const extension = path.extname(fileName).slice(1).toLowerCase();
+  if (extension === "mov") return "mov";
+  if (extension === "m4v") return "m4v";
+  if (extension === "webm") return "webm";
+  if (extension === "mp4") return "mp4";
+  return null;
+}
+
+function isIsoBaseMediaVideo(bytes) {
+  if (bytes.length < 12 || !bytes.subarray(4, 8).equals(Buffer.from("ftyp"))) return false;
+  const brandText = bytes.subarray(8, Math.min(bytes.length, 64)).toString("latin1");
+  return /\b(isom|iso2|mp41|mp42|M4V |qt  )/.test(brandText);
+}
+
+function isWebmVideo(bytes) {
+  return bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+}
+
+function validatedEditorVideoExtension(fileName, bytes) {
+  if (bytes.length > EDITOR_VIDEO_MAX_BYTES) throw new Error("video must be 512 MB or smaller");
+  const extension = allowedEditorVideoExtension(fileName);
+  if (!extension) throw new Error("video must be MP4, M4V, MOV, or WebM");
+  const detected = extension === "webm" ? isWebmVideo(bytes) : isIsoBaseMediaVideo(bytes);
+  if (!detected) throw new Error("video content is not a supported video");
+  return extension;
+}
+
+function validatedEditorVideoSource(filePath) {
+  const source = String(filePath ?? "");
+  const extension = allowedEditorVideoExtension(source);
+  if (!extension) throw new Error("video must be MP4, M4V, MOV, or WebM");
+  const stats = fs.statSync(source);
+  if (stats.size > EDITOR_VIDEO_MAX_BYTES) throw new Error("video must be 512 MB or smaller");
+  const fd = fs.openSync(source, "r");
+  try {
+    const header = Buffer.alloc(64);
+    const bytesRead = fs.readSync(fd, header, 0, 64, 0);
+    return validatedEditorVideoExtension(source, header.subarray(0, bytesRead));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function isPathInside(rootPath, candidatePath) {
   const relative = path.relative(rootPath, candidatePath);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -413,7 +462,7 @@ function validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot) 
 
 function validateManagedAssetPath(filePath, appConfigDir) {
   const canonicalPath = fs.realpathSync(filePath);
-  const roots = ["covers", "editor-images", "studio-documents"]
+  const roots = ["covers", "editor-images", "editor-videos", "studio-documents"]
     .map((directory) => path.join(appConfigDir, directory))
     .filter((directory) => fs.existsSync(directory))
     .map((directory) => fs.realpathSync(directory));
@@ -550,6 +599,7 @@ class OpenNotionBackend {
       duplicate_page: (args) => this.duplicatePage(args),
       import_cover_image: (args) => this.importCoverImage(args),
       import_editor_image: (args) => this.importEditorImage(args),
+      import_editor_video: (args) => this.importEditorVideo(args),
       open_external_url: (args) => this.openExternalUrl(args),
       fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
       download_update_artifact: (args) => this.downloadUpdateArtifact(args),
@@ -1314,15 +1364,42 @@ class OpenNotionBackend {
     return destination;
   }
 
-  importEditorImage({ pageId, page_id, fileName, file_name, bytes }) {
+  importEditorImage({ pageId, page_id, fileName, file_name, sourcePath, source_path, bytes }) {
     const pageIdValue = pageId ?? page_id;
+    const source = sourcePath ?? source_path;
+    const sourceValue = source ? String(source) : null;
     const fileNameValue = fileName ?? file_name ?? "image";
-    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
     const imagesDir = path.join(this.appConfigDir, "editor-images", safeStorageId(pageIdValue));
     ensurePrivateDirectory(imagesDir);
-    const extension = validatedEditorImageExtension(fileNameValue, buffer);
-    const destination = path.join(imagesDir, `${Date.now()}-${safeFileStem(fileNameValue)}.${extension}`);
-    fs.writeFileSync(destination, buffer);
+    const extension = sourceValue
+      ? validatedEditorImageSource(sourceValue)
+      : validatedEditorImageExtension(fileNameValue, Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []));
+    const destination = path.join(imagesDir, `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`);
+    if (sourceValue) {
+      fs.copyFileSync(sourceValue, destination);
+    } else {
+      fs.writeFileSync(destination, Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []));
+    }
+    return destination;
+  }
+
+  importEditorVideo({ pageId, page_id, fileName, file_name, sourcePath, source_path, bytes }) {
+    const pageIdValue = pageId ?? page_id;
+    const source = sourcePath ?? source_path;
+    const sourceValue = source ? String(source) : null;
+    const fileNameValue = fileName ?? file_name ?? "video";
+    const videosDir = path.join(this.appConfigDir, "editor-videos", safeStorageId(pageIdValue));
+    ensurePrivateDirectory(videosDir);
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+    const extension = sourceValue
+      ? validatedEditorVideoSource(sourceValue)
+      : validatedEditorVideoExtension(fileNameValue, buffer);
+    const destination = path.join(videosDir, `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`);
+    if (sourceValue) {
+      fs.copyFileSync(sourceValue, destination);
+    } else {
+      fs.writeFileSync(destination, buffer);
+    }
     return destination;
   }
 }

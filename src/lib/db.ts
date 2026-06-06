@@ -168,6 +168,28 @@ export async function importEditorImage(file: File, pageId: string): Promise<str
   });
 }
 
+export async function importEditorImagePath(sourcePath: string, pageId: string): Promise<string> {
+  return await invoke<string>('import_editor_image', { sourcePath, pageId });
+}
+
+export async function importEditorVideo(file: File, pageId: string): Promise<string> {
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  return await invoke<string>('import_editor_video', {
+    pageId,
+    fileName: file.name || 'video',
+    bytes,
+  });
+}
+
+export async function importEditorVideoPath(sourcePath: string, pageId: string): Promise<string> {
+  return await invoke<string>('import_editor_video', { sourcePath, pageId });
+}
+
+export async function importEditorMedia(file: File, pageId: string): Promise<string> {
+  if (file.type.startsWith('video/')) return await importEditorVideo(file, pageId);
+  return await importEditorImage(file, pageId);
+}
+
 export function coverImageSrc(coverUrl: string): string {
   if (/^https:\/\//i.test(coverUrl) || /^blob:/i.test(coverUrl) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) {
     return coverUrl;

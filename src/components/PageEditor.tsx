@@ -18,7 +18,7 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, Video, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
@@ -26,7 +26,7 @@ import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDr
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { invoke, openDialog } from "../lib/desktop";
-import { coverImageSrc, importCoverImage, importEditorImage, updatePage, Page } from "../lib/db";
+import { coverImageSrc, importCoverImage, importEditorImagePath, importEditorMedia, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
@@ -422,9 +422,77 @@ function OpenNotionDragHandleButton() {
   );
 }
 
-function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>) {
+const urlEmbedMenuTitles = new Set(["audio", "embed", "file", "image", "video"]);
+
+function fileNameFromPath(filePath: string, fallback: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() || fallback;
+}
+
+function mediaDialogFilters(kind: "image" | "video") {
+  if (kind === "video") {
+    return [{ name: "Videos", extensions: ["mp4", "m4v", "mov", "webm"] }];
+  }
+  return [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }];
+}
+
+async function pickEditorMediaPaths(kind: "image" | "video"): Promise<string[]> {
+  const selected = await openDialog({
+    multiple: true,
+    filters: mediaDialogFilters(kind),
+  });
+
+  if (!selected) return [];
+  return Array.isArray(selected) ? selected : [selected];
+}
+
+function editorMediaSlashMenuItem(
+  editor: BlockNoteEditor<any, any, any>,
+  pageId: string,
+  kind: "image" | "video"
+) {
+  const isVideo = kind === "video";
+
+  return {
+    title: isVideo ? "Video" : "Image",
+    subtext: "From this device",
+    group: "Media",
+    icon: isVideo ? <Video size={18} /> : <Image size={18} />,
+    onItemClick: async () => {
+      const paths = await pickEditorMediaPaths(kind);
+      if (paths.length === 0) return;
+
+      const media = await Promise.all(
+        paths.map(async (sourcePath) => {
+          const importedPath = isVideo
+            ? await importEditorVideoPath(sourcePath, pageId)
+            : await importEditorImagePath(sourcePath, pageId);
+          return {
+            type: kind,
+            props: {
+              name: fileNameFromPath(sourcePath, isVideo ? "Video" : "Image"),
+              url: coverImageSrc(importedPath),
+            },
+          };
+        })
+      );
+
+      const cursorBlock = editor.getTextCursorPosition().block;
+      if (isEmptyEditorBlock(cursorBlock)) {
+        editor.replaceBlocks([cursorBlock], media as never);
+      } else {
+        editor.insertBlocks(media as never, cursorBlock, "after");
+      }
+    },
+  };
+}
+
+function openNotionSlashMenuItems(editor: BlockNoteEditor<any, any, any>, pageId: string) {
   const items = [
-    ...getDefaultReactSlashMenuItems(editor),
+    ...getDefaultReactSlashMenuItems(editor).filter(
+      (item) => !urlEmbedMenuTitles.has(String(item.title ?? "").toLowerCase())
+    ),
+    editorMediaSlashMenuItem(editor, pageId, "image"),
+    editorMediaSlashMenuItem(editor, pageId, "video"),
     {
       ...formulaSlashMenuItem(editor),
       icon: <Sigma size={18} />,
@@ -861,15 +929,18 @@ export function Editor({
         initialContent,
         tabBehavior: "prefer-indent",
         uploadFile: async (file) => {
-          const importedPath = await importEditorImage(file, page.id);
+          if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+            throw new Error("Only image and video uploads are supported");
+          }
+          const importedPath = await importEditorMedia(file, page.id);
           return coverImageSrc(importedPath);
         },
         pasteHandler: ({ event, editor, defaultPasteHandler }) => {
-          const imageFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
-            file.type.startsWith("image/")
+          const mediaFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+            file.type.startsWith("image/") || file.type.startsWith("video/")
           );
           const pastedText = event.clipboardData?.getData("text/plain") ?? "";
-          const mathBlocks = imageFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
+          const mathBlocks = mediaFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
 
           if (mathBlocks) {
             const cursorBlock = editor.getTextCursorPosition().block;
@@ -881,22 +952,26 @@ export function Editor({
             return true;
           }
 
-          if (imageFiles.length === 0) {
+          if (mediaFiles.length === 0) {
             return defaultPasteHandler();
           }
 
           void Promise.all(
-            imageFiles.map(async (file) => {
-              const importedPath = await importEditorImage(file, page.id);
-              return { name: file.name || "Pasted image", url: coverImageSrc(importedPath) };
+            mediaFiles.map(async (file) => {
+              const isVideo = file.type.startsWith("video/");
+              const importedPath = await importEditorMedia(file, page.id);
+              return {
+                type: isVideo ? "video" : "image",
+                props: {
+                  name: file.name || (isVideo ? "Pasted video" : "Pasted image"),
+                  url: coverImageSrc(importedPath),
+                },
+              };
             })
-          ).then((images) => {
+          ).then((media) => {
             const cursorBlock = editor.getTextCursorPosition().block;
             editor.insertBlocks(
-              images.map((image) => ({
-                type: "image",
-                props: image,
-              })),
+              media as never,
               cursorBlock,
               "after"
             );
@@ -910,8 +985,8 @@ export function Editor({
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
   const slashMenuItems = useMemo(
-    () => openNotionSlashMenuItems(editor),
-    [editor]
+    () => openNotionSlashMenuItems(editor, page.id),
+    [editor, page.id]
   );
   const pageLinkItems = useMemo(
     () => openNotionPageLinkItems(editor, pages, page.id),
