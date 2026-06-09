@@ -1154,9 +1154,12 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
         </div>
       ) : null}
       <div className={`on-studio-pdf-pages on-studio-pdf-pages-${displayMode}`}>
-        {pdfDocument ? visiblePages.map((pageNumber) => (
+        {pdfDocument ? visiblePages.map((pageNumber, slotIndex) => (
           <StudioPdfPageCanvas
-            key={`${displayMode}-${pageNumber}`}
+            // In the paged modes the canvas is keyed by slot, not by page
+            // number, so page changes update the existing canvas in place
+            // (no remount → no blank flash while the new page renders).
+            key={displayMode === "continuous" ? `${displayMode}-${pageNumber}` : `${displayMode}-slot-${slotIndex}`}
             pdfDocument={pdfDocument}
             pageNumber={pageNumber}
             zoom={zoom}
@@ -1255,18 +1258,31 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
         height: viewport.height,
         devicePixelRatio: window.devicePixelRatio || 1,
       });
-      canvas.width = Math.floor(viewport.width * pixelRatio);
-      canvas.height = Math.floor(viewport.height * pixelRatio);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      context.clearRect(0, 0, viewport.width, viewport.height);
 
-      activeRenderTask = pdfPage.render({ canvas, canvasContext: context, viewport });
+      // Render to an offscreen canvas and blit only when finished, so the
+      // previous page stays visible during page/zoom changes instead of
+      // flashing a blank canvas while pdf.js renders.
+      const offscreen = window.document.createElement("canvas");
+      offscreen.width = Math.floor(viewport.width * pixelRatio);
+      offscreen.height = Math.floor(viewport.height * pixelRatio);
+      const offscreenContext = offscreen.getContext("2d");
+      if (!offscreenContext) {
+        if (!isCancelled) onError();
+        return;
+      }
+      offscreenContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+      activeRenderTask = pdfPage.render({ canvas: offscreen, canvasContext: offscreenContext, viewport });
       await activeRenderTask.promise;
       activeRenderTask = null;
 
       if (!isCancelled) {
+        canvas.width = offscreen.width;
+        canvas.height = offscreen.height;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.drawImage(offscreen, 0, 0);
         setPageSize({ width: viewport.width, height: viewport.height });
         setRenderedKey(nextRenderedKey);
       }
