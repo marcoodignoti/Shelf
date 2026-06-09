@@ -170,6 +170,9 @@ function trustedRendererOrigin() {
     try {
       return new URL(process.env.ELECTRON_RENDERER_URL).origin;
     } catch {
+      console.error(
+        `Invalid ELECTRON_RENDERER_URL (${process.env.ELECTRON_RENDERER_URL}); Studio PDF requests will be refused`
+      );
       return null;
     }
   }
@@ -249,6 +252,15 @@ function handleStudioPdfRequest(request, response) {
   }
   if (request.method !== "GET") {
     sendStudioPdfError(response, 405, "Method not allowed", origin);
+    return;
+  }
+  // The only legitimate client is the renderer's pdf.js fetch, which is
+  // always cross-origin to this 127.0.0.1 server and therefore always sends
+  // an Origin header. Reject anything else (e.g. other local processes)
+  // explicitly instead of relying on the browser dropping the CORS-less
+  // response.
+  if (!isTrustedPdfRequestOrigin(origin)) {
+    sendStudioPdfError(response, 403, "Forbidden", origin);
     return;
   }
 
@@ -409,6 +421,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
     },
   });
 
