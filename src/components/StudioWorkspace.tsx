@@ -1119,11 +1119,13 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
     const container = containerRef.current;
     if (!container) return;
 
+    // Stay subscribed after the first render: pages that scroll far away
+    // flip shouldRender back to false so their canvas bitmap is released,
+    // keeping memory bounded on long PDFs instead of accumulating every
+    // page ever scrolled past.
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setShouldRender(true);
-        observer.disconnect();
-      }
+      const isNear = entries.some((entry) => entry.isIntersecting);
+      setShouldRender((previous) => (previous === isNear ? previous : isNear));
     }, { rootMargin: "720px 0px" });
 
     observer.observe(container);
@@ -1131,7 +1133,18 @@ const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
   }, [eager]);
 
   useEffect(() => {
-    if (!shouldRender) return;
+    if (!shouldRender) {
+      // Release the off-screen bitmap; pageSize is kept so the placeholder
+      // preserves layout and scroll height. The page re-renders when it
+      // approaches the viewport again.
+      const canvas = canvasRef.current;
+      if (canvas && (canvas.width > 0 || canvas.height > 0)) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      setRenderedKey(null);
+      return;
+    }
 
     let isCancelled = false;
     let activeRenderTask: pdfjsLib.RenderTask | null = null;
