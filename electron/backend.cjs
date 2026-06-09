@@ -168,7 +168,19 @@ function openDatabase(appConfigDir) {
   const db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
-  runMigrations(db);
+  // Wait instead of failing with SQLITE_BUSY when another connection (e.g. a
+  // lingering process from a previous run) briefly holds the write lock.
+  db.exec("PRAGMA busy_timeout = 5000");
+  // Run migrations atomically: a failure midway (one ALTER succeeding, the
+  // next failing) must not leave a partially-migrated schema behind.
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    runMigrations(db);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
   return db;
 }
 
@@ -929,7 +941,16 @@ class OpenNotionBackend {
     const pages = this.listAllPages();
     const raw = JSON.stringify({ version: 1, exported_at: exported, pages }, null, 2);
     if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES) throw new Error("Backup export is too large");
-    fs.writeFileSync(filePath, raw);
+    // Write-to-temp-then-rename so an interrupted write (disk full, crash)
+    // cannot leave a truncated backup at the destination.
+    const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.tmp`);
+    try {
+      fs.writeFileSync(tempPath, raw);
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      fs.rmSync(tempPath, { force: true });
+      throw error;
+    }
     return pages.length;
   }
 
