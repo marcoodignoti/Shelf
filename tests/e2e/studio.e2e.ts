@@ -1153,3 +1153,44 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
     return documents[0]?.viewer_page;
   })).toBe(3);
 });
+
+test("changes single-mode pages in place without blanking the canvas", async ({ page }) => {
+  await page.unroute("**/civil-law.pdf*");
+  await page.route("**/civil-law.pdf*", async (route) => {
+    await route.fulfill({
+      body: multiPagePdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
+
+  await page.getByTitle("PDF view options").click();
+  await page.getByRole("menuitemradio", { name: "Single page" }).click();
+  const viewer = page.locator("[data-pdf-view-mode='single']");
+  await expect(viewer).toBeVisible();
+  const canvas = viewer.locator("canvas").first();
+  await expect(page.locator("[data-pdf-page='1']")).toHaveAttribute("data-pdf-rendered", "true");
+
+  // Tag the canvas element: page changes must reuse it, not remount it.
+  await canvas.evaluate((element) => {
+    (element as HTMLCanvasElement & { __stableMarker?: boolean }).__stableMarker = true;
+  });
+
+  await page.getByTitle("Next page").click();
+  await expect(page.locator(".on-studio-page-input")).toHaveValue("2");
+
+  // Same element instance, and the old bitmap stayed in place (width never
+  // dropped to 0) until the new page was blitted.
+  const state = await canvas.evaluate((element) => ({
+    stable: (element as HTMLCanvasElement & { __stableMarker?: boolean }).__stableMarker === true,
+    width: (element as HTMLCanvasElement).width,
+  }));
+  expect(state.stable).toBe(true);
+  expect(state.width).toBeGreaterThan(0);
+
+  await expect(page.locator("[data-pdf-page='2']")).toHaveAttribute("data-pdf-rendered", "true");
+});
