@@ -202,16 +202,24 @@ function isNativeTextInput(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
+// Only touch elements where spellcheck is meaningful. Setting attributes on
+// non-text inputs rendered by ProseMirror node views (e.g. the checklist
+// checkbox) makes ProseMirror's DOMObserver re-create the node, which
+// re-triggers the MutationObserver below in an infinite loop that freezes
+// the app. Covered by tests/e2e/checklist.e2e.ts.
+const SPELLCHECK_TARGET_SELECTOR =
+  "[contenteditable='true'], textarea, input:not([type]), input[type='text'], input[type='search'], input[type='email'], input[type='url']";
+
+function setSpellcheckAttributes(element: HTMLElement) {
+  if (element.getAttribute("spellcheck") !== "false") element.setAttribute("spellcheck", "false");
+  if (element.getAttribute("autocorrect") !== "off") element.setAttribute("autocorrect", "off");
+  if (element.getAttribute("autocapitalize") !== "off") element.setAttribute("autocapitalize", "off");
+}
+
 function disableSpellcheck(element: HTMLElement | null) {
   if (!element) return;
-  element.setAttribute("spellcheck", "false");
-  element.setAttribute("autocorrect", "off");
-  element.setAttribute("autocapitalize", "off");
-  element.querySelectorAll<HTMLElement>("[contenteditable='true'], input, textarea").forEach((editable) => {
-    editable.setAttribute("spellcheck", "false");
-    editable.setAttribute("autocorrect", "off");
-    editable.setAttribute("autocapitalize", "off");
-  });
+  setSpellcheckAttributes(element);
+  element.querySelectorAll<HTMLElement>(SPELLCHECK_TARGET_SELECTOR).forEach(setSpellcheckAttributes);
 }
 
 function activeElementIsNativeTextInput() {
