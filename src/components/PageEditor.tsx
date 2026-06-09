@@ -896,6 +896,10 @@ export function Editor({
 }) {
   const saveTimeoutRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Partial<Page>>({});
+  // Content edits only mark this flag; serialization of the whole document is
+  // deferred to the debounced flush so typing never pays JSON.stringify +
+  // search-text extraction per keystroke.
+  const contentDirtyRef = useRef(false);
   const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1093,6 +1097,9 @@ export function Editor({
   const headingItems = useEditorState({
     editor,
     selector: ({ editor }) => headingItemsFromBlocks(editor.document as Block<any, any, any>[]),
+    // Selection changes can't affect headings; skip the full-document walk on
+    // every caret move.
+    on: "change",
   }) ?? [];
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(headingItems[0]?.id ?? null);
 
@@ -1133,6 +1140,7 @@ export function Editor({
     setMoveQuery("");
     setIsDeleteConfirmOpen(false);
     pendingUpdatesRef.current = {};
+    contentDirtyRef.current = false;
     isSavingRef.current = false;
     dispatchSaveState({ type: "saved" });
 
@@ -1141,11 +1149,24 @@ export function Editor({
         window.clearTimeout(saveTimeoutRef.current);
       }
       // Flush pending edits before the editor unmounts or re-keys to another
-      // page. This cleanup closure still holds the previous page.id, so a
-      // debounced edit made <300ms before navigation is persisted, not lost.
+      // page. This cleanup closure still holds the previous page.id and the
+      // previous editor instance, so a debounced edit made <300ms before
+      // navigation is persisted, not lost.
+      if (contentDirtyRef.current) {
+        contentDirtyRef.current = false;
+        const content = JSON.stringify(editor.document as Block[]);
+        pendingUpdatesRef.current = {
+          ...pendingUpdatesRef.current,
+          content,
+          search_text: pageContentToSearchText(content),
+        };
+      }
       const pending = pendingUpdatesRef.current;
       if (Object.keys(pending).length > 0) {
         pendingUpdatesRef.current = {};
+        // Keep the store in sync so navigating back to this page renders the
+        // final edit instead of the last flushed snapshot.
+        updatePageOptimistically(page.id, pending);
         // Fire-and-forget on unmount: there is no UI left to roll back to, so
         // at least log a failed final write instead of dropping it silently
         // (and avoid an unhandled promise rejection).
@@ -1154,7 +1175,7 @@ export function Editor({
         });
       }
     };
-  }, [page.id]);
+  }, [page.id, editor, updatePageOptimistically]);
 
   useEffect(() => {
     if (!isIconMenuOpen) return;
@@ -1176,6 +1197,14 @@ export function Editor({
   const saveNow = useCallback(async () => {
     if (isSavingRef.current) return;
 
+    if (contentDirtyRef.current) {
+      contentDirtyRef.current = false;
+      const content = JSON.stringify(editor.document as Block[]);
+      const search_text = pageContentToSearchText(content);
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, content, search_text };
+      updatePageOptimistically(page.id, { content, search_text });
+    }
+
     const updates = pendingUpdatesRef.current;
     if (Object.keys(updates).length === 0) return;
 
@@ -1187,7 +1216,7 @@ export function Editor({
       await updatePage(page.id, updates);
       isSavingRef.current = false;
 
-      if (Object.keys(pendingUpdatesRef.current).length > 0) {
+      if (Object.keys(pendingUpdatesRef.current).length > 0 || contentDirtyRef.current) {
         dispatchSaveState({ type: "edit" });
         if (saveTimeoutRef.current) {
           window.clearTimeout(saveTimeoutRef.current);
@@ -1203,7 +1232,7 @@ export function Editor({
       dispatchSaveState({ type: "failed", message: errorMessage(error) });
       console.error("Failed to save page:", error);
     }
-  }, [page.id]);
+  }, [page.id, editor, updatePageOptimistically]);
 
   const queueSave = useCallback((updates: Partial<Page>) => {
     pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
@@ -1218,6 +1247,22 @@ export function Editor({
       void saveNow();
     }, 300);
   }, [page.id, saveNow, updatePageOptimistically]);
+
+  // Debounced save for document edits. Unlike queueSave it does not snapshot
+  // the content eagerly: serialization happens once in saveNow when the
+  // debounce settles, so per-keystroke work stays O(1).
+  const queueContentSave = useCallback(() => {
+    contentDirtyRef.current = true;
+    dispatchSaveState({ type: "edit" });
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      void saveNow();
+    }, 300);
+  }, [saveNow]);
 
   const handleTitleChange = (value: string) => {
     const nextTitle = value;
@@ -1416,8 +1461,7 @@ export function Editor({
       if (normalized) return;
     }
 
-    const content = JSON.stringify(editor.document as Block[]);
-    queueSave({ content, search_text: pageContentToSearchText(content) });
+    queueContentSave();
     if (activeElementIsNativeTextInput()) return;
     keepEditorCaretInView(editor, scrollContainerRef.current);
   };
@@ -1438,17 +1482,29 @@ export function Editor({
 
     if (!normalized) return;
 
-    const content = JSON.stringify(editor.document as Block[]);
-    queueSave({ content, search_text: pageContentToSearchText(content) });
-  }, [editor, page.id, queueSave]);
+    queueContentSave();
+  }, [editor, page.id, queueContentSave]);
+
+  // Re-sync inline page links only when a page's identity fields change, not
+  // on every pages-array identity change (e.g. our own debounced content
+  // flush): the sync walks the whole document.
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const pageLinkSyncSignature = useMemo(
+    () =>
+      pages
+        .map((candidate) => [candidate.id, candidate.title ?? "", candidate.icon ?? "", candidate.page_kind ?? ""].join("\u0000"))
+        .join("\u0001"),
+    [pages]
+  );
 
   useEffect(() => {
-    const synced = syncPageLinkInlineContentInEditor(editor, pages);
+    const synced = syncPageLinkInlineContentInEditor(editor, pagesRef.current);
     if (!synced) return;
 
-    const content = JSON.stringify(editor.document as Block[]);
-    queueSave({ content, search_text: pageContentToSearchText(content) });
-  }, [editor, pages, queueSave]);
+    queueContentSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pagesRef tracks pages; pageLinkSyncSignature captures the fields the sync reads
+  }, [editor, pageLinkSyncSignature, queueContentSave]);
 
   const handleIconChange = (value: string) => {
     const nextIcon = normalizePageIcon(value) || "";
