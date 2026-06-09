@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { createStudioNotePage, Page } from "../lib/db";
+import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
 import { useAppStore } from "../store/useAppStore";
 import {
   buildStudioPanelGridColumns,
@@ -339,6 +340,23 @@ export function StudioWorkspace({
     return () => window.removeEventListener("keydown", handlePdfDisplayModeShortcut);
   }, [showPdfControls, updatePdfDisplayMode]);
 
+  useEffect(() => {
+    const handleArrowPageNavigation = (event: KeyboardEvent) => {
+      if (!showPdfControls) return;
+      // `document` here is the StudioDocument prop; the DOM document is on window.
+      if (isTextEntryElement(window.document.activeElement)) return;
+
+      const nextPage = pageForNavigationIntent(arrowKeyPageIntent(event), activePdfPage);
+      if (nextPage === null) return;
+
+      event.preventDefault();
+      updatePage(nextPage);
+    };
+
+    window.addEventListener("keydown", handleArrowPageNavigation);
+    return () => window.removeEventListener("keydown", handleArrowPageNavigation);
+  }, [activePdfPage, showPdfControls, updatePage]);
+
   const handleSplitterPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const container = event.currentTarget.parentElement;
     if (!container) return;
@@ -406,6 +424,7 @@ export function StudioWorkspace({
           onError={handlePdfError}
           onZoomChange={updateZoom}
           onVisiblePageChange={updateVisiblePdfPage}
+          onRequestPageChange={updatePage}
         />
       )}
     </section>
@@ -795,6 +814,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   onError,
   onZoomChange,
   onVisiblePageChange,
+  onRequestPageChange,
 }: {
   src: string;
   title: string;
@@ -805,9 +825,12 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   onError: (message?: string) => void;
   onZoomChange: (zoom: number) => void;
   onVisiblePageChange: (page: number) => void;
+  onRequestPageChange: (page: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const wheelSwipeRef = useRef({ accumulatedDeltaX: 0, lastEventAt: 0, lockedUntil: 0 });
   const reportedVisiblePageRef = useRef(page);
   const pendingScrollTargetPageRef = useRef<number | null>(null);
   const suppressVisiblePageUpdatesUntilRef = useRef(0);
@@ -850,12 +873,49 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
 
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
+
+    // Trackpad horizontal swipe pages through the paged modes, like Preview.
+    // Only when the gesture is clearly horizontal and the viewer has no real
+    // horizontal overflow to scroll.
+    if (displayMode !== "continuous" && Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      const state = wheelSwipeRef.current;
+      const now = performance.now();
+      if (now < state.lockedUntil) {
+        event.preventDefault();
+        return;
+      }
+      if (now - state.lastEventAt > 300) {
+        state.accumulatedDeltaX = 0;
+      }
+      state.lastEventAt = now;
+
+      const canScrollLeft = scrollElement.scrollLeft > 0;
+      const canScrollRight = scrollElement.scrollLeft + scrollElement.clientWidth < scrollElement.scrollWidth - 1;
+      // While the viewer can still scroll in the gesture's direction, the
+      // gesture is a plain horizontal scroll — keep it native.
+      if ((event.deltaX > 0 && canScrollRight) || (event.deltaX < 0 && canScrollLeft)) {
+        state.accumulatedDeltaX = 0;
+        return;
+      }
+      state.accumulatedDeltaX += event.deltaX;
+
+      const intent = wheelSwipePageIntent(state.accumulatedDeltaX, { canScrollLeft, canScrollRight });
+      const nextPage = pageForNavigationIntent(intent, page);
+      if (nextPage !== null) {
+        state.accumulatedDeltaX = 0;
+        state.lockedUntil = now + 350;
+        event.preventDefault();
+        onRequestPageChange(nextPage);
+      }
+      return;
+    }
+
     if (scrollElement.scrollTop <= 0 && event.deltaY < 0) {
       event.preventDefault();
       scrollElement.scrollTop = 0;
       updateScrollWindow();
     }
-  }, [updateScrollWindow, updateZoomFromPoint, zoom]);
+  }, [displayMode, onRequestPageChange, page, updateScrollWindow, updateZoomFromPoint, zoom]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -916,15 +976,21 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
     if (event.touches.length !== 2) {
       pinchRef.current = null;
+      // Single-finger horizontal swipes turn pages in the paged modes;
+      // continuous mode keeps native scrolling untouched.
+      swipeStartRef.current = event.touches.length === 1 && displayMode !== "continuous"
+        ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+        : null;
       return;
     }
 
+    swipeStartRef.current = null;
     const [first, second] = Array.from(event.touches);
     pinchRef.current = {
       distance: touchDistance(first, second),
       zoom,
     };
-  }, [zoom]);
+  }, [displayMode, zoom]);
 
   const handleTouchMove = useCallback((event: TouchEvent<HTMLDivElement>) => {
     if (event.touches.length !== 2 || !pinchRef.current) return;
@@ -941,7 +1007,22 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
 
   const clearPinch = useCallback(() => {
     pinchRef.current = null;
+    swipeStartRef.current = null;
   }, []);
+
+  const handleTouchEnd = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    const swipeStart = swipeStartRef.current;
+    pinchRef.current = null;
+    swipeStartRef.current = null;
+    if (!swipeStart || event.touches.length > 0) return;
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const intent = swipePageIntent(touch.clientX - swipeStart.x, touch.clientY - swipeStart.y);
+    const nextPage = pageForNavigationIntent(intent, page);
+    if (nextPage !== null) onRequestPageChange(nextPage);
+  }, [onRequestPageChange, page]);
 
   useEffect(() => {
     reportedVisiblePageRef.current = page;
@@ -1064,7 +1145,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       onScroll={handleScroll}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
-      onTouchEnd={clearPinch}
+      onTouchEnd={handleTouchEnd}
       onTouchCancel={clearPinch}
     >
       {isLoading ? (

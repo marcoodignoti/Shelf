@@ -1081,3 +1081,75 @@ test("does not show a window-level horizontal scrollbar in Studio split view", a
   expect(overflow.frameExtra).toBeLessThanOrEqual(0);
   expect(overflow.splitExtra).toBeLessThanOrEqual(0);
 });
+
+test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) => {
+  await page.unroute("**/civil-law.pdf*");
+  await page.route("**/civil-law.pdf*", async (route) => {
+    await route.fulfill({
+      body: multiPagePdfFixture,
+      contentType: "application/pdf",
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Studio" }).click();
+  await page.getByRole("button", { name: "Import PDF" }).click();
+  await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
+
+  await page.getByTitle("PDF view options").click();
+  await page.getByRole("menuitemradio", { name: "Single page" }).click();
+  const viewer = page.locator("[data-pdf-view-mode='single']");
+  await expect(viewer).toBeVisible();
+  const pageInput = page.locator(".on-studio-page-input");
+
+  // Arrow keys page forward and back.
+  await page.keyboard.press("ArrowRight");
+  await expect(pageInput).toHaveValue("2");
+  await page.keyboard.press("ArrowRight");
+  await expect(pageInput).toHaveValue("3");
+  await page.keyboard.press("ArrowLeft");
+  await expect(pageInput).toHaveValue("2");
+
+  // Arrows must not steal caret movement from text inputs.
+  await pageInput.click();
+  await page.keyboard.press("ArrowRight");
+  await expect(pageInput).toHaveValue("2");
+  await page.keyboard.press("Escape");
+  await viewer.click();
+
+  // Trackpad-style horizontal wheel swipe pages forward (zoomed out so the
+  // page has no horizontal overflow and the viewer sits at the scroll edge).
+  await page.getByTitle("Zoom out").click();
+  await page.getByTitle("Zoom out").click();
+  await viewer.hover();
+  // First wheel scrolls natively to the right edge; once at the edge the
+  // continued gesture turns the page.
+  await page.mouse.wheel(400, 0);
+  await page.mouse.wheel(400, 0);
+  await expect(pageInput).toHaveValue("3");
+
+  // Touch swipe left goes to the next page, swipe right goes back.
+  await viewer.evaluate((element) => {
+    const touch = (x: number, y: number) =>
+      new Touch({ identifier: 1, target: element, clientX: x, clientY: y });
+    element.dispatchEvent(new TouchEvent("touchstart", { touches: [touch(320, 200)], changedTouches: [touch(320, 200)], bubbles: true }));
+    element.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [touch(140, 206)], bubbles: true }));
+  });
+  await expect(pageInput).toHaveValue("4");
+
+  await viewer.evaluate((element) => {
+    const touch = (x: number, y: number) =>
+      new Touch({ identifier: 1, target: element, clientX: x, clientY: y });
+    element.dispatchEvent(new TouchEvent("touchstart", { touches: [touch(140, 200)], changedTouches: [touch(140, 200)], bubbles: true }));
+    element.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [touch(320, 194)], bubbles: true }));
+  });
+  await expect(pageInput).toHaveValue("3");
+
+  // Page changes persist to the viewer state.
+  await expect.poll(async () => page.evaluate(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      viewer_page: number;
+    }>;
+    return documents[0]?.viewer_page;
+  })).toBe(3);
+});
