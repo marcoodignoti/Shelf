@@ -1182,7 +1182,8 @@ class OpenNotionBackend {
   }
 
   unlinkStudioDocumentPage({ id }) {
-    this.db.prepare("DELETE FROM studio_document_page_links WHERE id = ?").run(id);
+    const result = this.db.prepare("DELETE FROM studio_document_page_links WHERE id = ?").run(id);
+    if (result.changes === 0) throw new Error("link not found");
   }
 
   studioPdfDestination(documentId) {
