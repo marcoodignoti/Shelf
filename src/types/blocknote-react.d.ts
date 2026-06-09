@@ -35,6 +35,8 @@ export function useBlockNoteEditor<
 export function useEditorState<T>(options: {
   editor: BlockNoteEditor;
   selector: (options: { editor: BlockNoteEditor }) => T;
+  equalityFn?: (a: T, b: T | null) => boolean;
+  on?: "all" | "mount" | "selection" | "change";
 }): T;
 export function useEditorState<T>(selector: (editor: BlockNoteEditor) => T): T;
 export function useExtensionState<T = any>(
