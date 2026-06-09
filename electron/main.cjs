@@ -16,6 +16,8 @@ let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
 let autoUpdater = null;
+let autoUpdaterActive = false;
+let updateReadyToInstall = false;
 
 protocol.registerSchemesAsPrivileged([{
   scheme: APP_PROTOCOL,
@@ -471,6 +473,7 @@ function configureWindowsAutoUpdater() {
     return;
   }
 
+  autoUpdaterActive = true;
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -496,6 +499,7 @@ function configureWindowsAutoUpdater() {
     });
   });
   autoUpdater.on("update-downloaded", (info) => {
+    updateReadyToInstall = true;
     notifyRenderer("desktop-update-downloaded", {
       version: info.version,
       releaseName: info.releaseName,
@@ -617,6 +621,27 @@ function registerIpc() {
     const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
     if (result.canceled) return null;
     return result.filePath || null;
+  });
+
+  ipcMain.on("opennotion:auto-update-active", (event) => {
+    try {
+      requireTrustedSender(event);
+      event.returnValue = { ok: true, value: autoUpdaterActive };
+    } catch (error) {
+      event.returnValue = { ok: false, error: error instanceof Error ? error.message : "untrusted renderer origin" };
+    }
+  });
+
+  ipcMain.handle("opennotion:install-update-now", (event) => {
+    requireTrustedSender(event);
+    if (!autoUpdater || !updateReadyToInstall) {
+      throw new Error("no downloaded update is ready to install");
+    }
+    // Defer so the invoke reply reaches the renderer before the app quits.
+    setImmediate(() => {
+      autoUpdater.quitAndInstall();
+    });
+    return null;
   });
 }
 

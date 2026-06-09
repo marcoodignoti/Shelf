@@ -54,6 +54,13 @@ contextBridge.exposeInMainWorld("openNotion", {
     }
     return studioPdfUrl(documentId);
   },
+  autoUpdateActive() {
+    const result = ipcRenderer.sendSync("opennotion:auto-update-active");
+    return Boolean(result && result.ok === true && result.value === true);
+  },
+  installUpdateNow() {
+    return ipcRenderer.invoke("opennotion:install-update-now");
+  },
   onDesktopUpdate(callback) {
     if (typeof callback !== "function") throw new Error("callback must be a function");
     const listeners = [];
