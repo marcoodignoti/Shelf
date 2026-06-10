@@ -1,0 +1,15 @@
+export const en = {
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "common.close": "Close",
+  "settings.nav.account": "Account",
+  "settings.nav.workspace": "Workspace",
+  "settings.nav.profile": "Profile",
+  "settings.nav.preferences": "Preferences",
+  "settings.nav.appearance": "Appearance",
+  "settings.nav.shortcuts": "Shortcuts",
+  "settings.nav.updates": "Updates",
+  "settings.nav.data": "Import / Export",
+  "settings.nav.about": "About",
+  "settings.data.exported": "Exported {count} pages.",
+} as const;
