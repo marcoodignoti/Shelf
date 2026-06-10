@@ -1,3 +1,4 @@
+const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -65,6 +66,29 @@ async function run() {
     throw new Error("search_pages failed");
   }
 
+  const emptyProfile = await backend.invoke("get_workspace_profile");
+  assert.deepStrictEqual(emptyProfile, { name: "", workspaceName: "OpenNotion", avatarPath: null });
+
+  await backend.invoke("update_workspace_profile", { name: "Marco", workspaceName: "Studio Marco" });
+  const updatedProfile = await backend.invoke("get_workspace_profile");
+  assert.strictEqual(updatedProfile.name, "Marco");
+  assert.strictEqual(updatedProfile.workspaceName, "Studio Marco");
+
+  await assert.rejects(
+    backend.invoke("update_workspace_profile", { name: "x".repeat(500) }),
+    /too long|invalid/,
+  );
+
+  const avatarSource = path.join(tempRoot, "avatar-source.png");
+  fs.writeFileSync(avatarSource, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+  const avatarPath = await backend.invoke("import_profile_avatar", { sourcePath: avatarSource });
+  assert.ok(avatarPath.includes("avatars"));
+  assert.ok(fs.existsSync(avatarPath));
+  assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, avatarPath);
+
+  await backend.invoke("update_workspace_profile", { avatarPath: null });
+  assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, null);
+
   const backupPath = path.join(tempRoot, "backup.json");
   const exported = await backend.invoke("export_backup", { path: backupPath, exportedAt: createdAt });
   if (exported !== 1 || !fs.existsSync(backupPath)) {
@@ -76,6 +100,9 @@ async function run() {
   if (imported !== 1) {
     throw new Error("import_backup failed");
   }
+
+  const backupJson = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+  assert.strictEqual(backupJson.profile.workspaceName, "Studio Marco");
 
   const pages = await backend.invoke("list_pages");
   if (pages.length !== 1 || pages[0].title !== "Smoke") {

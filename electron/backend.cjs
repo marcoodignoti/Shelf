@@ -8,6 +8,12 @@ const { DatabaseSync } = require("node:sqlite");
 const APP_SCHEMA_VERSION = "1";
 const APP_ASSET_PROTOCOL = "opennotion-app";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const PROFILE_TEXT_MAX_LENGTH = 120;
+const PROFILE_METADATA_KEYS = {
+  name: "profile_name",
+  workspaceName: "workspace_name",
+  avatarPath: "profile_avatar_path",
+};
 const STUDIO_PDF_MAX_BYTES = 512 * 1024 * 1024;
 const EDITOR_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
@@ -701,6 +707,9 @@ class OpenNotionBackend {
       open_external_url: (args) => this.openExternalUrl(args),
       fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
       download_update_artifact: (args) => this.downloadUpdateArtifact(args),
+      get_workspace_profile: () => this.getWorkspaceProfile(),
+      update_workspace_profile: (args) => this.updateWorkspaceProfile(args),
+      import_profile_avatar: (args) => this.importProfileAvatar(args),
       show_character_palette: () => null,
     };
   }
@@ -1069,7 +1078,11 @@ class OpenNotionBackend {
     const exported = exportedAt ?? exported_at;
     validateBackupExportDestination(filePath);
     const pages = this.listAllPages();
-    const raw = JSON.stringify({ version: 1, exported_at: exported, pages }, null, 2);
+    const profile = (() => {
+      const p = this.getWorkspaceProfile();
+      return { name: p.name, workspaceName: p.workspaceName };
+    })();
+    const raw = JSON.stringify({ version: 1, exported_at: exported, profile, pages }, null, 2);
     if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES) throw new Error("Backup export is too large");
     // Write-to-temp-then-rename so an interrupted write (disk full, crash)
     // cannot leave a truncated backup at the destination.
@@ -1087,7 +1100,26 @@ class OpenNotionBackend {
   importBackup({ path: filePath, importedAt, imported_at }) {
     const imported = importedAt ?? imported_at;
     const backup = readImportedBackup(filePath);
-    return this.importPageRecords(prepareImportedBackupPages(backup.pages, imported));
+    const importedCount = this.importPageRecords(prepareImportedBackupPages(backup.pages, imported));
+    if (backup.profile && typeof backup.profile === "object") {
+      const current = this.getWorkspaceProfile();
+      if (current.name === "" && current.workspaceName === "OpenNotion") {
+        const { name, workspaceName } = backup.profile;
+        if (name !== undefined) {
+          if (typeof name !== "string" || name.length > PROFILE_TEXT_MAX_LENGTH) {
+            throw new Error("backup profile name too long or invalid");
+          }
+          this.writeMetadataValue(PROFILE_METADATA_KEYS.name, name);
+        }
+        if (workspaceName !== undefined) {
+          if (typeof workspaceName !== "string" || workspaceName.length > PROFILE_TEXT_MAX_LENGTH) {
+            throw new Error("backup workspace name too long or invalid");
+          }
+          this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, workspaceName);
+        }
+      }
+    }
+    return importedCount;
   }
 
   listStudioDocuments() {
@@ -1502,6 +1534,59 @@ class OpenNotionBackend {
       created
     );
     return this.getPage({ id });
+  }
+
+  readMetadataValue(key) {
+    const row = this.db.prepare("SELECT value FROM app_metadata WHERE key = ?").get(key);
+    return row ? row.value : null;
+  }
+
+  writeMetadataValue(key, value) {
+    if (value === null) {
+      this.db.prepare("DELETE FROM app_metadata WHERE key = ?").run(key);
+      return;
+    }
+    this.db
+      .prepare("INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(key, value);
+  }
+
+  getWorkspaceProfile() {
+    return {
+      name: this.readMetadataValue(PROFILE_METADATA_KEYS.name) || "",
+      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "OpenNotion",
+      avatarPath: this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath),
+    };
+  }
+
+  updateWorkspaceProfile(args = {}) {
+    if (args.name !== undefined) {
+      if (typeof args.name !== "string" || args.name.length > PROFILE_TEXT_MAX_LENGTH) {
+        throw new Error("profile name too long or invalid");
+      }
+      this.writeMetadataValue(PROFILE_METADATA_KEYS.name, args.name);
+    }
+    if (args.workspaceName !== undefined) {
+      if (typeof args.workspaceName !== "string" || args.workspaceName.length > PROFILE_TEXT_MAX_LENGTH) {
+        throw new Error("workspace name too long or invalid");
+      }
+      this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, args.workspaceName);
+    }
+    if (args.avatarPath === null) {
+      this.writeMetadataValue(PROFILE_METADATA_KEYS.avatarPath, null);
+    }
+    return this.getWorkspaceProfile();
+  }
+
+  importProfileAvatar({ sourcePath, source_path }) {
+    const source = sourcePath ?? source_path;
+    const avatarsDir = path.join(this.appConfigDir, "avatars");
+    ensurePrivateDirectory(avatarsDir);
+    const extension = validatedCoverExtension(source, COVER_IMAGE_MAX_BYTES);
+    const destination = path.join(avatarsDir, `profile-${Date.now()}.${extension}`);
+    fs.copyFileSync(source, destination);
+    this.writeMetadataValue(PROFILE_METADATA_KEYS.avatarPath, destination);
+    return destination;
   }
 
   importCoverImage({ sourcePath, source_path, pageId, page_id }) {
