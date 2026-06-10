@@ -1329,7 +1329,7 @@ export function Sidebar() {
                   ) : (
                     <Copy className="w-4 h-4 mr-2 opacity-50 flex-shrink-0" />
                   )}
-                  <span className="truncate">{page.title || 'Untitled'}</span>
+                  <span className="truncate">{page.title || t('sidebar.untitled')}</span>
                 </div>
               </div>
             ))}
