@@ -30,10 +30,16 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ inputs.tag }}"
+          # latest.yml and the blockmap ship together with the installer:
+          # electron-updater reads latest.yml to discover the update and the
+          # blockmap to download only the changed blocks (differential update)
+          # instead of the full installer.
           gh release upload "$tag" \
             artifacts/OpenNotion_macos-arm64/OpenNotion_*_arm64.dmg \
             artifacts/OpenNotion_win-x64/OpenNotion_*_win-x64.zip \
             artifacts/OpenNotion_win-x64_installer/OpenNotion_*_setup_win-x64.exe \
+            artifacts/OpenNotion_win-x64_installer/OpenNotion_*_setup_win-x64.exe.blockmap \
+            artifacts/OpenNotion_win-x64_installer/latest.yml \
             --repo "${{ github.repository }}" \
             --clobber
 
