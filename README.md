@@ -1,271 +1,201 @@
+<div align="center">
+
+<img src="assets/app-icon.png" alt="OpenNotion app icon" width="128" height="128">
+
 # OpenNotion
 
-<p align="center">
-  <img src="assets/app-icon.png" alt="OpenNotion app icon" width="112" height="112">
-</p>
+**Your notes. Your PDFs. Your machine. Nothing else.**
 
-<p align="center">
-  <strong>A local-first desktop workspace for notes, PDFs, study, and research.</strong>
-</p>
+A local-first desktop workspace that pairs a Notion-style editor with a
+Studio mode for reading PDFs while writing linked notes — with every byte
+stored on your own computer.
 
-<p align="center">
-  <a href="https://github.com/marcoodignoti/OpenNotion/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/marcoodignoti/OpenNotion/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
-  <img alt="Electron" src="https://img.shields.io/badge/Electron-40-47848f">
-  <img alt="React" src="https://img.shields.io/badge/React-19-149eca">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6">
-</p>
+<br>
 
-OpenNotion is a private, local-first alternative for people who want a polished
-document workspace without sending their notes, PDFs, images, and study context
-to a remote account. It pairs a Notion-inspired editor with a focused Studio
-mode for reading sources while writing linked notes.
+[![Latest release](https://img.shields.io/github/v/release/marcoodignoti/OpenNotion?label=release&color=black)](https://github.com/marcoodignoti/OpenNotion/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/marcoodignoti/OpenNotion/total?color=black)](https://github.com/marcoodignoti/OpenNotion/releases)
+[![CI](https://github.com/marcoodignoti/OpenNotion/actions/workflows/ci.yml/badge.svg)](https://github.com/marcoodignoti/OpenNotion/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-black)
 
-It is built as a desktop app with Electron, React, TypeScript, BlockNote, and
-SQLite.
+<br>
 
-![OpenNotion home dashboard](docs/assets/opennotion-home.png)
+[<img src="https://img.shields.io/badge/Download%20for%20macOS-Apple%20Silicon%20DMG-0a0a0a?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS">](https://github.com/marcoodignoti/OpenNotion/releases/download/v0.2.0/OpenNotion_0.2.0_arm64.dmg)
+&nbsp;
+[<img src="https://img.shields.io/badge/Download%20for%20Windows-x64%20Installer-0a0a0a?style=for-the-badge&logoColor=white" alt="Download for Windows">](https://github.com/marcoodignoti/OpenNotion/releases/download/v0.2.0/OpenNotion_0.2.0_setup_win-x64.exe)
 
-## Highlights
+<sub>or browse <a href="https://github.com/marcoodignoti/OpenNotion/releases/latest">all release downloads</a>, including a portable Windows zip</sub>
 
-- **Local-first storage**: workspace data lives on your machine in SQLite.
-- **Notion-style writing**: pages, subpages, icons, favorites, slash commands,
-  structured blocks, lists, checklists, code, formulas, dividers, and drag/drop
-  ordering.
-- **Studio for research**: import a PDF, read it side-by-side with a linked
-  note, and resume later with viewer state intact.
-- **Fast navigation**: sidebar, recents, favorites, full workspace search, and
-  command-style page switching.
-- **Local media**: paste or select images and keep them in local app storage.
-- **Desktop packaging**: unsigned macOS DMG, Windows portable zip, and Windows
-  NSIS installer through GitHub Actions.
+<br><br>
 
-## Product Tour
+<img src="docs/assets/opennotion-home.png" alt="OpenNotion home dashboard" width="850">
 
-### Notes That Stay Local
+</div>
 
-Create pages and subpages, organize them from the sidebar, favorite important
-work, and recover deleted pages from Trash.
+---
 
-![OpenNotion page with subpages](docs/assets/opennotion-page-subpages.png)
+## Why OpenNotion?
 
-OpenNotion stores editor content, page metadata, search text, images, covers,
-and Studio documents in the local app data directory. There is no hosted sync
-service in this repository.
+Most note apps make you a tenant: your pages live in someone else's cloud,
+behind someone else's account, on someone else's terms. OpenNotion flips
+that.
 
-### Studio Mode
+- 🔒 **Local-first, by design** — everything lives in a SQLite database in
+  your app data folder. No account. No sync server. No telemetry backend in
+  this repository. Period.
+- ✍️ **A real block editor** — pages, subpages, slash commands, checklists,
+  toggles, code blocks, LaTeX formulas, drag-and-drop ordering. The writing
+  experience you expect, offline.
+- 📚 **Studio mode for deep work** — import a PDF and read it side-by-side
+  with a linked note. Zoom, current page, and panel layout are remembered,
+  so you resume exactly where you left off.
+- ⚡ **Fast at any size** — opening a Studio document takes the same time at
+  10 or 800 pages, with flat memory thanks to off-screen page bitmap
+  release. Performance budgets are tracked in CI.
+- 🛟 **Your data is treated like it matters** — automatic database backups
+  before every schema migration, signed update manifests, SHA-256 verified
+  artifacts.
 
-Studio is designed for students, researchers, and builders who need to read and
-write in one place. Import a PDF, keep the source and linked note together, and
-move between reading and writing without context switching.
+## See It in Action
 
-![OpenNotion Studio PDF workspace](docs/assets/opennotion-studio-pdf.png)
+### 📖 Studio: read sources, write notes — one screen
 
-Current Studio capabilities:
+Built for students, researchers, and anyone who thinks with a PDF open.
+Split view, continuous / single / two-page reading modes, projects and
+folders to keep sources organized.
 
-- local PDF import
-- one linked note per document
-- split PDF/note workspace
-- continuous, single-page, and two-page view modes
-- zoom, current page, and panel layout persistence
-- projects, folders, rename, drag/drop organization, and delete flows
+<img src="docs/assets/opennotion-studio-pdf.png" alt="OpenNotion Studio: PDF and linked note side by side" width="850">
 
-### Fast Editing
+### ✍️ Write at the speed of `/`
 
-Type `/` to insert structured content quickly: headings, lists, checklists,
-quotes, dividers, code blocks, formulas, and more.
+Type `/` and drop in headings, lists, checklists, quotes, dividers, code,
+and formulas without touching the mouse. Pasted LaTeX is detected and
+rendered automatically.
 
-![OpenNotion slash command menu](docs/assets/opennotion-slash-menu.png)
+<img src="docs/assets/opennotion-slash-menu.png" alt="OpenNotion slash command menu" width="850">
 
-### Search
+### 🗂️ Organize and find anything
 
-Jump through recent pages and search workspace content without leaving the
-keyboard.
+Nested pages with icons, favorites, recents, trash with recovery — and a
+keyboard-first command palette that searches your whole workspace.
 
-![OpenNotion command palette search](docs/assets/opennotion-search.png)
+| | |
+| :---: | :---: |
+| <img src="docs/assets/opennotion-page-subpages.png" alt="Pages and subpages in the sidebar"> | <img src="docs/assets/opennotion-search.png" alt="Command palette search"> |
+| **Pages, subpages, favorites** | **Instant workspace search** |
 
 ## Privacy Model
 
-OpenNotion has no account system and no cloud backend in this repository.
-
-Default macOS data path:
-
-```text
-~/Library/Application Support/org.opennotion.desktop/
-```
-
-Important local files:
+There is no account system and no cloud backend in this repository. Your
+workspace is a folder on your disk:
 
 ```text
-opennotion.db
-covers/
-editor-images/
-studio-documents/
+~/Library/Application Support/org.opennotion.desktop/   # macOS
+├── opennotion.db        # pages, metadata, search text
+├── covers/              # page covers
+├── editor-images/       # pasted/imported images
+├── studio-documents/    # imported PDFs
+└── backups/             # automatic pre-migration snapshots
 ```
 
-Build artifacts do **not** include your personal database. A build installed on
-another computer starts with that computer's own empty app data directory.
+Build artifacts never include your personal database. Want to know exactly
+where everything lives? See [docs/release/data-location.md](docs/release/data-location.md).
 
-## Installation
+## Install
 
-OpenNotion `v0.1.1` is the current private beta release.
+**[⬇ Grab the latest release](https://github.com/marcoodignoti/OpenNotion/releases/latest)** — current version: **v0.2.0**
 
-### macOS
+| Platform | Artifact | Notes |
+| --- | --- | --- |
+| macOS (Apple Silicon) | `OpenNotion_0.2.0_arm64.dmg` | Ad-hoc signed, not yet notarized — see below |
+| Windows x64 (installer) | `OpenNotion_0.2.0_setup_win-x64.exe` | Auto-updates in background, installs on quit |
+| Windows x64 (portable) | `OpenNotion_0.2.0_win-x64.zip` | Extract and run `OpenNotion.exe` |
 
-Download `OpenNotion_0.1.1_arm64.dmg` from the latest GitHub release or build it
-locally:
+> **Heads-up on OS warnings:** builds are not yet notarized (macOS) or
+> Authenticode-signed (Windows), so Gatekeeper / SmartScreen will warn on
+> first launch. On macOS, after copying the app to `/Applications`:
+>
+> ```sh
+> xattr -dr com.apple.quarantine /Applications/OpenNotion.app
+> ```
+>
+> Signed and notarized distribution is on the [roadmap](#roadmap).
+> Every release ships SHA-256 digests so you can verify what you download.
+
+Prefer building from source?
 
 ```sh
 npm ci
-npm run release:package:macos
-npm run release:verify:macos
+npm run release:package:macos   # → dist-electron/OpenNotion_<version>_arm64.dmg
 ```
 
-Generated artifact:
+## Under the Hood
+
+OpenNotion is a thin React UI over an Electron/SQLite backend — no hidden
+services, no network layer for your data.
 
 ```text
-dist-electron/OpenNotion_0.1.1_arm64.dmg
+React 19 + TypeScript + Vite + Tailwind 4 + BlockNote
+                      │
+            Electron preload bridge (typed IPC)
+                      │
+              Electron main process
+                      │
+          SQLite + local filesystem app data
 ```
 
-Because the current macOS build is ad-hoc signed with hardened runtime and not
-notarized, macOS may show an unidentified developer warning. For private
-testing after copying the app to `/Applications`:
+| Area | Where |
+| --- | --- |
+| Workspace UI, editor, Studio, state | `src/` |
+| Electron main/preload/backend + packaged-app smokes | `electron/` |
+| Packaging & release verification | `scripts/`, `packaging/` |
+| Browser e2e flows | `tests/e2e/` |
+| Performance suite & baselines | `perf/`, `docs/perf/` |
 
-```sh
-xattr -dr com.apple.quarantine /Applications/OpenNotion.app
-```
-
-### Windows
-
-Download the Windows installer from the latest GitHub release:
-
-```text
-OpenNotion_0.1.4_setup_win-x64.exe
-```
-
-The installer checks for newer Windows releases in background, downloads them
-automatically, and installs on app quit.
-
-Portable compatibility build:
-
-```text
-OpenNotion_0.1.4_win-x64.zip
-```
-
-1. Extract the zip.
-2. Run `OpenNotion.exe`.
-
-Both Windows builds are unsigned. Windows SmartScreen may show an untrusted app
-warning until Authenticode signing is configured.
+Quality gates: unit tests (Vitest), Playwright e2e, visual/parity/stability
+smokes against the packaged app, dependency audit, and tracked performance
+budgets — all wired into `npm run check`.
 
 ## Development
 
-Requirements:
-
-- Node.js 22+
-- npm
-- macOS for DMG packaging
-- Windows or GitHub Actions for Windows packaging
-
-Install dependencies:
-
 ```sh
-npm ci
+npm ci                 # install dependencies (Node.js 22+)
+npm run electron:dev   # full Electron app with hot-reloading renderer
+npm test               # unit tests
+npm run e2e            # browser e2e (run `npm run e2e:install` once first)
+npm run check          # the full local gate
 ```
 
-Run the Electron dev app:
-
-```sh
-npm run electron:dev
-```
-
-Run the full local gate:
-
-```sh
-npm run check
-```
-
-Run browser E2E tests:
-
-```sh
-npm run e2e
-```
-
-Build desktop artifacts:
-
-```sh
-npm run release:package:macos
-npm run release:verify:macos
-```
-
-Generate a signed beta update manifest after packaging:
-
-```sh
-OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
-npm run release:update-manifest
-```
-
-Windows packaging script, intended for Windows runners:
-
-```sh
-npm run release:package:windows
-npm run release:package:windows:installer
-```
-
-## Architecture
-
-```text
-React + TypeScript + Vite
-        |
-        v
-Electron preload bridge
-        |
-        v
-Electron main process
-        |
-        v
-SQLite + local filesystem app data
-```
-
-Key implementation areas:
-
-- `src/` - React workspace, editor, Studio, state, tests
-- `electron/` - Electron main/preload/backend and packaged-app smokes
-- `scripts/` - macOS DMG, Windows packages, release verification
-- `tests/e2e/` - production-preview browser flows
-- `docs/` - release, testing, migration, and data-location notes
-
-## Release Status
-
-Current public-readiness level:
-
-- macOS public release: supported as ad-hoc signed DMG
-- Windows public release: supported as unsigned portable zip and unsigned NSIS installer
-- Beta update manifests: Ed25519 signed, with SHA-256 verified artifacts
-- Public notarized macOS release: not yet supported
-- Authenticode-signed Windows installer: not yet supported
-- Hosted sync/account service: intentionally not present
-
-Before a broad public release, profile startup time, memory, long editing
-sessions, large PDFs, import/delete disk growth, and OS trust/signing flows.
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and
+[SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
-- signed and notarized macOS distribution
-- signed Windows installer
-- import/export improvements
-- richer Studio workflows for research projects
-- optional backup/export tooling
-- performance profiling for large workspaces and large PDFs
+- [x] Notion-style editor with slash commands, formulas, and drag/drop
+- [x] Studio mode: PDF + linked note, viewer state persistence, projects
+- [x] Page export/import with hardened, main-process-only file access
+- [x] Automatic database backups before schema migrations
+- [x] Signed beta update manifests (Ed25519) with SHA-256 verified artifacts
+- [ ] Notarized macOS distribution
+- [ ] Authenticode-signed Windows installer
+- [ ] Richer Studio workflows for research projects
+- [ ] Import/export and backup tooling improvements
 
 ## License
 
-OpenNotion source code is released under the MIT License. See
-[LICENSE](LICENSE).
-
-Third-party dependency license notes are tracked in
+MIT — see [LICENSE](LICENSE). Third-party dependency notes live in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The OpenNotion name, app icon, screenshots, and repository assets are included
-for use with this project. Do not use them to imply endorsement of unrelated
-software.
+The OpenNotion name, app icon, screenshots, and repository assets are
+included for use with this project. Do not use them to imply endorsement of
+unrelated software.
+
+---
+
+<div align="center">
+
+**If OpenNotion looks useful, [⭐ star the repo](https://github.com/marcoodignoti/OpenNotion) — it genuinely helps.**
+
+Built by [Marco Dignoti](https://github.com/marcoodignoti)
+
+</div>
