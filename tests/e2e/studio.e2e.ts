@@ -331,7 +331,7 @@ test("uses normal note editor scale inside Studio notes", async ({ page }) => {
   await expect(title).toHaveValue("civil-law Notes");
   await expect(editorShell).toBeVisible();
   await expect.poll(async () => title.evaluate((element) => getComputedStyle(element).fontSize)).toBe("36px");
-  await expect.poll(async () => editorShell.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("80px");
+  await expect.poll(async () => editorShell.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("32px");
 });
 
 test("opens Studio notes in a dedicated Notes sidebar section", async ({ page }) => {
