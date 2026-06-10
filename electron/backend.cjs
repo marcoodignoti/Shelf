@@ -615,6 +615,9 @@ class OpenNotionBackend {
       open_external_url: (args) => this.openExternalUrl(args),
       fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
       download_update_artifact: (args) => this.downloadUpdateArtifact(args),
+      write_file_content: (args) => this.writeFileContent(args),
+      create_directory: (args) => this.createDirectory(args),
+      read_file_content: (args) => this.readFileContent(args),
       show_character_palette: () => null,
     };
   }
@@ -627,6 +630,20 @@ class OpenNotionBackend {
 
   close() {
     this.db.close();
+  }
+
+  writeFileContent({ path: filePath, content }) {
+    fs.writeFileSync(filePath, content, "utf8");
+    return true;
+  }
+
+  createDirectory({ path: dirPath }) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    return true;
+  }
+
+  readFileContent({ path: filePath }) {
+    return fs.readFileSync(filePath, "utf8");
   }
 
   withTransaction(work) {

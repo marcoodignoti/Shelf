@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreHorizontal, ExternalLink, FileText, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload, Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openStudioDocumentFile, revealStudioDocumentFile, StudioDocument, StudioProject } from "../lib/studio";
@@ -6,6 +6,7 @@ import { clampContextMenuPosition } from "../lib/contextMenu";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, studioDocumentMetadata } from "../lib/studioDocuments";
 import type { StudioProjectGroup } from "../lib/studioDocuments";
+import { useAppStore } from "../store/useAppStore";
 
 type StudioSidebarProps = {
   documents: StudioDocument[];
@@ -465,6 +466,18 @@ function StudioProjectHeader({
     }
   };
 
+  const handleExportNotesMarkdown = async () => {
+    setMenuPosition(null);
+    const { exportProjectNotesMarkdown } = useAppStore.getState();
+    await exportProjectNotesMarkdown(project);
+  };
+
+  const handleExportNotesJSON = async () => {
+    setMenuPosition(null);
+    const { exportProjectNotesJSON } = useAppStore.getState();
+    await exportProjectNotesJSON(project);
+  };
+
   useEffect(() => {
     if (!isRenaming) setDraftName(project.name);
   }, [isRenaming, project.name]);
@@ -584,6 +597,16 @@ function StudioProjectHeader({
               <Plus className="h-3.5 w-3.5 text-muted-foreground" />
               New subfolder
             </button>
+            <div className="on-menu-separator" />
+            <button type="button" role="menuitem" className="on-menu-item" onClick={handleExportNotesMarkdown}>
+              <Download className="h-3.5 w-3.5 text-muted-foreground" />
+              Export notes (Markdown)
+            </button>
+            <button type="button" role="menuitem" className="on-menu-item" onClick={handleExportNotesJSON}>
+              <Download className="h-3.5 w-3.5 text-muted-foreground" />
+              Export notes (JSON)
+            </button>
+            <div className="on-menu-separator" />
             <button type="button" role="menuitem" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete project

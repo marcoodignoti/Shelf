@@ -18,14 +18,16 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, Video, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, Video, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
+import { createPortal } from "react-dom";
+import { clampContextMenuPosition } from "../lib/contextMenu";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
-import { invoke, openDialog } from "../lib/desktop";
+import { invoke, openDialog, saveDialog } from "../lib/desktop";
 import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
@@ -933,6 +935,16 @@ export function Editor({
   const [subpageDropTarget, setSubpageDropTarget] = useState<SubpageDropTarget | null>(null);
   const [isMediaDropActive, setIsMediaDropActive] = useState(false);
   const [saveState, dispatchSaveState] = useReducer(editorSaveReducer, { status: "saved" });
+  const [subpageActionsMenu, setSubpageActionsMenu] = useState<{
+    page: Page;
+    anchorElement: HTMLElement;
+  } | null>(null);
+  const [subpageContextMenu, setSubpageContextMenu] = useState<{
+    page: Page;
+    left: number;
+    top: number;
+  } | null>(null);
+  const subpageContextMenuRef = useRef<HTMLDivElement>(null);
   const subpageDragSessionRef = useRef<SubpageDragSession | null>(null);
   const subpageDropTargetRef = useRef<SubpageDropTarget | null>(null);
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
@@ -945,9 +957,10 @@ export function Editor({
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
   const setWorkspaceMode = useAppStore((state) => state.setWorkspaceMode);
-  const showError = useAppStore((state) => state.setError);
+  const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const appTheme = useAppStore((state) => state.theme);
+  const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id]);
   const breadcrumbs = useMemo(() => pageBreadcrumb(pages, page.id), [page.id, pages]);
@@ -1581,6 +1594,94 @@ export function Editor({
     }
   };
 
+  const handleSubpageContextMenu = (event: React.MouseEvent, childPage: Page) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const position = clampContextMenuPosition(
+      event.clientX,
+      event.clientY,
+      window.innerWidth,
+      window.innerHeight,
+      180,
+      150
+    );
+    setSubpageContextMenu({
+      page: childPage,
+      left: position.left,
+      top: position.top,
+    });
+  };
+
+  const handleSubpageDelete = async (childPage: Page) => {
+    setSubpageActionsMenu(null);
+    setSubpageContextMenu(null);
+    try {
+      await removePage(childPage.id);
+      showSuccess(`Page "${childPage.title || "Untitled"}" deleted.`);
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const handleSubpageDuplicate = async (childPage: Page) => {
+    setSubpageActionsMenu(null);
+    setSubpageContextMenu(null);
+    try {
+      const duplicated = await duplicatePageAction(childPage.id, { select: false });
+      if (duplicated) {
+        showSuccess(`Page "${childPage.title || "Untitled"}" duplicated.`);
+      }
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const handleSubpageToggleFavorite = async (childPage: Page) => {
+    setSubpageActionsMenu(null);
+    setSubpageContextMenu(null);
+    try {
+      await toggleFavoriteAction(childPage.id, childPage.is_favorite !== 1);
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const handleSubpageToggleTemplate = async (childPage: Page) => {
+    setSubpageActionsMenu(null);
+    setSubpageContextMenu(null);
+    try {
+      await toggleTemplateAction(childPage.id, childPage.is_template !== 1);
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  useEffect(() => {
+    if (!subpageContextMenu) return;
+    const closeMenu = () => setSubpageContextMenu(null);
+    const handleScroll = () => setSubpageContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSubpageContextMenu(null);
+    };
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target;
+      if (target instanceof Node && subpageContextMenuRef.current?.contains(target)) return;
+      setSubpageContextMenu(null);
+    };
+
+    window.addEventListener("click", handleOutsideClick);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+
+    return () => {
+      window.removeEventListener("click", handleOutsideClick);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+    };
+  }, [subpageContextMenu]);
+
   const clearSubpageDragState = useCallback(() => {
     setDraggedSubpageId(null);
     setSubpageDropTarget(null);
@@ -1681,6 +1782,118 @@ export function Editor({
     });
   };
 
+  const handleExportMarkdown = async () => {
+    setPageMenuOpen(false);
+    try {
+      const allSubpages = childPagesForParent(pages, page.id);
+      const isFolderExport = allSubpages.length > 0;
+      
+      const destPath = await saveDialog({
+        defaultPath: `${page.title || "Untitled"}.${isFolderExport ? "md" : "md"}`,
+        filters: [{ name: isFolderExport ? "Markdown Folder Structure" : "Markdown Document", extensions: ["md"] }],
+      });
+      if (!destPath) return;
+
+      if (isFolderExport) {
+        const dirPath = destPath.endsWith(".md") ? destPath.slice(0, -3) : destPath;
+        const lastSlash = dirPath.lastIndexOf("/");
+        const parentDir = dirPath.slice(0, lastSlash);
+        
+        const exportMarkdownTree = async (rootPath: string, currentPage: Page) => {
+          const { BlockNoteEditor } = await import("@blocknote/core");
+          const tempEditor = BlockNoteEditor.create({
+            schema: openNotionEditorSchema,
+          });
+          const parsedBlocks = parsePageBlocks(currentPage.content);
+          const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
+          const fullMarkdown = `# ${currentPage.title || "Untitled"}\n\n${markdownContent}`;
+
+          const sanitizeFilename = (title: string) => title.replace(/[/\\?%*:|"<>. ]/g, "_") || "Untitled";
+          const baseName = sanitizeFilename(currentPage.title || "Untitled");
+          const children = pages.filter((p) => p.parent_id === currentPage.id);
+
+          if (children.length > 0) {
+            const currentDir = `${rootPath}/${baseName}`;
+            await invoke("create_directory", { path: currentDir });
+            await invoke("write_file_content", {
+              path: `${currentDir}/${baseName}.md`,
+              content: fullMarkdown,
+            });
+            for (const child of children) {
+              await exportMarkdownTree(currentDir, child);
+            }
+          } else {
+            await invoke("write_file_content", {
+              path: `${rootPath}/${baseName}.md`,
+              content: fullMarkdown,
+            });
+          }
+        };
+
+        await exportMarkdownTree(parentDir, page);
+        showSuccess(`Page tree exported as Markdown to folder: ${dirPath}`);
+      } else {
+        const { BlockNoteEditor } = await import("@blocknote/core");
+        const tempEditor = BlockNoteEditor.create({
+          schema: openNotionEditorSchema,
+        });
+        const parsedBlocks = parsePageBlocks(page.content);
+        const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
+        const fullMarkdown = `# ${page.title || "Untitled"}\n\n${markdownContent}`;
+
+        await invoke("write_file_content", { path: destPath, content: fullMarkdown });
+        showSuccess(`Page exported as Markdown to file: ${destPath}`);
+      }
+    } catch (error: unknown) {
+      showError(error);
+    }
+  };
+
+  const handleExportJSON = async () => {
+    setPageMenuOpen(false);
+    try {
+      const destPath = await saveDialog({
+        defaultPath: `${page.title || "Untitled"}.json`,
+        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+      });
+      if (!destPath) return;
+
+      const getDescendantIds = (rootId: string): Set<string> => {
+        const ids = new Set([rootId]);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const p of pages) {
+            if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
+              ids.add(p.id);
+              changed = true;
+            }
+          }
+        }
+        return ids;
+      };
+
+      const deletedIds = getDescendantIds(page.id);
+      const pagesToExport = pages.filter((p) => deletedIds.has(p.id));
+
+      const exportData = {
+        version: 1,
+        type: "page_tree",
+        exported_at: new Date().toISOString(),
+        root_page_id: page.id,
+        pages: pagesToExport,
+      };
+
+      await invoke("write_file_content", {
+        path: destPath,
+        content: JSON.stringify(exportData, null, 2),
+      });
+      showSuccess(`Page tree exported as JSON to: ${destPath}`);
+    } catch (error: unknown) {
+      showError(error);
+    }
+  };
+
   const handleDuplicatePage = async () => {
     setPageMenuOpen(false);
     const duplicated = await duplicatePageAction(page.id);
@@ -1740,117 +1953,38 @@ export function Editor({
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
       {!isStudioVariant && (
-        <PageHeadingRail
-          items={headingItems}
-          activeId={activeHeadingId}
-          onSelect={scrollToHeading}
-        />
-      )}
-      <div
-        ref={scrollContainerRef}
-        className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
-      >
-        <div className="max-w-3xl px-8 pt-20 mx-auto flex min-h-full w-full flex-col pb-16">
-          {!isStudioVariant && (
-            <nav className="on-page-breadcrumb-sticky mb-6" aria-label="Page breadcrumb">
-              {breadcrumbs.map((breadcrumb, index) => {
-                const isCurrent = breadcrumb.id === page.id;
-                return (
-                  <div key={breadcrumb.id} className="on-page-breadcrumb-item">
-                    {index > 0 && <span className="on-page-breadcrumb-separator">/</span>}
-                    <button
-                      type="button"
-                      className={`on-page-breadcrumb-button ${isCurrent ? "on-page-breadcrumb-button-current" : ""}`}
-                      disabled={isCurrent}
-                      aria-current={isCurrent ? "page" : undefined}
-                      onClick={() => onSelectPage(breadcrumb.id)}
-                    >
-                      {breadcrumb.icon ? `${breadcrumb.icon} ` : ""}
-                      {breadcrumb.title || "Untitled"}
-                    </button>
-                  </div>
-                );
-              })}
-            </nav>
-          )}
-
-        {!isStudioVariant && (
-        <div className="group/page-actions mb-3 flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-          <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
-            {!icon && (
-              <button
-                ref={iconMenuButtonRef}
-                type="button"
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
-                onClick={() => setIsIconMenuOpen((open) => !open)}
-              >
-                <Smile className="h-3.5 w-3.5" />
-                Add icon
-              </button>
-            )}
-            {!coverUrl && !isCoverInputOpen && (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
-                onClick={() => void handlePickCoverImage()}
-              >
-                <Image className="h-3.5 w-3.5" />
-                Add cover
-              </button>
-            )}
-            {coverUrl && (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
-                onClick={() => void handlePickCoverImage()}
-              >
-                <Image className="h-3.5 w-3.5" />
-                Change cover
-              </button>
-            )}
-            <button
-              type="button"
-              className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
-              onClick={() => setIsCoverInputOpen((open) => !open)}
-            >
-              Cover URL
-            </button>
-            {isCoverInputOpen && (
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
-                <Image className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
-                <input
-                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-                  value={coverUrl}
-                  placeholder="Paste cover image URL"
-                  aria-label="Cover image URL"
-                  onChange={(event) => handleCoverUrlChange(event.target.value)}
-                  autoFocus
-                />
-                {coverUrl && (
+        <div className={`h-11 border-b border-border/40 flex items-center justify-between pr-6 shrink-0 bg-background/95 backdrop-blur z-40 select-none ${isSidebarOpen ? "pl-6" : "pl-36"}`}>
+          {/* Breadcrumbs on the left */}
+          <nav className="flex items-center gap-1 min-w-0" aria-label="Page breadcrumb">
+            {breadcrumbs.map((breadcrumb, index) => {
+              const isCurrent = breadcrumb.id === page.id;
+              return (
+                <div key={breadcrumb.id} className="flex items-center min-w-0">
+                  {index > 0 && <span className="mx-1 text-muted-foreground/45 text-[11px]">/</span>}
                   <button
                     type="button"
-                    className="rounded p-0.5 hover:bg-muted"
-                    aria-label="Remove cover"
-                    onClick={handleRemoveCover}
+                    title={breadcrumb.title || "Untitled"}
+                    className={`px-1.5 py-1 rounded-md text-[13px] font-medium transition-colors hover:bg-muted text-muted-foreground truncate ${
+                      isCurrent
+                        ? "text-foreground font-semibold cursor-default pointer-events-none max-w-[240px] md:max-w-[320px]"
+                        : "max-w-[140px] md:max-w-[180px]"
+                    }`}
+                    disabled={isCurrent}
+                    aria-current={isCurrent ? "page" : undefined}
+                    onClick={() => onSelectPage(breadcrumb.id)}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    {breadcrumb.icon ? `${breadcrumb.icon} ` : ""}
+                    {breadcrumb.title || "Untitled"}
                   </button>
-                )}
-              </div>
-            )}
-            {isCoverInputOpen && (
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
-                onClick={() => void handlePickCoverImage()}
-              >
-                Choose file
-              </button>
-            )}
-          </div>
-          <div className="relative flex flex-shrink-0 items-center gap-2">
+                </div>
+              );
+            })}
+          </nav>
+
+          {/* Saved Status and Actions on the right */}
+          <div className="flex items-center gap-3 shrink-0">
             <div
-              className={`${saveState.status === "error" ? "text-destructive" : ""}`}
+              className={`text-xs text-muted-foreground/60 transition-colors ${saveState.status === "error" ? "text-destructive" : ""}`}
               title={saveState.status === "error" ? saveState.message : "Save status"}
             >
               {saveStatusLabel(saveState)}
@@ -1887,6 +2021,23 @@ export function Editor({
               >
                 <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
                 Move to...
+              </button>
+              <div className="on-menu-separator" />
+              <button
+                type="button"
+                className="on-menu-item"
+                onClick={() => void handleExportMarkdown()}
+              >
+                <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                Export as Markdown
+              </button>
+              <button
+                type="button"
+                className="on-menu-item"
+                onClick={() => void handleExportJSON()}
+              >
+                <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                Export as JSON
               </button>
               <div className="on-menu-separator" />
               <button
@@ -1972,7 +2123,95 @@ export function Editor({
             </FloatingPopover>
           </div>
         </div>
-        )}
+      )}
+      {!isStudioVariant && (
+        <PageHeadingRail
+          items={headingItems}
+          activeId={activeHeadingId}
+          onSelect={scrollToHeading}
+        />
+      )}
+      <div
+        ref={scrollContainerRef}
+        className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
+      >
+        <div className="max-w-3xl px-8 pt-8 mx-auto flex min-h-full w-full flex-col pb-16">
+          {!isStudioVariant && (
+            <div className="group/page-actions mb-3 flex min-h-7 items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
+                {!icon && (
+                  <button
+                    ref={iconMenuButtonRef}
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
+                    onClick={() => setIsIconMenuOpen((open) => !open)}
+                  >
+                    <Smile className="h-3.5 w-3.5" />
+                    Add icon
+                  </button>
+                )}
+                {!coverUrl && !isCoverInputOpen && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
+                    onClick={() => void handlePickCoverImage()}
+                  >
+                    <Image className="h-3.5 w-3.5" />
+                    Add cover
+                  </button>
+                )}
+                {coverUrl && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
+                    onClick={() => void handlePickCoverImage()}
+                  >
+                    <Image className="h-3.5 w-3.5" />
+                    Change cover
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
+                  onClick={() => setIsCoverInputOpen((open) => !open)}
+                >
+                  Cover URL
+                </button>
+                {isCoverInputOpen && (
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
+                    <Image className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+                    <input
+                      className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+                      value={coverUrl}
+                      placeholder="Paste cover image URL"
+                      aria-label="Cover image URL"
+                      onChange={(event) => handleCoverUrlChange(event.target.value)}
+                      autoFocus
+                    />
+                    {coverUrl && (
+                      <button
+                        type="button"
+                        className="rounded p-0.5 hover:bg-muted"
+                        aria-label="Remove cover"
+                        onClick={handleRemoveCover}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {isCoverInputOpen && (
+                  <button
+                    type="button"
+                    className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
+                    onClick={() => void handlePickCoverImage()}
+                  >
+                    Choose file
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         {!isStudioVariant && coverUrl && (
           <div className="group relative mb-8 h-44 w-full overflow-hidden rounded-md bg-muted">
             <div
@@ -2149,11 +2388,14 @@ export function Editor({
                   : "border-b-primary"
                 : "border-y-transparent";
 
+              const isActionsMenuOpen = subpageActionsMenu?.page.id === childPage.id;
+
               return (
                 <div
                   key={childPage.id}
                   data-subpage-row-id={childPage.id}
                   className={`group flex w-full items-center rounded-md border-y-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${dropClass} ${draggedSubpageId === childPage.id ? "opacity-45" : ""}`}
+                  onContextMenu={(event) => handleSubpageContextMenu(event, childPage)}
                 >
                   <button
                     type="button"
@@ -2176,9 +2418,126 @@ export function Editor({
                     )}
                     <span className="truncate">{childTitle}</span>
                   </button>
+                  <button
+                    type="button"
+                    className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 ${
+                      isActionsMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setSubpageActionsMenu({
+                        page: childPage,
+                        anchorElement: e.currentTarget,
+                      });
+                    }}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
                 </div>
               );
             })}
+            {subpageActionsMenu && (
+              <FloatingPopover
+                anchorElement={subpageActionsMenu.anchorElement}
+                open={true}
+                width={180}
+                placement="bottom-end"
+                onOpenChange={(open) => {
+                  if (!open) setSubpageActionsMenu(null);
+                }}
+                className="on-popover on-page-action-popover p-1"
+              >
+                <button
+                  type="button"
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageDuplicate(subpageActionsMenu.page)}
+                >
+                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  Duplicate
+                </button>
+                <div className="on-menu-separator" />
+                <button
+                  type="button"
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageToggleFavorite(subpageActionsMenu.page)}
+                >
+                  <Star
+                    className={`h-3.5 w-3.5 text-muted-foreground ${
+                      subpageActionsMenu.page.is_favorite === 1 ? "fill-current" : ""
+                    }`}
+                  />
+                  {subpageActionsMenu.page.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+                </button>
+                <button
+                  type="button"
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageToggleTemplate(subpageActionsMenu.page)}
+                >
+                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  {subpageActionsMenu.page.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+                </button>
+                <div className="on-menu-separator" />
+                <button
+                  type="button"
+                  className="on-menu-item on-menu-item-danger"
+                  onClick={() => void handleSubpageDelete(subpageActionsMenu.page)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </FloatingPopover>
+            )}
+            {subpageContextMenu && createPortal(
+              <div
+                ref={subpageContextMenuRef}
+                className="fixed z-[180] w-48 on-popover on-page-action-popover p-1"
+                style={{
+                  left: subpageContextMenu.left,
+                  top: subpageContextMenu.top,
+                  maxHeight: Math.max(96, window.innerHeight - subpageContextMenu.top - 12),
+                  overflowY: "auto",
+                  overscrollBehavior: "contain",
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageDuplicate(subpageContextMenu.page)}
+                >
+                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  Duplicate
+                </button>
+                <div className="on-menu-separator" />
+                <button
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageToggleFavorite(subpageContextMenu.page)}
+                >
+                  <Star
+                    className={`h-3.5 w-3.5 text-muted-foreground ${
+                      subpageContextMenu.page.is_favorite === 1 ? "fill-current" : ""
+                    }`}
+                  />
+                  {subpageContextMenu.page.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+                </button>
+                <button
+                  className="on-menu-item"
+                  onClick={() => void handleSubpageToggleTemplate(subpageContextMenu.page)}
+                >
+                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  {subpageContextMenu.page.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+                </button>
+                <div className="on-menu-separator" />
+                <button
+                  className="on-menu-item on-menu-item-danger"
+                  onClick={() => void handleSubpageDelete(subpageContextMenu.page)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </div>,
+              document.body
+            )}
           </div>
         ) : null}
         <div

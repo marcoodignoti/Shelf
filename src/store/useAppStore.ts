@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
-import { openDialog } from '../lib/desktop';
+import { openDialog, saveDialog, invoke } from '../lib/desktop';
+import { prepareImportedPages } from '../lib/backup';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
-import { HOME_PAGE_ID, resolveCurrentPageId } from '../lib/navigation';
+import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
+import { openNotionEditorSchema } from '../lib/editorMath';
 import {
   createStudioProject,
   deleteStudioDocument,
@@ -55,6 +57,9 @@ interface AppState {
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
+  importPageAction: (path: string) => Promise<Page | null>;
+  exportProjectNotesMarkdown: (project: StudioProject) => Promise<void>;
+  exportProjectNotesJSON: (project: StudioProject) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
   renamePageAction: (id: string, title: string) => Promise<void>;
@@ -474,6 +479,182 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchStudioDocuments();
     }
   },
+  importPageAction: async (filePath) => {
+    try {
+      const raw = await invoke<string>("read_file_content", { path: filePath });
+      if (filePath.endsWith(".json")) {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          throw new Error("Invalid JSON file");
+        }
+
+        if (parsed.type === "page_tree") {
+          const pages = prepareImportedPages(parsed.pages);
+          const rootPage = pages.find((p) => p.id === parsed.root_page_id || !p.parent_id);
+          if (rootPage) {
+            rootPage.parent_id = null;
+          }
+          await invoke("import_pages", { pages });
+          await get().fetchPages();
+          get().showSuccess("Page tree imported successfully.");
+          return rootPage || null;
+        } else if (parsed.version === 1 && Array.isArray(parsed.pages)) {
+          await invoke("import_backup", { path: filePath });
+          await get().fetchPages();
+          get().showSuccess("Workspace backup imported successfully.");
+          return null;
+        } else {
+          throw new Error("Unsupported JSON export format");
+        }
+      } else if (filePath.endsWith(".md")) {
+        const fileName = filePath.split(/[/\\]/).pop() || "Untitled";
+        const title = fileName.endsWith(".md") ? fileName.slice(0, -3) : fileName;
+        
+        const { BlockNoteEditor } = await import("@blocknote/core");
+        const tempEditor = BlockNoteEditor.create({
+          schema: openNotionEditorSchema,
+        });
+        const blocks = tempEditor.tryParseMarkdownToBlocks(raw);
+        
+        const newPage = await get().addPage(title, null, { select: false });
+        if (newPage) {
+          await updatePage(newPage.id, { content: JSON.stringify(blocks) });
+          await get().fetchPages();
+          get().showSuccess(`Page "${title}" imported from Markdown.`);
+          const updatedPage = get().pages.find((p) => p.id === newPage.id);
+          return updatedPage || newPage;
+        }
+      }
+      return null;
+    } catch (error: unknown) {
+      logStoreError(error);
+      get().showError(error);
+      return null;
+    }
+  },
+  exportProjectNotesMarkdown: async (project) => {
+    try {
+      const docs = get().studioDocuments.filter((d) => d.project_id === project.id);
+      if (docs.length === 0) {
+        get().showSuccess("Project has no documents to export.");
+        return;
+      }
+
+      const destPath = await saveDialog({
+        defaultPath: `${project.name} Notes.md`,
+        filters: [{ name: "Markdown Folder Structure", extensions: ["md"] }],
+      });
+      if (!destPath) return;
+
+      const dirPath = destPath.endsWith(".md") ? destPath.slice(0, -3) : destPath;
+      const lastSlash = dirPath.lastIndexOf("/");
+      const parentDir = dirPath.slice(0, lastSlash);
+
+      const { BlockNoteEditor } = await import("@blocknote/core");
+      const { parsePageBlocks } = await import("../lib/pageContent");
+
+      const pages = get().pages;
+      
+      const exportMarkdownTree = async (rootPath: string, currentPage: Page) => {
+        const tempEditor = BlockNoteEditor.create({
+          schema: openNotionEditorSchema,
+        });
+        const parsedBlocks = parsePageBlocks(currentPage.content);
+        const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
+        const fullMarkdown = `# ${currentPage.title || "Untitled"}\n\n${markdownContent}`;
+
+        const sanitizeFilename = (title: string) => title.replace(/[/\\?%*:|"<>. ]/g, "_") || "Untitled";
+        const baseName = sanitizeFilename(currentPage.title || "Untitled");
+        const children = pages.filter((p) => p.parent_id === currentPage.id);
+
+        if (children.length > 0) {
+          const currentDir = `${rootPath}/${baseName}`;
+          await invoke("create_directory", { path: currentDir });
+          await invoke("write_file_content", {
+            path: `${currentDir}/${baseName}.md`,
+            content: fullMarkdown,
+          });
+          for (const child of children) {
+            await exportMarkdownTree(currentDir, child);
+          }
+        } else {
+          await invoke("write_file_content", {
+            path: `${rootPath}/${baseName}.md`,
+            content: fullMarkdown,
+          });
+        }
+      };
+
+      const projectDir = `${parentDir}/${project.name}`;
+      await invoke("create_directory", { path: projectDir });
+
+      for (const doc of docs) {
+        const notePage = pages.find((p) => p.id === doc.note_page_id);
+        if (notePage) {
+          await exportMarkdownTree(projectDir, notePage);
+        }
+      }
+
+      get().showSuccess(`Project notes exported to folder: ${projectDir}`);
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  exportProjectNotesJSON: async (project) => {
+    try {
+      const docs = get().studioDocuments.filter((d) => d.project_id === project.id);
+      if (docs.length === 0) {
+        get().showSuccess("Project has no documents to export.");
+        return;
+      }
+
+      const destPath = await saveDialog({
+        defaultPath: `${project.name} Notes.json`,
+        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+      });
+      if (!destPath) return;
+
+      const pages = get().pages;
+      const notePageIds = docs.map((d) => d.note_page_id);
+
+      const getDescendantIds = (rootIds: string[]): Set<string> => {
+        const ids = new Set(rootIds);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const p of pages) {
+            if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
+              ids.add(p.id);
+              changed = true;
+            }
+          }
+        }
+        return ids;
+      };
+
+      const exportedIds = getDescendantIds(notePageIds);
+      const pagesToExport = pages.filter((p) => exportedIds.has(p.id));
+
+      const exportData = {
+        version: 1,
+        type: "page_tree",
+        exported_at: new Date().toISOString(),
+        root_page_id: notePageIds[0],
+        pages: pagesToExport,
+      };
+
+      await invoke("write_file_content", {
+        path: destPath,
+        content: JSON.stringify(exportData, null, 2),
+      });
+
+      get().showSuccess(`Project notes exported as JSON to: ${destPath}`);
+    } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
   addPage: async (title = 'Untitled', parentId = null, options = {}) => {
     try {
       const newPage = await createPage(title, parentId);
@@ -518,7 +699,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       pages: optimisticPages,
       studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => !deletedIds.has(link.page_id)),
-      currentPageId: resolveCurrentPageId(optimisticPages, state.currentPageId)
+      currentPageId: resolveCurrentPageIdAfterDeletion(optimisticPages, state.currentPageId, id, deletedIds, previousPages)
     }));
 
     try {
@@ -530,7 +711,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         pages,
         studioDocumentPageLinks,
-        currentPageId: resolveCurrentPageId(pages, state.currentPageId)
+        currentPageId: resolveCurrentPageIdAfterDeletion(pages, state.currentPageId, id, deletedIds, previousPages)
       }));
       const current = get().currentPageId;
       localStorage.setItem('opennotion-current-page-id', current || HOME_PAGE_ID);

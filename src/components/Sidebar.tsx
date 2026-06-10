@@ -1,8 +1,9 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { openDialog } from '../lib/desktop';
 import { useAppStore } from '../store/useAppStore';
-import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy, Folder, FolderOpen } from 'lucide-react';
+import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy, Folder, FolderOpen, Upload } from 'lucide-react';
 import { Page } from '../lib/db';
 import type { StudioDocument, StudioDocumentPageLink } from '../lib/studio';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
@@ -881,6 +882,22 @@ export function Sidebar() {
     setNewPageMenuPosition(null);
   };
 
+  const handleImportPage = async () => {
+    try {
+      const path = await openDialog({
+        multiple: false,
+        filters: [{ name: "Page Export (.json, .md)", extensions: ["json", "md"] }],
+      });
+      if (!path || Array.isArray(path)) return;
+      const importedPage = await useAppStore.getState().importPageAction(path);
+      if (importedPage) {
+        setCurrentPageId(importedPage.id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const toggleNewPageMenu = () => {
     if (newPageMenuPosition) {
       setNewPageMenuPosition(null);
@@ -1272,6 +1289,17 @@ export function Sidebar() {
                 <span className="truncate">{template.title || 'Untitled'}</span>
               </button>
             ))}
+            <div className="my-1 h-px bg-border" />
+            <button
+              className="on-menu-item"
+              onClick={() => {
+                toggleNewPageMenu();
+                void handleImportPage();
+              }}
+            >
+              <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+              Import page...
+            </button>
           </div>,
           document.body
         )}
