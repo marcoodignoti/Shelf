@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
-import { openDialog, saveDialog, invoke } from '../lib/desktop';
+import { openDialog, invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/desktop';
 import { prepareImportedPages } from '../lib/backup';
+import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
+import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { openNotionEditorSchema } from '../lib/editorMath';
@@ -57,7 +59,7 @@ interface AppState {
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
-  importPageAction: (path: string) => Promise<Page | null>;
+  importPageAction: () => Promise<Page | null>;
   exportProjectNotesMarkdown: (project: StudioProject) => Promise<void>;
   exportProjectNotesJSON: (project: StudioProject) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
@@ -479,9 +481,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchStudioDocuments();
     }
   },
-  importPageAction: async (filePath) => {
+  importPageAction: async () => {
     try {
-      const raw = await invoke<string>("read_file_content", { path: filePath });
+      const imported = await importPageFileWithDialog({
+        multiple: false,
+        filters: [{ name: "Page Export (.json, .md)", extensions: ["json", "md"] }],
+      });
+      if (!imported) return null;
+      const { path: filePath, content: raw } = imported;
       if (filePath.endsWith(".json")) {
         let parsed: any;
         try {
@@ -542,62 +549,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const destPath = await saveDialog({
-        defaultPath: `${project.name} Notes.md`,
-        filters: [{ name: "Markdown Folder Structure", extensions: ["md"] }],
-      });
-      if (!destPath) return;
-
-      const dirPath = destPath.endsWith(".md") ? destPath.slice(0, -3) : destPath;
-      const lastSlash = dirPath.lastIndexOf("/");
-      const parentDir = dirPath.slice(0, lastSlash);
-
-      const { BlockNoteEditor } = await import("@blocknote/core");
-      const { parsePageBlocks } = await import("../lib/pageContent");
-
       const pages = get().pages;
-      
-      const exportMarkdownTree = async (rootPath: string, currentPage: Page) => {
-        const tempEditor = BlockNoteEditor.create({
-          schema: openNotionEditorSchema,
-        });
-        const parsedBlocks = parsePageBlocks(currentPage.content);
-        const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
-        const fullMarkdown = `# ${currentPage.title || "Untitled"}\n\n${markdownContent}`;
-
-        const sanitizeFilename = (title: string) => title.replace(/[/\\?%*:|"<>. ]/g, "_") || "Untitled";
-        const baseName = sanitizeFilename(currentPage.title || "Untitled");
-        const children = pages.filter((p) => p.parent_id === currentPage.id);
-
-        if (children.length > 0) {
-          const currentDir = `${rootPath}/${baseName}`;
-          await invoke("create_directory", { path: currentDir });
-          await invoke("write_file_content", {
-            path: `${currentDir}/${baseName}.md`,
-            content: fullMarkdown,
-          });
-          for (const child of children) {
-            await exportMarkdownTree(currentDir, child);
-          }
-        } else {
-          await invoke("write_file_content", {
-            path: `${rootPath}/${baseName}.md`,
-            content: fullMarkdown,
-          });
-        }
-      };
-
-      const projectDir = `${parentDir}/${project.name}`;
-      await invoke("create_directory", { path: projectDir });
-
-      for (const doc of docs) {
-        const notePage = pages.find((p) => p.id === doc.note_page_id);
-        if (notePage) {
-          await exportMarkdownTree(projectDir, notePage);
-        }
+      const rootPages = docs
+        .map((doc) => pages.find((p) => p.id === doc.note_page_id))
+        .filter((page): page is Page => Boolean(page));
+      if (rootPages.length === 0) {
+        get().showSuccess("Project has no notes to export.");
+        return;
       }
 
-      get().showSuccess(`Project notes exported to folder: ${projectDir}`);
+      const renderPageMarkdown = await createPageMarkdownRenderer();
+      const files = await buildMarkdownTreeFiles(pages, rootPages, renderPageMarkdown);
+      const result = await exportFilesWithDialog({
+        defaultPath: `${sanitizeExportFilename(project.name)} Notes.md`,
+        filters: [{ name: "Markdown Folder Structure", extensions: ["md"] }],
+        files,
+      });
+      if (!result) return;
+
+      get().showSuccess(`Project notes exported to: ${result.path}`);
     } catch (error: unknown) {
       get().showError(error);
     }
@@ -610,47 +580,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const destPath = await saveDialog({
-        defaultPath: `${project.name} Notes.json`,
-        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
-      });
-      if (!destPath) return;
-
       const pages = get().pages;
       const notePageIds = docs.map((d) => d.note_page_id);
-
-      const getDescendantIds = (rootIds: string[]): Set<string> => {
-        const ids = new Set(rootIds);
-        let changed = true;
-        while (changed) {
-          changed = false;
-          for (const p of pages) {
-            if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
-              ids.add(p.id);
-              changed = true;
-            }
-          }
-        }
-        return ids;
-      };
-
-      const exportedIds = getDescendantIds(notePageIds);
-      const pagesToExport = pages.filter((p) => exportedIds.has(p.id));
-
-      const exportData = {
-        version: 1,
-        type: "page_tree",
-        exported_at: new Date().toISOString(),
-        root_page_id: notePageIds[0],
-        pages: pagesToExport,
-      };
-
-      await invoke("write_file_content", {
-        path: destPath,
-        content: JSON.stringify(exportData, null, 2),
+      const exportData = buildPageTreeExport(pages, notePageIds, new Date().toISOString());
+      const fileName = `${sanitizeExportFilename(project.name)} Notes.json`;
+      const result = await exportFilesWithDialog({
+        defaultPath: fileName,
+        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+        files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
+      if (!result) return;
 
-      get().showSuccess(`Project notes exported as JSON to: ${destPath}`);
+      get().showSuccess(`Project notes exported as JSON to: ${result.path}`);
     } catch (error: unknown) {
       get().showError(error);
     }

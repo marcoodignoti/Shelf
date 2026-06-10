@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { openDialog } from '../lib/desktop';
 import { useAppStore } from '../store/useAppStore';
 import { Plus, FileText, Trash2, ChevronRight, ChevronDown, Search, PlusCircle, Home, Settings, AlertTriangle, FolderInput, Check, Pencil, Pin, Copy, Folder, FolderOpen, Upload } from 'lucide-react';
 import { Page } from '../lib/db';
@@ -883,18 +882,9 @@ export function Sidebar() {
   };
 
   const handleImportPage = async () => {
-    try {
-      const path = await openDialog({
-        multiple: false,
-        filters: [{ name: "Page Export (.json, .md)", extensions: ["json", "md"] }],
-      });
-      if (!path || Array.isArray(path)) return;
-      const importedPage = await useAppStore.getState().importPageAction(path);
-      if (importedPage) {
-        setCurrentPageId(importedPage.id);
-      }
-    } catch (err) {
-      console.error(err);
+    const importedPage = await useAppStore.getState().importPageAction();
+    if (importedPage) {
+      setCurrentPageId(importedPage.id);
     }
   };
 

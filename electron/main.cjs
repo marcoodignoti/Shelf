@@ -623,6 +623,28 @@ function registerIpc() {
     return result.filePath || null;
   });
 
+  // Export/import run dialog + file IO in one round trip so the renderer
+  // never passes filesystem paths over IPC: the only paths that reach fs are
+  // the ones the user just picked in a native dialog.
+  ipcMain.handle("opennotion:export-files", async (event, options = {}) => {
+    requireTrustedSender(event);
+    if (!isRecord(options) || !Array.isArray(options.files)) {
+      throw new Error("invalid export payload");
+    }
+    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
+    if (result.canceled || !result.filePath) return null;
+    return createBackend().writeExportFiles({ targetPath: result.filePath, files: options.files });
+  });
+
+  ipcMain.handle("opennotion:import-page-file", async (event, options = {}) => {
+    requireTrustedSender(event);
+    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
+    if (result.canceled || !result.filePaths[0]) return null;
+    return createBackend().readImportFile({ path: result.filePaths[0] });
+  });
+
   ipcMain.on("opennotion:auto-update-active", (event) => {
     try {
       requireTrustedSender(event);

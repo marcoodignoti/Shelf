@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld("openNotion", {
   save(options) {
     return ipcRenderer.invoke("opennotion:dialog-save", isRecord(options) ? options : {});
   },
+  exportFiles(options) {
+    return ipcRenderer.invoke("opennotion:export-files", isRecord(options) ? options : {});
+  },
+  importPageFile(options) {
+    return ipcRenderer.invoke("opennotion:import-page-file", isRecord(options) ? options : {});
+  },
   fileSrc(filePath) {
     if (typeof filePath !== "string") throw new Error("file path must be a string");
     return filePathToUrl(filePath);
