@@ -889,8 +889,14 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       }
       state.lastEventAt = now;
 
+      // With classic (non-overlay) scrollbars, scrollbar-gutter: stable makes
+      // scrollWidth overstate the reachable scroll range by the gutter width,
+      // so a plain scrollLeft + clientWidth < scrollWidth - 1 check never
+      // reports the right edge and wheel paging would be unreachable.
+      const scrollbarInset = scrollElement.offsetWidth - scrollElement.clientWidth;
       const canScrollLeft = scrollElement.scrollLeft > 0;
-      const canScrollRight = scrollElement.scrollLeft + scrollElement.clientWidth < scrollElement.scrollWidth - 1;
+      const canScrollRight =
+        scrollElement.scrollLeft + scrollElement.clientWidth < scrollElement.scrollWidth - 1 - scrollbarInset;
       // While the viewer can still scroll in the gesture's direction, the
       // gesture is a plain horizontal scroll — keep it native.
       if ((event.deltaX > 0 && canScrollRight) || (event.deltaX < 0 && canScrollLeft)) {

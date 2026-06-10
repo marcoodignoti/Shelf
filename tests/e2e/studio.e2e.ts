@@ -1130,11 +1130,14 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   await viewer.hover();
   await expect.poll(async () =>
     viewer.evaluate((element) => {
+      // Mirrors the viewer's edge detection: with classic scrollbars and
+      // scrollbar-gutter: stable, scrollWidth overstates the reachable range
+      // by the gutter width (offsetWidth - clientWidth).
       element.scrollLeft = element.scrollWidth;
-      if (element.scrollLeft + element.clientWidth >= element.scrollWidth - 1) return "at-edge";
-      const style = getComputedStyle(element);
+      const scrollbarInset = (element as HTMLElement).offsetWidth - element.clientWidth;
+      if (element.scrollLeft + element.clientWidth >= element.scrollWidth - 1 - scrollbarInset) return "at-edge";
       return `scrollLeft=${element.scrollLeft} clientWidth=${element.clientWidth} scrollWidth=${element.scrollWidth}`
-        + ` overflowX=${style.overflowX} display=${style.display} rect=${JSON.stringify(element.getBoundingClientRect())}`;
+        + ` offsetWidth=${(element as HTMLElement).offsetWidth}`;
     })
   ).toBe("at-edge");
   await page.mouse.wheel(400, 0);
