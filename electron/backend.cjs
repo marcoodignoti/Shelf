@@ -1573,6 +1573,18 @@ class OpenNotionBackend {
       this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, args.workspaceName);
     }
     if (args.avatarPath === null) {
+      const avatarsDir = path.join(this.appConfigDir, "avatars");
+      const existingPath = this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath);
+      if (existingPath) {
+        try {
+          const resolved = path.resolve(existingPath);
+          if (resolved.startsWith(avatarsDir + path.sep) || resolved === avatarsDir) {
+            fs.rmSync(resolved, { force: true });
+          }
+        } catch {
+          // A failed delete must not fail the command.
+        }
+      }
       this.writeMetadataValue(PROFILE_METADATA_KEYS.avatarPath, null);
     }
     return this.getWorkspaceProfile();
@@ -1584,8 +1596,19 @@ class OpenNotionBackend {
     ensurePrivateDirectory(avatarsDir);
     const extension = validatedCoverExtension(source, COVER_IMAGE_MAX_BYTES);
     const destination = path.join(avatarsDir, `profile-${Date.now()}.${extension}`);
+    const previousPath = this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath);
     fs.copyFileSync(source, destination);
     this.writeMetadataValue(PROFILE_METADATA_KEYS.avatarPath, destination);
+    if (previousPath && previousPath !== destination) {
+      try {
+        const resolved = path.resolve(previousPath);
+        if (resolved.startsWith(avatarsDir + path.sep) || resolved === avatarsDir) {
+          fs.rmSync(resolved, { force: true });
+        }
+      } catch {
+        // A failed delete must not fail the command.
+      }
+    }
     return destination;
   }
 

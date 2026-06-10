@@ -86,8 +86,18 @@ async function run() {
   assert.ok(fs.existsSync(avatarPath));
   assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, avatarPath);
 
+  // Importing a second avatar must delete the first one (finding 1: orphan cleanup).
+  // Sleep 2ms so the Date.now() timestamp in the destination filename differs from the first.
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const avatarSource2 = path.join(tempRoot, "avatar-source2.png");
+  fs.writeFileSync(avatarSource2, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+  const avatarPath2 = await backend.invoke("import_profile_avatar", { sourcePath: avatarSource2 });
+  assert.ok(fs.existsSync(avatarPath2), "second avatar must exist on disk");
+  assert.ok(!fs.existsSync(avatarPath), "first avatar must be deleted after replacement");
+
   await backend.invoke("update_workspace_profile", { avatarPath: null });
   assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, null);
+  assert.ok(!fs.existsSync(avatarPath2), "avatar file must be deleted when cleared via update_workspace_profile");
 
   const backupPath = path.join(tempRoot, "backup.json");
   const exported = await backend.invoke("export_backup", { path: backupPath, exportedAt: createdAt });
@@ -95,14 +105,22 @@ async function run() {
     throw new Error("export_backup failed");
   }
 
+  const backupJson = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+  assert.strictEqual(backupJson.profile.workspaceName, "Studio Marco");
+
+  // Reset to defaults so the restore path in import_backup is exercised.
+  await backend.invoke("update_workspace_profile", { name: "", workspaceName: "OpenNotion" });
+  assert.strictEqual((await backend.invoke("get_workspace_profile")).workspaceName, "OpenNotion");
+
   await backend.invoke("delete_page", { id: "page-1" });
   const imported = await backend.invoke("import_backup", { path: backupPath, importedAt: createdAt });
   if (imported !== 1) {
     throw new Error("import_backup failed");
   }
 
-  const backupJson = JSON.parse(fs.readFileSync(backupPath, "utf8"));
-  assert.strictEqual(backupJson.profile.workspaceName, "Studio Marco");
+  // The backup restore path must have applied the saved profile.
+  assert.strictEqual((await backend.invoke("get_workspace_profile")).workspaceName, "Studio Marco",
+    "import_backup must restore workspaceName from backup when profile is at defaults");
 
   const pages = await backend.invoke("list_pages");
   if (pages.length !== 1 || pages[0].title !== "Smoke") {
