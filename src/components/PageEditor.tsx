@@ -1,4 +1,5 @@
 import { Block, BlockNoteEditor, editorHasBlockWithType } from "@blocknote/core";
+import { en as blockNoteLocaleEn, it as blockNoteLocaleIt } from "@blocknote/core/locales";
 import "@blocknote/core/fonts/inter.css";
 import { SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
@@ -32,6 +33,7 @@ import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
 import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
+import { useLocale } from "../lib/i18n";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { editorMediaBlockProps, editorMediaKindForFile, editorMediaUserMessage, fileNameFromPath, type EditorMediaBlock, type EditorMediaKind } from "../lib/editorMedia";
@@ -963,8 +965,16 @@ export function Editor({
   const showSuccess = useAppStore((state) => state.showSuccess);
   const appTheme = useAppStore((state) => state.theme);
   const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
+  const editorFont = useAppStore((state) => state.editorFont);
+  const editorFontSize = useAppStore((state) => state.editorFontSize);
+  const pageWidth = useAppStore((state) => state.pageWidth);
+  const titleEnterBehavior = useAppStore((state) => state.titleEnterBehavior);
+  const locale = useLocale();
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id]);
+  // `locale` is a dependency because a language change recreates the editor:
+  // re-parse the latest store content so the new editor does not reset the
+  // document to the snapshot taken when the page was opened.
+  const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id, locale]);
   const breadcrumbs = useMemo(() => pageBreadcrumb(pages, page.id), [page.id, pages]);
   const databaseParentPage = useMemo(
     () => pages.find((candidate) => candidate.id === page.parent_id && candidate.is_database === 1) ?? null,
@@ -986,6 +996,7 @@ export function Editor({
       BlockNoteEditor.create({
         schema: openNotionEditorSchema,
         initialContent,
+        dictionary: locale === "it" ? blockNoteLocaleIt : blockNoteLocaleEn,
         tabBehavior: "prefer-indent",
         uploadFile: async (file) => {
           try {
@@ -1040,7 +1051,11 @@ export function Editor({
           return true;
         },
       }),
-    [page.id, showError]
+    // `locale` recreates the editor on language change. The flush effect
+    // below is keyed on `editor`, so its cleanup (which serializes the old
+    // editor's pending edits to the store and DB) runs before the new
+    // instance takes over — the same mechanism used for page switches.
+    [page.id, showError, locale]
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
@@ -1322,9 +1337,13 @@ export function Editor({
   const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter") return;
 
-    titleEnterModifierRef.current = event.altKey || event.shiftKey;
+    const insertsNewline =
+      titleEnterBehavior === "newline"
+        ? !event.altKey
+        : event.altKey || event.shiftKey;
+    titleEnterModifierRef.current = insertsNewline;
 
-    if (titleEnterModifierRef.current) {
+    if (insertsNewline) {
       event.preventDefault();
       const element = event.currentTarget;
       const selectionStart = element.selectionStart;
@@ -2092,7 +2111,7 @@ export function Editor({
         ref={scrollContainerRef}
         className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
       >
-        <div className="max-w-3xl px-8 pt-8 mx-auto flex min-h-full w-full flex-col pb-16">
+        <div className={`${pageWidth === "full" ? "max-w-none" : "max-w-3xl"} px-8 pt-8 mx-auto flex min-h-full w-full flex-col pb-16 on-editor-typography on-editor-font-${editorFont} on-editor-size-${editorFontSize}`}>
           {!isStudioVariant && (
             <div className="group/page-actions mb-3 flex min-h-7 items-center gap-3 text-xs text-muted-foreground">
               <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
@@ -2269,7 +2288,7 @@ export function Editor({
         <div className="mb-4 flex items-start gap-4">
           <textarea
             ref={titleInputRef}
-            className="text-4xl min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground"
+            className="on-page-title-input text-4xl min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground"
             value={title}
             placeholder="Untitled"
             rows={1}

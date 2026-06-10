@@ -3155,3 +3155,37 @@
     border-color: ButtonText;
   }
 }
+
+/* Editor typography preferences */
+.on-editor-font-sans {
+  --on-editor-font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.on-editor-font-serif {
+  --on-editor-font: "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif;
+}
+
+.on-editor-font-mono {
+  --on-editor-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.on-editor-size-small {
+  --on-editor-scale: 0.9;
+}
+
+.on-editor-size-default {
+  --on-editor-scale: 1;
+}
+
+.on-editor-size-large {
+  --on-editor-scale: 1.125;
+}
+
+.on-editor-typography .bn-editor {
+  font-family: var(--on-editor-font);
+  font-size: calc(1em * var(--on-editor-scale));
+}
+
+.on-editor-typography .on-page-title-input {
+  font-family: var(--on-editor-font);
+}
