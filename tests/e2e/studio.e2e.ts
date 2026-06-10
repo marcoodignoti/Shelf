@@ -1117,14 +1117,20 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   await page.keyboard.press("Escape");
   await viewer.click();
 
-  // Trackpad-style horizontal wheel swipe pages forward (zoomed out so the
-  // page has no horizontal overflow and the viewer sits at the scroll edge).
+  // Trackpad-style horizontal wheel swipe pages forward. Park the viewer at
+  // its right scroll edge first — mouse.wheel does not wait for native
+  // scrolling to be applied, so reaching the edge via wheel events races the
+  // compositor on slow machines. At the edge, a continued horizontal wheel
+  // turns the page.
   await page.getByTitle("Zoom out").click();
   await page.getByTitle("Zoom out").click();
   await viewer.hover();
-  // First wheel scrolls natively to the right edge; once at the edge the
-  // continued gesture turns the page.
-  await page.mouse.wheel(400, 0);
+  await viewer.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect.poll(async () =>
+    viewer.evaluate((element) => element.scrollLeft + element.clientWidth >= element.scrollWidth - 1)
+  ).toBe(true);
   await page.mouse.wheel(400, 0);
   await expect(pageInput).toHaveValue("3");
 
