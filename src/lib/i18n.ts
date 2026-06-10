@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { en } from "./locales/en";
 import { it } from "./locales/it";
 import type { LocalePreference } from "./preferences";
@@ -33,5 +34,8 @@ export function useLocale(): Locale {
 
 export function useT(): (key: TranslationKey, params?: TranslationParams) => string {
   const locale = useLocale();
-  return (key, params) => translate(locale, key, params);
+  return useCallback(
+    (key: TranslationKey, params?: TranslationParams) => translate(locale, key, params),
+    [locale],
+  );
 }

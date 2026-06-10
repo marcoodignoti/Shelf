@@ -121,7 +121,7 @@ function PageItem({
   const childPages = allPages.filter(p => p.parent_id === page.id);
   const hasChildren = childPages.length > 0;
   const moveTargets = moveTargetPages(allPages, page.id).filter(target =>
-    (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
+    (target.title || t('sidebar.untitled')).toLowerCase().includes(moveQuery.trim().toLowerCase())
   );
 
   const setExpanded = (expanded: boolean) => {
