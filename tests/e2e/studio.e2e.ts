@@ -1117,14 +1117,29 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   await page.keyboard.press("Escape");
   await viewer.click();
 
-  // Trackpad-style horizontal wheel swipe pages forward (zoomed out so the
-  // page has no horizontal overflow and the viewer sits at the scroll edge).
+  // Trackpad-style horizontal wheel swipe pages forward. Park the viewer at
+  // its right scroll edge first — mouse.wheel does not wait for native
+  // scrolling to be applied, so reaching the edge via wheel events races the
+  // compositor on slow machines. At the edge, a continued horizontal wheel
+  // turns the page.
   await page.getByTitle("Zoom out").click();
   await page.getByTitle("Zoom out").click();
+  // Wait out the zoom re-render: the zoom flow re-anchors scrollLeft in a
+  // requestAnimationFrame, which would silently undo a one-shot edge park.
+  await expect(page.locator("[data-pdf-page='2']")).toHaveAttribute("data-pdf-rendered", "true");
   await viewer.hover();
-  // First wheel scrolls natively to the right edge; once at the edge the
-  // continued gesture turns the page.
-  await page.mouse.wheel(400, 0);
+  await expect.poll(async () =>
+    viewer.evaluate((element) => {
+      // Mirrors the viewer's edge detection: with classic scrollbars and
+      // scrollbar-gutter: stable, scrollWidth overstates the reachable range
+      // by the gutter width (offsetWidth - clientWidth).
+      element.scrollLeft = element.scrollWidth;
+      const scrollbarInset = (element as HTMLElement).offsetWidth - element.clientWidth;
+      if (element.scrollLeft + element.clientWidth >= element.scrollWidth - 1 - scrollbarInset) return "at-edge";
+      return `scrollLeft=${element.scrollLeft} clientWidth=${element.clientWidth} scrollWidth=${element.scrollWidth}`
+        + ` offsetWidth=${(element as HTMLElement).offsetWidth}`;
+    })
+  ).toBe("at-edge");
   await page.mouse.wheel(400, 0);
   await expect(pageInput).toHaveValue("3");
 

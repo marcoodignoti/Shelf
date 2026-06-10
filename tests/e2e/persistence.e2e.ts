@@ -506,7 +506,9 @@ test("keeps note scrolling stable with hover heading rail and hidden native scro
   await expect.poll(visiblePreviewTexts).toEqual(["Second section"]);
   await secondSectionButton.locator(".on-heading-rail-preview").click();
 
-  await expect(secondSectionButton).toHaveAttribute("aria-current", "true");
+  // The scroll spy keeps the first section active until the smooth scroll
+  // reaches the target, which can take several seconds on throttled CI CPUs.
+  await expect(secondSectionButton).toHaveAttribute("aria-current", "true", { timeout: 15_000 });
   await expect.poll(async () => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 
   const contentBoxAfter = await page.locator(".max-w-3xl").first().boundingBox();

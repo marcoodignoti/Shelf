@@ -889,8 +889,14 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       }
       state.lastEventAt = now;
 
+      // With classic (non-overlay) scrollbars, scrollbar-gutter: stable makes
+      // scrollWidth overstate the reachable scroll range by the gutter width,
+      // so a plain scrollLeft + clientWidth < scrollWidth - 1 check never
+      // reports the right edge and wheel paging would be unreachable.
+      const scrollbarInset = scrollElement.offsetWidth - scrollElement.clientWidth;
       const canScrollLeft = scrollElement.scrollLeft > 0;
-      const canScrollRight = scrollElement.scrollLeft + scrollElement.clientWidth < scrollElement.scrollWidth - 1;
+      const canScrollRight =
+        scrollElement.scrollLeft + scrollElement.clientWidth < scrollElement.scrollWidth - 1 - scrollbarInset;
       // While the viewer can still scroll in the gesture's direction, the
       // gesture is a plain horizontal scroll — keep it native.
       if ((event.deltaX > 0 && canScrollRight) || (event.deltaX < 0 && canScrollLeft)) {
@@ -1028,6 +1034,17 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     reportedVisiblePageRef.current = page;
   }, [page]);
 
+  // The document must reload only when the file itself changes. The parent
+  // recreates onLoad/onError on unrelated re-renders (page changes, viewer
+  // state persistence), and depending on them here would destroy and re-parse
+  // the whole PDF on every page turn — so the latest callbacks live in refs.
+  const onLoadRef = useRef(onLoad);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onLoadRef.current = onLoad;
+    onErrorRef.current = onError;
+  });
+
   useEffect(() => {
     let isCancelled = false;
     let loadingTask: pdfjsLib.PDFDocumentLoadingTask | null = null;
@@ -1055,7 +1072,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       if (!isCancelled) {
         setPdfDocument(pdf);
         setPageCount(pdf.numPages);
-        onLoad(pdf.numPages);
+        onLoadRef.current(pdf.numPages);
         setIsLoading(false);
         requestAnimationFrame(updateScrollWindow);
       }
@@ -1064,7 +1081,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     loadTask.catch((error: unknown) => {
       if (!isCancelled) {
         setIsLoading(false);
-        onError(error instanceof Error ? error.message : undefined);
+        onErrorRef.current(error instanceof Error ? error.message : undefined);
       }
     });
 
@@ -1077,7 +1094,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
         void loadingTask?.destroy();
       }
     };
-  }, [onError, onLoad, src]);
+  }, [src]);
 
   const visiblePages = useMemo(() => {
     if (!pageCount) return [clampStudioPage(page)];
