@@ -1124,12 +1124,15 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   // turns the page.
   await page.getByTitle("Zoom out").click();
   await page.getByTitle("Zoom out").click();
+  // Wait out the zoom re-render: the zoom flow re-anchors scrollLeft in a
+  // requestAnimationFrame, which would silently undo a one-shot edge park.
+  await expect(page.locator("[data-pdf-page='2']")).toHaveAttribute("data-pdf-rendered", "true");
   await viewer.hover();
-  await viewer.evaluate((element) => {
-    element.scrollLeft = element.scrollWidth;
-  });
   await expect.poll(async () =>
-    viewer.evaluate((element) => element.scrollLeft + element.clientWidth >= element.scrollWidth - 1)
+    viewer.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+      return element.scrollLeft + element.clientWidth >= element.scrollWidth - 1;
+    })
   ).toBe(true);
   await page.mouse.wheel(400, 0);
   await expect(pageInput).toHaveValue("3");
