@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { en } from "./locales/en";
 import { it as itDict } from "./locales/it";
+
+vi.mock("../store/useAppStore", () => ({
+  useAppStore: (selector: (state: { localePreference: string }) => unknown) =>
+    selector({ localePreference: "system" }),
+}));
+
 import { resolveLocale, translate } from "./i18n";
 
 describe("translate", () => {

@@ -7,6 +7,7 @@ import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { DesktopUpdateRestartNotice } from "./components/DesktopUpdateRestartNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
+import { resolveLocale } from "./lib/i18n";
 import { HomeView } from "./components/HomeView";
 import type { DesktopUpdateInfo } from "./lib/desktop";
 
@@ -26,6 +27,7 @@ export default function App() {
   const pages = useAppStore((state) => state.pages);
   const currentPageId = useAppStore((state) => state.currentPageId);
   const theme = useAppStore((state) => state.theme);
+  const localePreference = useAppStore((state) => state.localePreference);
   const isLoading = useAppStore((state) => state.isLoading);
   const addPage = useAppStore((state) => state.addPage);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
@@ -57,6 +59,10 @@ export default function App() {
       root.classList.add(theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.lang = resolveLocale(localePreference, navigator.language);
+  }, [localePreference]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

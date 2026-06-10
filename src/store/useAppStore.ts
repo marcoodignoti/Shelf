@@ -1,5 +1,18 @@
 import { create } from 'zustand';
 import { AppNotice, userMessageForError } from '../lib/appFeedback';
+import {
+  PREFERENCE_STORAGE_KEYS,
+  parseEditorFont,
+  parseEditorFontSize,
+  parseLocalePreference,
+  parsePageWidth,
+  parseTitleEnterBehavior,
+  type EditorFont,
+  type EditorFontSize,
+  type LocalePreference,
+  type PageWidth,
+  type TitleEnterBehavior,
+} from '../lib/preferences';
 import { openDialog, invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/desktop';
 import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
@@ -85,6 +98,16 @@ interface AppState {
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
   setTheme: (theme: Theme) => void;
+  localePreference: LocalePreference;
+  editorFont: EditorFont;
+  editorFontSize: EditorFontSize;
+  pageWidth: PageWidth;
+  titleEnterBehavior: TitleEnterBehavior;
+  setLocalePreference: (value: LocalePreference) => void;
+  setEditorFont: (value: EditorFont) => void;
+  setEditorFontSize: (value: EditorFontSize) => void;
+  setPageWidth: (value: PageWidth) => void;
+  setTitleEnterBehavior: (value: TitleEnterBehavior) => void;
 }
 
 const SIDEBAR_MIN_WIDTH = 220;
@@ -99,6 +122,9 @@ function getStoredTheme(): Theme {
   const storedTheme = localStorage.getItem('opennotion-theme');
   return isTheme(storedTheme) ? storedTheme : 'system';
 }
+
+const getStoredPreference = <T>(key: string, parse: (value: unknown) => T): T =>
+  parse(localStorage.getItem(key));
 
 function getStoredPageId(): string | null {
   return localStorage.getItem('opennotion-current-page-id');
@@ -157,6 +183,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSidebarOpen: true,
   sidebarWidth: getStoredSidebarWidth(),
   theme: getStoredTheme(),
+  localePreference: getStoredPreference(PREFERENCE_STORAGE_KEYS.locale, parseLocalePreference),
+  editorFont: getStoredPreference(PREFERENCE_STORAGE_KEYS.editorFont, parseEditorFont),
+  editorFontSize: getStoredPreference(PREFERENCE_STORAGE_KEYS.editorFontSize, parseEditorFontSize),
+  pageWidth: getStoredPreference(PREFERENCE_STORAGE_KEYS.pageWidth, parsePageWidth),
+  titleEnterBehavior: getStoredPreference(PREFERENCE_STORAGE_KEYS.titleEnter, parseTitleEnterBehavior),
   fetchPages: async () => {
     try {
       const pages = await getPages();
@@ -776,5 +807,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTheme: (theme) => {
     localStorage.setItem('opennotion-theme', theme);
     set({ theme });
-  }
+  },
+
+  setLocalePreference: (value) => {
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.locale, value);
+    set({ localePreference: value });
+  },
+  setEditorFont: (value) => {
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.editorFont, value);
+    set({ editorFont: value });
+  },
+  setEditorFontSize: (value) => {
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.editorFontSize, value);
+    set({ editorFontSize: value });
+  },
+  setPageWidth: (value) => {
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.pageWidth, value);
+    set({ pageWidth: value });
+  },
+  setTitleEnterBehavior: (value) => {
+    localStorage.setItem(PREFERENCE_STORAGE_KEYS.titleEnter, value);
+    set({ titleEnterBehavior: value });
+  },
 }));
