@@ -1125,6 +1125,7 @@ export function Editor({
     on: "change",
   }) ?? [];
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(headingItems[0]?.id ?? null);
+  const pendingHeadingScrollRef = useRef<{ id: string; clearTimer: number } | null>(null);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1370,6 +1371,22 @@ export function Editor({
     const headingRect = headingElement.getBoundingClientRect();
     const top = scrollContainer.scrollTop + headingRect.top - containerRect.top - 96;
 
+    // Keep the clicked section active while the smooth scroll is in flight:
+    // without this the scroll spy flips the highlight back to the previous
+    // section on the first intermediate scroll event, and if the animation
+    // is interrupted it never reaches the target section at all. The spy
+    // resumes on scrollend (with a timer fallback for environments that
+    // never fire it).
+    if (pendingHeadingScrollRef.current) {
+      window.clearTimeout(pendingHeadingScrollRef.current.clearTimer);
+    }
+    pendingHeadingScrollRef.current = {
+      id: headingId,
+      clearTimer: window.setTimeout(() => {
+        pendingHeadingScrollRef.current = null;
+      }, 1_500),
+    };
+
     setActiveHeadingId(headingId);
     scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
   }, [editor]);
@@ -1385,6 +1402,7 @@ export function Editor({
 
     const updateActiveHeading = () => {
       frame = 0;
+      if (pendingHeadingScrollRef.current) return;
       const containerTop = scrollContainer.getBoundingClientRect().top;
       let current = headingItems[0]?.id ?? null;
 
@@ -1407,13 +1425,23 @@ export function Editor({
       frame = requestAnimationFrame(updateActiveHeading);
     };
 
+    const handleScrollEnd = () => {
+      if (pendingHeadingScrollRef.current) {
+        window.clearTimeout(pendingHeadingScrollRef.current.clearTimer);
+        pendingHeadingScrollRef.current = null;
+      }
+      queueUpdate();
+    };
+
     updateActiveHeading();
     scrollContainer.addEventListener("scroll", queueUpdate, { passive: true });
+    scrollContainer.addEventListener("scrollend", handleScrollEnd, { passive: true });
     window.addEventListener("resize", queueUpdate);
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
       scrollContainer.removeEventListener("scroll", queueUpdate);
+      scrollContainer.removeEventListener("scrollend", handleScrollEnd);
       window.removeEventListener("resize", queueUpdate);
     };
   }, [editor, headingItems]);
