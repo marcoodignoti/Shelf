@@ -27,7 +27,9 @@ import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableVi
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
-import { invoke, openDialog, saveDialog } from "../lib/desktop";
+import { exportFilesWithDialog, invoke, openDialog } from "../lib/desktop";
+import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
+import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
 import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
@@ -1785,65 +1787,20 @@ export function Editor({
   const handleExportMarkdown = async () => {
     setPageMenuOpen(false);
     try {
-      const allSubpages = childPagesForParent(pages, page.id);
-      const isFolderExport = allSubpages.length > 0;
-      
-      const destPath = await saveDialog({
-        defaultPath: `${page.title || "Untitled"}.${isFolderExport ? "md" : "md"}`,
+      const isFolderExport = childPagesForParent(pages, page.id).length > 0;
+      const renderPageMarkdown = await createPageMarkdownRenderer();
+      const files = await buildMarkdownTreeFiles(pages, [page], renderPageMarkdown, { flattenSingleRoot: true });
+      const result = await exportFilesWithDialog({
+        defaultPath: `${sanitizeExportFilename(page.title || "Untitled")}.md`,
         filters: [{ name: isFolderExport ? "Markdown Folder Structure" : "Markdown Document", extensions: ["md"] }],
+        files,
       });
-      if (!destPath) return;
-
-      if (isFolderExport) {
-        const dirPath = destPath.endsWith(".md") ? destPath.slice(0, -3) : destPath;
-        const lastSlash = dirPath.lastIndexOf("/");
-        const parentDir = dirPath.slice(0, lastSlash);
-        
-        const exportMarkdownTree = async (rootPath: string, currentPage: Page) => {
-          const { BlockNoteEditor } = await import("@blocknote/core");
-          const tempEditor = BlockNoteEditor.create({
-            schema: openNotionEditorSchema,
-          });
-          const parsedBlocks = parsePageBlocks(currentPage.content);
-          const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
-          const fullMarkdown = `# ${currentPage.title || "Untitled"}\n\n${markdownContent}`;
-
-          const sanitizeFilename = (title: string) => title.replace(/[/\\?%*:|"<>. ]/g, "_") || "Untitled";
-          const baseName = sanitizeFilename(currentPage.title || "Untitled");
-          const children = pages.filter((p) => p.parent_id === currentPage.id);
-
-          if (children.length > 0) {
-            const currentDir = `${rootPath}/${baseName}`;
-            await invoke("create_directory", { path: currentDir });
-            await invoke("write_file_content", {
-              path: `${currentDir}/${baseName}.md`,
-              content: fullMarkdown,
-            });
-            for (const child of children) {
-              await exportMarkdownTree(currentDir, child);
-            }
-          } else {
-            await invoke("write_file_content", {
-              path: `${rootPath}/${baseName}.md`,
-              content: fullMarkdown,
-            });
-          }
-        };
-
-        await exportMarkdownTree(parentDir, page);
-        showSuccess(`Page tree exported as Markdown to folder: ${dirPath}`);
-      } else {
-        const { BlockNoteEditor } = await import("@blocknote/core");
-        const tempEditor = BlockNoteEditor.create({
-          schema: openNotionEditorSchema,
-        });
-        const parsedBlocks = parsePageBlocks(page.content);
-        const markdownContent = await tempEditor.blocksToMarkdownLossy(parsedBlocks);
-        const fullMarkdown = `# ${page.title || "Untitled"}\n\n${markdownContent}`;
-
-        await invoke("write_file_content", { path: destPath, content: fullMarkdown });
-        showSuccess(`Page exported as Markdown to file: ${destPath}`);
-      }
+      if (!result) return;
+      showSuccess(
+        isFolderExport
+          ? `Page tree exported as Markdown to folder: ${result.path}`
+          : `Page exported as Markdown to file: ${result.path}`
+      );
     } catch (error: unknown) {
       showError(error);
     }
@@ -1852,43 +1809,15 @@ export function Editor({
   const handleExportJSON = async () => {
     setPageMenuOpen(false);
     try {
-      const destPath = await saveDialog({
-        defaultPath: `${page.title || "Untitled"}.json`,
+      const exportData = buildPageTreeExport(pages, [page.id], new Date().toISOString());
+      const fileName = `${sanitizeExportFilename(page.title || "Untitled")}.json`;
+      const result = await exportFilesWithDialog({
+        defaultPath: fileName,
         filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+        files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
-      if (!destPath) return;
-
-      const getDescendantIds = (rootId: string): Set<string> => {
-        const ids = new Set([rootId]);
-        let changed = true;
-        while (changed) {
-          changed = false;
-          for (const p of pages) {
-            if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
-              ids.add(p.id);
-              changed = true;
-            }
-          }
-        }
-        return ids;
-      };
-
-      const deletedIds = getDescendantIds(page.id);
-      const pagesToExport = pages.filter((p) => deletedIds.has(p.id));
-
-      const exportData = {
-        version: 1,
-        type: "page_tree",
-        exported_at: new Date().toISOString(),
-        root_page_id: page.id,
-        pages: pagesToExport,
-      };
-
-      await invoke("write_file_content", {
-        path: destPath,
-        content: JSON.stringify(exportData, null, 2),
-      });
-      showSuccess(`Page tree exported as JSON to: ${destPath}`);
+      if (!result) return;
+      showSuccess(`Page tree exported as JSON to: ${result.path}`);
     } catch (error: unknown) {
       showError(error);
     }

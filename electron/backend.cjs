@@ -14,6 +14,23 @@ const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
 const UPDATE_ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_SIGNATURE_ALGORITHM = "ed25519";
 const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
+const EXPORT_MAX_FILES = 2000;
+const EXPORT_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+const IMPORT_MAX_BYTES = 25 * 1024 * 1024;
+
+function validateExportRelativePath(relativePath) {
+  if (!relativePath) throw new Error("export file path cannot be empty");
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f]/.test(relativePath) || relativePath.includes("\\")) {
+    throw new Error("export file path contains unsupported characters");
+  }
+  const segments = relativePath.split("/");
+  for (const segment of segments) {
+    if (!segment || segment === "." || segment === "..") {
+      throw new Error("export file path cannot traverse directories");
+    }
+  }
+}
 const BACKUP_MAX_PAGES = 5000;
 const BACKUP_MAX_ID_LENGTH = 512;
 const BACKUP_MAX_TITLE_LENGTH = 512;
@@ -615,9 +632,6 @@ class OpenNotionBackend {
       open_external_url: (args) => this.openExternalUrl(args),
       fetch_update_manifest: (args) => this.fetchUpdateManifest(args),
       download_update_artifact: (args) => this.downloadUpdateArtifact(args),
-      write_file_content: (args) => this.writeFileContent(args),
-      create_directory: (args) => this.createDirectory(args),
-      read_file_content: (args) => this.readFileContent(args),
       show_character_palette: () => null,
     };
   }
@@ -632,18 +646,48 @@ class OpenNotionBackend {
     this.db.close();
   }
 
-  writeFileContent({ path: filePath, content }) {
-    fs.writeFileSync(filePath, content, "utf8");
-    return true;
+  // Not registered in the renderer-facing command map on purpose: these two
+  // take absolute filesystem paths, so they are only reachable from the main
+  // process, which passes paths the user just picked in a native dialog.
+  // The renderer itself never supplies a path.
+  writeExportFiles({ targetPath, files }) {
+    if (typeof targetPath !== "string" || !targetPath) throw new Error("export target path is required");
+    if (!Array.isArray(files) || files.length === 0) throw new Error("export files are required");
+    if (files.length > EXPORT_MAX_FILES) throw new Error(`export cannot contain more than ${EXPORT_MAX_FILES} files`);
+
+    let totalBytes = 0;
+    for (const file of files) {
+      if (!file || typeof file.relativePath !== "string" || typeof file.content !== "string") {
+        throw new Error("export files must have a relativePath and string content");
+      }
+      validateExportRelativePath(file.relativePath);
+      totalBytes += Buffer.byteLength(file.content, "utf8");
+      if (totalBytes > EXPORT_MAX_TOTAL_BYTES) throw new Error("export content is too large");
+    }
+
+    // A single root-level file is written to the dialog path itself; a tree
+    // export turns the dialog path (minus extension) into its root directory.
+    if (files.length === 1 && !files[0].relativePath.includes("/")) {
+      fs.writeFileSync(targetPath, files[0].content, "utf8");
+      return { path: targetPath, fileCount: 1 };
+    }
+
+    const extension = path.extname(targetPath);
+    const rootDir = extension ? targetPath.slice(0, -extension.length) : targetPath;
+    for (const file of files) {
+      const destination = path.join(rootDir, ...file.relativePath.split("/"));
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, file.content, "utf8");
+    }
+    return { path: rootDir, fileCount: files.length };
   }
 
-  createDirectory({ path: dirPath }) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    return true;
-  }
-
-  readFileContent({ path: filePath }) {
-    return fs.readFileSync(filePath, "utf8");
+  readImportFile({ path: filePath }) {
+    if (typeof filePath !== "string" || !filePath) throw new Error("import path is required");
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) throw new Error("import path must be a file");
+    if (stats.size > IMPORT_MAX_BYTES) throw new Error("Import file is too large");
+    return { path: filePath, content: fs.readFileSync(filePath, "utf8") };
   }
 
   withTransaction(work) {
