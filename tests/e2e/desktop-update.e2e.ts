@@ -10,6 +10,7 @@ test.beforeEach(async ({ page }) => {
         if (cmd === "list_pages" || cmd === "list_all_pages") return [];
         if (cmd === "list_studio_documents" || cmd === "list_studio_projects" || cmd === "list_all_studio_document_page_links") return [];
         if (cmd === "get_page") return null;
+        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "OpenNotion", avatarPath: null };
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
       open: async () => null,

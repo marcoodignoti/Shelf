@@ -18,6 +18,7 @@ import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
 import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
+import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatar } from '../lib/profile';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { openNotionEditorSchema } from '../lib/editorMath';
 import {
@@ -56,6 +57,10 @@ interface AppState {
   studioDocumentPageLinks: StudioDocumentPageLink[];
   studioProjects: StudioProject[];
   currentStudioDocumentId: string | null;
+  profile: WorkspaceProfile | null;
+  fetchProfile: () => Promise<void>;
+  updateProfileAction: (patch: Partial<Pick<WorkspaceProfile, "name" | "workspaceName">> & { avatarPath?: null }) => Promise<void>;
+  importProfileAvatarAction: (sourcePath: string) => Promise<void>;
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
@@ -170,6 +175,7 @@ function descendantPageIds(pages: Page[], rootId: string): Set<string> {
 
 export const useAppStore = create<AppState>((set, get) => ({
   pages: [],
+  profile: null,
   currentPageId: getStoredPageId(),
   isLoading: true,
   error: null,
@@ -188,6 +194,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   editorFontSize: getStoredPreference(PREFERENCE_STORAGE_KEYS.editorFontSize, parseEditorFontSize),
   pageWidth: getStoredPreference(PREFERENCE_STORAGE_KEYS.pageWidth, parsePageWidth),
   titleEnterBehavior: getStoredPreference(PREFERENCE_STORAGE_KEYS.titleEnter, parseTitleEnterBehavior),
+  fetchProfile: async () => {
+    try {
+      set({ profile: await getWorkspaceProfile() });
+    } catch (error) {
+      get().showError(error);
+    }
+  },
+  updateProfileAction: async (patch) => {
+    const previousProfile = get().profile;
+    if (previousProfile) {
+      set({ profile: { ...previousProfile, ...patch } as WorkspaceProfile });
+    }
+    try {
+      set({ profile: await updateWorkspaceProfile(patch) });
+    } catch (error) {
+      set({ profile: previousProfile });
+      get().showError(error);
+    }
+  },
+  importProfileAvatarAction: async (sourcePath) => {
+    try {
+      const avatarPath = await importProfileAvatar(sourcePath);
+      const current = get().profile;
+      if (current) set({ profile: { ...current, avatarPath } });
+    } catch (error) {
+      get().showError(error);
+    }
+  },
   fetchPages: async () => {
     try {
       const pages = await getPages();

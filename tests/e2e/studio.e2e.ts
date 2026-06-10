@@ -276,6 +276,7 @@ test.beforeEach(async ({ page }) => {
           return null;
         }
         if (cmd === "search_pages") return [];
+        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "OpenNotion", avatarPath: null };
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
       open: async () => "/tmp/civil-law.pdf",

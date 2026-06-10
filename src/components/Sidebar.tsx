@@ -776,6 +776,7 @@ export function Sidebar() {
   const {
     pages,
     fetchPages,
+    fetchProfile,
     addPage,
     addPageFromTemplate,
     removePage,
@@ -823,6 +824,10 @@ export function Sidebar() {
   useEffect(() => {
     fetchPages();
   }, [fetchPages]);
+
+  useEffect(() => {
+    void fetchProfile();
+  }, [fetchProfile]);
 
   useEffect(() => {
     void fetchStudioDocuments();

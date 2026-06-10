@@ -85,6 +85,7 @@ test.beforeEach(async ({ page }) => {
         }
         if (cmd === "show_character_palette") return null;
         if (cmd === "search_pages") return [];
+        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "OpenNotion", avatarPath: null };
 
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
