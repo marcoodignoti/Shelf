@@ -1131,9 +1131,12 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   await expect.poll(async () =>
     viewer.evaluate((element) => {
       element.scrollLeft = element.scrollWidth;
-      return element.scrollLeft + element.clientWidth >= element.scrollWidth - 1;
+      if (element.scrollLeft + element.clientWidth >= element.scrollWidth - 1) return "at-edge";
+      const style = getComputedStyle(element);
+      return `scrollLeft=${element.scrollLeft} clientWidth=${element.clientWidth} scrollWidth=${element.scrollWidth}`
+        + ` overflowX=${style.overflowX} display=${style.display} rect=${JSON.stringify(element.getBoundingClientRect())}`;
     })
-  ).toBe(true);
+  ).toBe("at-edge");
   await page.mouse.wheel(400, 0);
   await expect(pageInput).toHaveValue("3");
 
