@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { BetaUpdateState, CURRENT_APP_VERSION, checkForBetaUpdate, downloadVerifiedUpdate } from '../../lib/betaUpdates';
+import { useT } from '../../lib/i18n';
 import { Download, RefreshCw } from 'lucide-react';
 
 export function UpdatesSection() {
+  const t = useT();
   const { showSuccess, showError } = useAppStore();
   const [updateState, setUpdateState] = useState<BetaUpdateState>({ status: 'idle' });
   const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
@@ -14,7 +16,7 @@ export function UpdatesSection() {
     setUpdateState(result);
 
     if (result.status === 'current') {
-      showSuccess('OpenNotion is up to date.');
+      showSuccess(t('settings.updates.upToDate'));
     } else if (result.status === 'error') {
       showError(result.message);
     }
@@ -23,14 +25,14 @@ export function UpdatesSection() {
   const handleDownloadUpdate = async () => {
     if (updateState.status !== 'available') return;
     if (!updateState.download) {
-      showError('No beta download is available for this platform yet.');
+      showError(t('settings.updates.noPlatformDownload'));
       return;
     }
 
     try {
       setIsDownloadingUpdate(true);
       await downloadVerifiedUpdate(updateState.download);
-      showSuccess('Downloaded and verified update.');
+      showSuccess(t('settings.updates.downloaded'));
     } catch (error: unknown) {
       showError(error);
     } finally {
@@ -43,23 +45,23 @@ export function UpdatesSection() {
   return (
     <div className="on-settings-content">
       <div className="on-settings-content-title">
-        <h2>Updates</h2>
-        <p>Check beta builds and verify the matching download for this device.</p>
+        <h2>{t('settings.updates.title')}</h2>
+        <p>{t('settings.updates.description')}</p>
       </div>
 
       <section className="on-settings-group">
-        <h3>Beta channel</h3>
+        <h3>{t('settings.updates.group')}</h3>
         <div className="on-settings-row">
           <div className="on-settings-row-copy">
-            <div>Current version</div>
-            <p>Installed build version on this device.</p>
+            <div>{t('settings.updates.currentVersion')}</div>
+            <p>{t('settings.updates.currentVersionDescription')}</p>
           </div>
           <span className="on-settings-pill">{CURRENT_APP_VERSION}</span>
         </div>
         <div className="on-settings-row">
           <div className="on-settings-row-copy">
-            <div>Check for updates</div>
-            <p>Looks for the latest beta manifest published on GitHub Releases.</p>
+            <div>{t('settings.updates.checkRow')}</div>
+            <p>{t('settings.updates.checkRowDescription')}</p>
           </div>
           <button
             onClick={() => void handleCheckUpdates()}
@@ -67,7 +69,7 @@ export function UpdatesSection() {
             disabled={updateState.status === 'checking'}
           >
             <RefreshCw className="h-4 w-4" strokeWidth={1.9} />
-            {updateState.status === 'checking' ? 'Checking' : 'Check'}
+            {updateState.status === 'checking' ? t('settings.updates.checking') : t('settings.updates.check')}
           </button>
         </div>
 
@@ -93,22 +95,22 @@ export function UpdatesSection() {
             >
               <Download className="h-4 w-4" strokeWidth={1.9} />
               {isDownloadingUpdate
-                ? 'Verifying download'
+                ? t('settings.updates.verifying')
                 : availableUpdate.download
-                  ? `Download ${availableUpdate.download.label}`
-                  : 'No build for this device'}
+                  ? t('settings.updates.download', { label: availableUpdate.download.label })
+                  : t('settings.updates.noBuild')}
             </button>
           </div>
         )}
 
         {updateState.status === 'current' && (
-          <div className="on-settings-status">OpenNotion is up to date.</div>
+          <div className="on-settings-status">{t('settings.updates.upToDate')}</div>
         )}
         {updateState.status === 'disabled' && (
-          <div className="on-settings-status">Beta update checks are disabled.</div>
+          <div className="on-settings-status">{t('settings.updates.disabled')}</div>
         )}
         {updateState.status === 'error' && (
-          <div className="on-settings-status">Update check failed: {updateState.message}</div>
+          <div className="on-settings-status">{t('settings.updates.checkFailed', { message: updateState.message })}</div>
         )}
       </section>
     </div>

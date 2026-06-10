@@ -2302,6 +2302,29 @@
     color: hsl(var(--muted-foreground));
   }
 
+  .on-settings-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid hsl(var(--border) / 0.56);
+    border-radius: 0.35rem;
+    background: hsl(var(--background));
+    padding: 2px 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 580;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .on-settings-avatar-img {
+    height: 1.65rem;
+    width: 1.65rem;
+    border-radius: 0.45rem;
+    object-fit: cover;
+    background: transparent;
+    padding: 0;
+  }
+
   .on-settings-status {
     margin-top: 0.8rem;
     border-radius: 0.55rem;
