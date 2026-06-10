@@ -265,6 +265,49 @@ async function run() {
   } finally {
     global.fetch = originalFetch;
   }
+
+  await verifyVersionChangeBackups();
+}
+
+async function verifyVersionChangeBackups() {
+  const { openDatabase } = require("./backend.cjs");
+  const backupConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-backup-smoke-"));
+  const backupsDir = path.join(backupConfigDir, "backups");
+  const countBackups = () =>
+    fs.existsSync(backupsDir) ? fs.readdirSync(backupsDir).filter((name) => name.endsWith(".db")).length : 0;
+
+  try {
+    // Fresh database: no backup, version recorded.
+    openDatabase(backupConfigDir, "1.0.0").close();
+    if (countBackups() !== 0) throw new Error("backup was created for a fresh database");
+
+    // Same version relaunch: still no backup.
+    openDatabase(backupConfigDir, "1.0.0").close();
+    if (countBackups() !== 0) throw new Error("backup was created without a version change");
+
+    // Version change: exactly one pre-migration backup.
+    const upgraded = openDatabase(backupConfigDir, "1.1.0");
+    const storedVersion = upgraded
+      .prepare("SELECT value FROM app_metadata WHERE key = 'app_version'")
+      .get();
+    upgraded.close();
+    if (countBackups() !== 1) throw new Error("version change did not create exactly one backup");
+    if (!storedVersion || storedVersion.value !== "1.1.0") {
+      throw new Error("app_version was not updated after migration");
+    }
+    const backupName = fs.readdirSync(backupsDir).find((name) => name.endsWith(".db"));
+    if (!backupName.startsWith("opennotion-v1.0.0-")) {
+      throw new Error(`backup name does not record the previous version: ${backupName}`);
+    }
+
+    // Old backups beyond the retention window are pruned.
+    for (let minor = 2; minor <= 9; minor += 1) {
+      openDatabase(backupConfigDir, `1.${minor}.0`).close();
+    }
+    if (countBackups() > 5) throw new Error("backup retention did not prune old backups");
+  } finally {
+    fs.rmSync(backupConfigDir, { recursive: true, force: true });
+  }
 }
 
 run()

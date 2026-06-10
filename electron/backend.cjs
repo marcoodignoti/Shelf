@@ -179,20 +179,89 @@ function runMigrations(db) {
   `);
 }
 
-function openDatabase(appConfigDir) {
+const CURRENT_APP_VERSION = (() => {
+  try {
+    return require("../package.json").version;
+  } catch {
+    return null;
+  }
+})();
+const DB_BACKUP_RETENTION = 5;
+
+function readStoredAppVersion(db) {
+  try {
+    const row = db.prepare("SELECT value FROM app_metadata WHERE key = 'app_version'").get();
+    return row ? String(row.value) : null;
+  } catch {
+    // Databases that predate app_metadata still deserve a backup; treat them
+    // as "version unknown".
+    return null;
+  }
+}
+
+function pruneDatabaseBackups(backupsDir) {
+  const backups = fs.readdirSync(backupsDir)
+    .filter((name) => name.startsWith("opennotion-") && name.endsWith(".db"))
+    .map((name) => {
+      const filePath = path.join(backupsDir, name);
+      return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+    })
+    .sort((first, second) => second.mtimeMs - first.mtimeMs);
+  for (const backup of backups.slice(DB_BACKUP_RETENTION)) {
+    fs.rmSync(backup.filePath, { force: true });
+  }
+}
+
+function backupDatabaseFile(db, dbPath, storedVersion) {
+  const backupsDir = path.join(path.dirname(dbPath), "backups");
+  ensurePrivateDirectory(backupsDir);
+  // Fold the WAL into the main file first so the copy is a complete,
+  // self-contained snapshot.
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = path.join(backupsDir, `opennotion-v${storedVersion || "unknown"}-${stamp}.db`);
+  fs.copyFileSync(dbPath, backupPath);
+  pruneDatabaseBackups(backupsDir);
+  return backupPath;
+}
+
+function openDatabase(appConfigDir, appVersion = CURRENT_APP_VERSION) {
   ensurePrivateDirectory(appConfigDir);
   const dbPath = path.join(appConfigDir, "opennotion.db");
+  const databaseExisted = fs.existsSync(dbPath);
   const db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   // Wait instead of failing with SQLITE_BUSY when another connection (e.g. a
   // lingering process from a previous run) briefly holds the write lock.
   db.exec("PRAGMA busy_timeout = 5000");
+
+  // First launch of a new app version: snapshot the database before the new
+  // version's migrations touch it, so a bad migration can never destroy the
+  // only copy of the user's data. Backup failure must not block startup.
+  if (databaseExisted && appVersion) {
+    const storedVersion = readStoredAppVersion(db);
+    if (storedVersion !== appVersion) {
+      try {
+        backupDatabaseFile(db, dbPath, storedVersion);
+      } catch (error) {
+        console.error("Failed to back up the database before migrating:", error);
+      }
+    }
+  }
+
   // Run migrations atomically: a failure midway (one ALTER succeeding, the
   // next failing) must not leave a partially-migrated schema behind.
   db.exec("BEGIN IMMEDIATE");
   try {
     runMigrations(db);
+    if (appVersion) {
+      db.prepare(`
+        INSERT INTO app_metadata (key, value)
+        VALUES ('app_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(appVersion);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
