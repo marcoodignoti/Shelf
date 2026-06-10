@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Clipboard, Download, X } from "lucide-react";
 import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey, downloadVerifiedUpdate } from "../lib/betaUpdates";
+import { desktopAutoUpdateActive } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
@@ -37,6 +38,11 @@ export function BetaUpdateNotice() {
   const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
+    // electron-updater owns update delivery on Windows installer builds
+    // (background download + restart-to-update); skip the manifest notice
+    // there so users don't get two competing update prompts.
+    if (desktopAutoUpdateActive()) return;
+
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
       void checkForBetaUpdate().then((result) => {

@@ -35,6 +35,8 @@ interface OpenNotionDesktopBridge {
   fileSrc(filePath: string): string;
   studioPdfSrc?(documentId: string): string;
   onDesktopUpdate?(callback: (eventName: DesktopUpdateEventName, payload: unknown) => void): () => void;
+  autoUpdateActive?(): boolean;
+  installUpdateNow?(): Promise<null>;
 }
 
 declare global {
@@ -73,4 +75,22 @@ export function studioDocumentPdfSrc(documentId: string, filePath: string): stri
 
 export async function openExternalUrl(url: string): Promise<void> {
   await invoke('open_external_url', { url });
+}
+
+// True when the platform auto-updater (electron-updater on Windows installer
+// builds) owns update delivery; the manifest-based notice defers to it.
+export function desktopAutoUpdateActive(): boolean {
+  try {
+    return window.openNotion?.autoUpdateActive?.() ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function installDesktopUpdateNow(): Promise<void> {
+  const desktop = bridge();
+  if (!desktop.installUpdateNow) {
+    throw new Error("restart-to-update is not available in this build");
+  }
+  await desktop.installUpdateNow();
 }

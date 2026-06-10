@@ -1,9 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppNotice } from "./components/AppNotice";
 import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
+import { DesktopUpdateRestartNotice } from "./components/DesktopUpdateRestartNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { HomeView } from "./components/HomeView";
@@ -37,6 +38,7 @@ export default function App() {
   const replaceStudioPdfAction = useAppStore((state) => state.replaceStudioPdfAction);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const showError = useAppStore((state) => state.showError);
+  const [readyUpdate, setReadyUpdate] = useState<{ version: string | null } | null>(null);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -91,7 +93,7 @@ export default function App() {
         showSuccess(`Update${version} available. Downloading in background.`);
       }
       if (eventName === "desktop-update-downloaded") {
-        showSuccess(`Update${version} ready. It will install after you quit OpenNotion.`);
+        setReadyUpdate({ version: updateInfo.version ?? null });
       }
       if (eventName === "desktop-update-error") {
         const message = typeof payload === "string" ? payload : "Windows update failed.";
@@ -182,7 +184,11 @@ export default function App() {
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>
-      <BetaUpdateNotice />
+      {readyUpdate ? (
+        <DesktopUpdateRestartNotice version={readyUpdate.version} onDismiss={() => setReadyUpdate(null)} />
+      ) : (
+        <BetaUpdateNotice />
+      )}
       <AppNotice />
     </Layout>
   );
