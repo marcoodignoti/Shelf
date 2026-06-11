@@ -1350,3 +1350,82 @@ test("keeps scroll position when converting a block into another text block type
   const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
   expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(240);
 });
+
+// These two tests share the real OS clipboard, so they must not run in
+// parallel with each other.
+test.describe("system clipboard", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("copies a text selection containing inline math without crashing", async ({ page }) => {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await createPageAndFocusEditor(page, "Copy Inline Math");
+    await page.keyboard.type("alpha $x^2$ beta");
+    await expect(page.getByLabel("Formula: x^2")).toBeVisible();
+
+    await page.evaluate(() => navigator.clipboard.writeText("SENTINEL-INLINE"));
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Shift+End");
+    // Wait for ProseMirror to sync the DOM selection before copying, otherwise
+    // its copy handler may not intercept and the browser does a native capture.
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? "")).toContain("beta");
+    await page.keyboard.press("ControlOrMeta+c");
+
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 5000 })
+      .not.toBe("SENTINEL-INLINE");
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain("alpha");
+    expect(copied).toContain("beta");
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("selects and copies all blocks when the page starts with a formula block", async ({ page }) => {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    const editor = await createPageAndFocusEditor(page, "Copy All With Formula");
+    await editor.evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", "$$E=mc^2$$");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    });
+    await expect(page.locator(".on-formula-block").first()).toBeVisible();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+ArrowDown");
+    await page.keyboard.type("tail text after formula");
+    await expect(page.getByText("tail text after formula")).toBeVisible();
+
+    await page.evaluate(() => navigator.clipboard.writeText("SENTINEL-ALL"));
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("ControlOrMeta+c");
+
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 5000 })
+      .not.toBe("SENTINEL-ALL");
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain("tail text after formula");
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test("pasting external HTML with inline math markup restores the formula", async ({ page }) => {
+  const editor = await createPageAndFocusEditor(page, "Roundtrip Target");
+
+  // This is the shape MathInlineContent.toExternalHTML emits on copy: the
+  // custom parse() must turn it back into an inline math node on paste.
+  await editor.evaluate((element) => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/html",
+      '<p>alpha <span class="on-inline-math" data-latex="x^2">x2</span> beta</p>'
+    );
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByText("alpha")).toBeVisible();
+  await expect(page.getByLabel("Formula: x^2")).toBeVisible();
+});

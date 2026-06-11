@@ -81,7 +81,7 @@ export const MathInlineContent = createReactInlineContentSpec(
     },
   },
   {
-    render: ({ inlineContent, updateInlineContent, editor, contentRef }) => {
+    render: ({ inlineContent, updateInlineContent, editor }) => {
       const formula = inlineContent.props.formula;
       const [isEditing, setIsEditing] = useState(false);
       const triggerRef = useRef<HTMLButtonElement>(null);
@@ -106,7 +106,10 @@ export const MathInlineContent = createReactInlineContentSpec(
       };
 
       return (
-        <span ref={contentRef} className="on-inline-math-shell">
+        // No contentRef here: this spec is content "none" (leaf). Attaching the
+        // content hole to a leaf node makes ProseMirror's clipboard serializer
+        // throw "Content hole not allowed in a leaf node spec" on copy.
+        <span className="on-inline-math-shell">
           <button
             ref={triggerRef}
             type="button"
@@ -171,12 +174,12 @@ export const MathInlineContent = createReactInlineContentSpec(
         </span>
       );
     },
-    toExternalHTML: ({ inlineContent, contentRef }) => {
+    toExternalHTML: ({ inlineContent }) => {
       const formula = inlineContent.props.formula;
 
       return (
+        // No contentRef: leaf spec, see the note in render above.
         <span
-          ref={contentRef}
           className="on-inline-math"
           data-latex={formula}
         >

@@ -1940,7 +1940,14 @@ export function Editor({
       if (firstBlock.id === lastBlock.id) return;
 
       event.preventDefault();
-      editor.setSelection(firstBlock, lastBlock);
+      try {
+        editor.setSelection(firstBlock, lastBlock);
+      } catch {
+        // setSelection cannot anchor in contentless blocks (formula, media).
+        // Fall back to ProseMirror's AllSelection, which handles leaf blocks.
+        (editor as unknown as { _tiptapEditor?: { commands: { selectAll: () => void } } })
+          ._tiptapEditor?.commands.selectAll();
+      }
       return;
     }
 
