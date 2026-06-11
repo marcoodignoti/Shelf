@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { createStudioNotePage, Page } from "../lib/db";
+import { useT } from "../lib/i18n";
 import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
 import { useAppStore } from "../store/useAppStore";
 import {
@@ -44,17 +45,8 @@ type StudioWorkspaceProps = {
   ) => void;
 };
 
-const PDF_DISPLAY_MODE_OPTIONS: Array<{
-  value: StudioPdfDisplayMode;
-  label: string;
-  shortcut: string;
-  shortcutKey: string;
-  icon: typeof LayoutList;
-}> = [
-  { value: "continuous", label: "Continuous scroll", shortcut: "Cmd 1", shortcutKey: "1", icon: LayoutList },
-  { value: "single", label: "Single page", shortcut: "Cmd 2", shortcutKey: "2", icon: Square },
-  { value: "two-page", label: "Two pages", shortcut: "Cmd 3", shortcutKey: "3", icon: BookOpen },
-];
+const PDF_DISPLAY_MODE_SHORTCUT_KEYS = ["1", "2", "3"] as const;
+const PDF_DISPLAY_MODE_VALUES: StudioPdfDisplayMode[] = ["continuous", "single", "two-page"];
 
 export function StudioWorkspace({
   document,
@@ -65,6 +57,12 @@ export function StudioWorkspace({
   onReplacePdfFile,
   onUpdateViewer,
 }: StudioWorkspaceProps) {
+  const t = useT();
+  const pdfDisplayModeOptions = useMemo(() => [
+    { value: "continuous" as StudioPdfDisplayMode, label: t("studio.displayModeContinuous"), shortcut: t("studio.displayModeShortcut1"), shortcutKey: "1", icon: LayoutList },
+    { value: "single" as StudioPdfDisplayMode, label: t("studio.displayModeSingle"), shortcut: t("studio.displayModeShortcut2"), shortcutKey: "2", icon: Square },
+    { value: "two-page" as StudioPdfDisplayMode, label: t("studio.displayModeTwoPage"), shortcut: t("studio.displayModeShortcut3"), shortcutKey: "3", icon: BookOpen },
+  ], [t]);
   const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
   const fetchPages = useAppStore((state) => state.fetchPages);
   const fetchStudioDocuments = useAppStore((state) => state.fetchStudioDocuments);
@@ -116,13 +114,13 @@ export function StudioWorkspace({
       document_id: document.id,
       page_id: note.id,
       pdf_page: null,
-      label: "Primary note",
+      label: t("studio.primaryNote"),
       sort_order: 0,
       created_at: note.created_at,
       updated_at: note.updated_at,
       page: note,
     }];
-  }, [document.id, linkedPageLinks, note]);
+  }, [document.id, linkedPageLinks, note, t]);
   const linkedPageIds = useMemo(
     () => new Set(visibleLinkedPageLinks.map((link) => link.page_id)),
     [visibleLinkedPageLinks]
@@ -133,10 +131,10 @@ export function StudioWorkspace({
       .filter((candidate) => candidate.is_deleted === 0 && !linkedPageIds.has(candidate.id))
       .filter((candidate) => {
         if (!query) return true;
-        return (candidate.title || "Untitled").toLowerCase().includes(query);
+        return (candidate.title || t("studio.untitled")).toLowerCase().includes(query);
       })
       .slice(0, 8);
-  }, [existingPageQuery, linkedPageIds, pages]);
+  }, [existingPageQuery, linkedPageIds, pages, t]);
   const normalizePdfPage = useCallback((page: number) => {
     const viewerPage = clampStudioPage(page);
     return pdfPageCount ? Math.min(viewerPage, pdfPageCount) : viewerPage;
@@ -255,13 +253,13 @@ export function StudioWorkspace({
       const page = await createStudioNotePage(crypto.randomUUID(), title);
       const link = await linkStudioDocumentPage(document.id, page.id, {
         pdfPage,
-        label: pdfPage ? `p. ${pdfPage}` : "Linked note",
+        label: pdfPage ? `p. ${pdfPage}` : t("studio.linkedNote"),
       });
       setLinkedPageLinks((links) => [...links.filter((candidate) => candidate.id !== link.id), link]);
       setSelectedLinkedPageId(page.id);
       await fetchPages();
       await fetchStudioDocuments();
-      showSuccess(pdfPage ? "PDF bookmark note created." : "Linked note created.");
+      showSuccess(pdfPage ? t("studio.pdfBookmarkNoteCreated") : t("studio.linkedNoteCreated"));
     } catch (error: unknown) {
       showError(error);
     } finally {
@@ -280,7 +278,7 @@ export function StudioWorkspace({
       setIsExistingPagePickerOpen(false);
       setExistingPageQuery("");
       await fetchStudioDocuments();
-      showSuccess(pdfPage ? "PDF bookmark linked." : "Page linked.");
+      showSuccess(pdfPage ? t("studio.pdfBookmarkLinked") : t("studio.pageLinked"));
     } catch (error: unknown) {
       showError(error);
     }
@@ -294,7 +292,7 @@ export function StudioWorkspace({
     setLinkedPageLinks((links) => links.filter((candidate) => candidate.page_id !== link.page_id));
     setSelectedLinkedPageId((currentId) => currentId === link.page_id ? null : currentId);
     await removePage(link.page_id);
-    showSuccess("Linked note deleted.");
+    showSuccess(t("studio.linkedNoteDeleted"));
   };
 
   const commitPageDraft = () => {
@@ -329,11 +327,11 @@ export function StudioWorkspace({
   useEffect(() => {
     const handlePdfDisplayModeShortcut = (event: KeyboardEvent) => {
       if (!showPdfControls || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      const option = PDF_DISPLAY_MODE_OPTIONS.find((candidate) => candidate.shortcutKey === event.key);
-      if (!option) return;
+      const keyIndex = PDF_DISPLAY_MODE_SHORTCUT_KEYS.indexOf(event.key as typeof PDF_DISPLAY_MODE_SHORTCUT_KEYS[number]);
+      if (keyIndex === -1) return;
 
       event.preventDefault();
-      updatePdfDisplayMode(option.value);
+      updatePdfDisplayMode(PDF_DISPLAY_MODE_VALUES[keyIndex]);
     };
 
     window.addEventListener("keydown", handlePdfDisplayModeShortcut);
@@ -395,20 +393,20 @@ export function StudioWorkspace({
   };
 
   const pdfPanel = (
-    <section className="on-studio-panel min-w-0 bg-muted/20" aria-label="PDF panel">
+    <section className="on-studio-panel min-w-0 bg-muted/20" aria-label={t("studio.pdfPanelAriaLabel")}>
       {pdfLoadFailed ? (
         <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
           <div className="max-w-sm">
-            <div className="font-medium text-foreground">PDF preview unavailable</div>
+            <div className="font-medium text-foreground">{t("studio.pdfPreviewUnavailable")}</div>
             <div className="mt-2">
-              {pdfLoadError ?? "The imported PDF file is missing or cannot be rendered."}
+              {pdfLoadError ?? t("studio.pdfMissingError")}
             </div>
             <button
               className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               onClick={handleReplacePdfFile}
             >
               <FilePlus className="h-4 w-4" />
-              Reimport PDF
+              {t("studio.reimportPdf")}
             </button>
           </div>
         </div>
@@ -430,11 +428,11 @@ export function StudioWorkspace({
     </section>
   );
   const notePanel = (
-    <section className="on-studio-panel min-w-0 overflow-hidden" aria-label="Notes panel">
+    <section className="on-studio-panel min-w-0 overflow-hidden" aria-label={t("studio.notesPanelAriaLabel")}>
       {activeLinkedPage ? (
         <div className="flex h-full min-h-0 flex-col">
           <div className="on-studio-linked-pages-bar">
-            <div className="on-studio-linked-pages-list" aria-label="Linked PDF notes">
+            <div className="on-studio-linked-pages-list" aria-label={t("studio.linkedPdfNotesAriaLabel")}>
               {visibleLinkedPageLinks.map((link) => {
                 const isActive = link.page_id === activeLinkedPage.id;
                 return (
@@ -446,17 +444,17 @@ export function StudioWorkspace({
                       type="button"
                       className="on-studio-linked-page-chip"
                       onClick={() => handleSelectLinkedPage(link)}
-                      title={link.page.title || "Untitled"}
+                      title={link.page.title || t("studio.untitled")}
                     >
                       <FileText className="h-3.5 w-3.5" />
-                      <span className="truncate">{link.page.title || "Untitled"}</span>
+                      <span className="truncate">{link.page.title || t("studio.untitled")}</span>
                       {link.pdf_page ? <span className="on-studio-linked-page-badge">p. {link.pdf_page}</span> : null}
                     </button>
                     <button
                       type="button"
                       className="on-studio-linked-page-delete"
-                      title={`Delete linked note ${link.page.title || "Untitled"}`}
-                      aria-label={`Delete linked note ${link.page.title || "Untitled"}`}
+                      title={t("studio.deleteLinkedNote", { title: link.page.title || t("studio.untitled") })}
+                      aria-label={t("studio.deleteLinkedNote", { title: link.page.title || t("studio.untitled") })}
                       onClick={() => setPendingDeleteLinkedPage(link)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -471,7 +469,7 @@ export function StudioWorkspace({
                 className="on-studio-linked-page-action"
                 disabled={isCreatingLinkedPage}
                 onClick={() => void handleCreateLinkedNote(null)}
-                title="New linked note"
+                title={t("studio.newLinkedNote")}
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -480,7 +478,7 @@ export function StudioWorkspace({
                 className="on-studio-linked-page-action"
                 disabled={isCreatingLinkedPage}
                 onClick={() => void handleCreateLinkedNote(activePdfPage)}
-                title="Bookmark current PDF page"
+                title={t("studio.bookmarkCurrentPage")}
               >
                 <Bookmark className="h-3.5 w-3.5" />
               </button>
@@ -489,7 +487,7 @@ export function StudioWorkspace({
                 type="button"
                 className="on-studio-linked-page-action"
                 onClick={() => setIsExistingPagePickerOpen((open) => !open)}
-                title="Link existing page"
+                title={t("studio.linkExistingPage")}
               >
                 <Link2 className="h-3.5 w-3.5" />
               </button>
@@ -506,7 +504,7 @@ export function StudioWorkspace({
                     <Search className="h-3.5 w-3.5" />
                     <input
                       value={existingPageQuery}
-                      placeholder="Search pages"
+                      placeholder={t("studio.searchPages")}
                       spellCheck={false}
                       onChange={(event) => setExistingPageQuery(event.currentTarget.value)}
                       onKeyDown={(event) => {
@@ -527,12 +525,12 @@ export function StudioWorkspace({
                           ) : (
                             <FileText className="h-3.5 w-3.5" />
                           )}
-                          <span className="truncate">{candidate.title || "Untitled"}</span>
+                          <span className="truncate">{candidate.title || t("studio.untitled")}</span>
                         </button>
                         <button
                           type="button"
                           className="on-studio-link-picker-bookmark"
-                          title={`Bookmark page ${activePdfPage}`}
+                          title={t("studio.bookmarkPage", { page: String(activePdfPage) })}
                           onClick={() => void handleLinkExistingPage(candidate, activePdfPage)}
                         >
                           <Bookmark className="h-3.5 w-3.5" />
@@ -540,7 +538,7 @@ export function StudioWorkspace({
                       </div>
                     ))}
                     {existingPageCandidates.length === 0 ? (
-                      <div className="px-2 py-3 text-xs text-muted-foreground">No pages found.</div>
+                      <div className="px-2 py-3 text-xs text-muted-foreground">{t("studio.noPagesFound")}</div>
                     ) : null}
                   </div>
                 </div>
@@ -554,14 +552,14 @@ export function StudioWorkspace({
       ) : (
         <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
           <div className="max-w-sm">
-            <div className="font-medium text-foreground">Linked note missing.</div>
-            <div className="mt-2">Create a new linked note to keep writing beside this PDF.</div>
+            <div className="font-medium text-foreground">{t("studio.linkedNoteMissing")}</div>
+            <div className="mt-2">{t("studio.createLinkedNotePrompt")}</div>
             <button
               className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               onClick={() => onCreateMissingNote(document.id)}
             >
               <FilePlus className="h-4 w-4" />
-              Create linked note
+              {t("studio.createLinkedNote")}
             </button>
           </div>
         </div>
@@ -582,7 +580,7 @@ export function StudioWorkspace({
               <div className="on-studio-toolbar-group on-studio-page-controls">
                 <button
                   className="on-icon-button"
-                  title="Previous page"
+                  title={t("studio.previousPage")}
                   onClick={() => updatePage(activePdfPage - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -590,7 +588,7 @@ export function StudioWorkspace({
                 <div className="on-studio-page-indicator">
                   <input
                     className="on-studio-page-input"
-                    aria-label={pdfPageCount ? `Current PDF page of ${pdfPageCount}` : "Current PDF page"}
+                    aria-label={pdfPageCount ? t("studio.currentPdfPageOf", { count: String(pdfPageCount) }) : t("studio.currentPdfPage")}
                     inputMode="numeric"
                     value={pageDraft}
                     onChange={(event) => setPageDraft(event.target.value)}
@@ -614,7 +612,7 @@ export function StudioWorkspace({
                 </div>
                 <button
                   className="on-icon-button"
-                  title="Next page"
+                  title={t("studio.nextPage")}
                   onClick={() => updatePage(activePdfPage + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -623,21 +621,21 @@ export function StudioWorkspace({
               <div className="on-studio-toolbar-group on-studio-zoom-controls">
                 <button
                   className="on-icon-button"
-                  title="Zoom out"
+                  title={t("studio.zoomOut")}
                   onClick={() => updateZoom(currentZoom - 25)}
                 >
                   <ZoomOut className="h-4 w-4" />
                 </button>
                 <button
                   className="on-studio-zoom-button"
-                  title="Reset zoom"
+                  title={t("studio.resetZoom")}
                   onClick={() => updateZoom(100)}
                 >
                   {currentZoom}%
                 </button>
                 <button
                   className="on-icon-button"
-                  title="Zoom in"
+                  title={t("studio.zoomIn")}
                   onClick={() => updateZoom(currentZoom + 25)}
                 >
                   <ZoomIn className="h-4 w-4" />
@@ -646,7 +644,7 @@ export function StudioWorkspace({
               <div className="relative">
                 <button
                   className="on-icon-button"
-                  title="PDF view options"
+                  title={t("studio.pdfViewOptions")}
                   aria-haspopup="menu"
                   aria-expanded={isPdfViewMenuOpen}
                   onClick={() => setIsPdfViewMenuOpen((isOpen) => !isOpen)}
@@ -660,8 +658,8 @@ export function StudioWorkspace({
                   )}
                 </button>
                 {isPdfViewMenuOpen ? (
-                  <div className="on-studio-pdf-view-menu" role="menu" aria-label="PDF view options">
-                    {PDF_DISPLAY_MODE_OPTIONS.map((option) => (
+                  <div className="on-studio-pdf-view-menu" role="menu" aria-label={t("studio.pdfViewMenuAriaLabel")}>
+                    {pdfDisplayModeOptions.map((option) => (
                       <button
                         key={option.value}
                         role="menuitemradio"
@@ -682,24 +680,24 @@ export function StudioWorkspace({
               </div>
             </>
           )}
-          <div className="on-studio-view-switch" role="group" aria-label="Studio view">
+          <div className="on-studio-view-switch" role="group" aria-label={t("studio.studioViewAriaLabel")}>
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "pdf" ? "on-studio-view-switch-button-active" : ""}`}
-              title="PDF only"
+              title={t("studio.pdfOnly")}
               onClick={() => updateViewMode("pdf")}
             >
               <PanelLeft className="h-4 w-4" />
             </button>
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "split" ? "on-studio-view-switch-button-active" : ""}`}
-              title="Split view"
+              title={t("studio.splitView")}
               onClick={() => updateViewMode("split")}
             >
               <Columns2 className="h-4 w-4" />
             </button>
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "note" ? "on-studio-view-switch-button-active" : ""}`}
-              title={activeLinkedPage ? "Notes only" : "Linked note missing"}
+              title={activeLinkedPage ? t("studio.notesOnly") : t("studio.linkedNoteMissing")}
               disabled={!activeLinkedPage}
               onClick={() => {
                 if (activeLinkedPage) updateViewMode("note");
@@ -711,7 +709,7 @@ export function StudioWorkspace({
           {effectiveViewMode === "split" && (
             <button
               className="on-icon-button"
-              title="Swap PDF and notes"
+              title={t("studio.swapPdfAndNotes")}
               onClick={() => onUpdateViewer(document.id, { panel_layout: nextLayout })}
             >
               <ArrowLeftRight className="h-4 w-4" />
@@ -720,7 +718,7 @@ export function StudioWorkspace({
           {pdfLoadFailed && (
             <button
               className="on-icon-button"
-              title="Retry PDF preview"
+              title={t("studio.retryPdfPreview")}
               onClick={() => setPdfLoadFailed(false)}
             >
               <RotateCcw className="h-4 w-4" />
@@ -775,9 +773,9 @@ export function StudioWorkspace({
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Delete linked note?</div>
+                <div className="text-sm font-semibold">{t("studio.deleteLinkedNoteTitle")}</div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  Delete "{pendingDeleteLinkedPage.page.title || "Untitled"}" permanently and remove it from this PDF?
+                  {t("studio.deleteLinkedNoteBody", { title: pendingDeleteLinkedPage.page.title || t("studio.untitled") })}
                 </div>
               </div>
             </div>
@@ -787,14 +785,14 @@ export function StudioWorkspace({
                 className="on-button-secondary"
                 onClick={() => setPendingDeleteLinkedPage(null)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
                 className="on-button-danger"
                 onClick={() => void handleConfirmDeleteLinkedPage()}
               >
-                Delete
+                {t("sidebar.contextDelete")}
               </button>
             </div>
           </div>
@@ -827,6 +825,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   onVisiblePageChange: (page: number) => void;
   onRequestPageChange: (page: number) => void;
 }) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1040,9 +1039,11 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   // the whole PDF on every page turn — so the latest callbacks live in refs.
   const onLoadRef = useRef(onLoad);
   const onErrorRef = useRef(onError);
+  const tRef = useRef(t);
   useEffect(() => {
     onLoadRef.current = onLoad;
     onErrorRef.current = onError;
+    tRef.current = t;
   });
 
   useEffect(() => {
@@ -1061,7 +1062,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       if (!isStudioPdfPageCountAllowed(pdf.numPages)) {
         await pdf.destroy();
         pdfDocument = null;
-        throw new Error(`PDF has ${pdf.numPages} pages. OpenNotion supports up to ${MAX_STUDIO_PDF_PAGES} pages.`);
+        throw new Error(tRef.current("studio.pdfTooManyPages", { numPages: String(pdf.numPages), maxPages: String(MAX_STUDIO_PDF_PAGES) }));
       }
       if (isCancelled) {
         await pdfDocument.destroy();
@@ -1167,7 +1168,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     >
       {isLoading ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
-          Loading PDF...
+          {t("studio.loadingPdf")}
         </div>
       ) : null}
       <div className={`on-studio-pdf-pages on-studio-pdf-pages-${displayMode}`}>
@@ -1373,12 +1374,13 @@ function visiblePdfPageFromScroll(scrollElement: HTMLElement, pageCount: number 
 }
 
 function StudioSplitter({ onPointerDown }: { onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }) {
+  const t = useT();
   return (
     <div
       className="on-studio-splitter"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize Studio panels"
+      aria-label={t("studio.resizePanels")}
       onPointerDown={onPointerDown}
     />
   );

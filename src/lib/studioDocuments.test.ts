@@ -79,8 +79,14 @@ describe("studio document helpers", () => {
     expect(remainingStudioDocuments([old, newest, newer], [newest, newer]).map((item) => item.id)).toEqual(["old"]);
   });
 
-  it("formats document metadata from filename and last opened date", () => {
-    expect(studioDocumentMetadata(doc("Chapter One", "2026-05-27T10:15:00.000Z"))).toBe(
+  it("formats document metadata from filename and last opened date (en)", () => {
+    expect(studioDocumentMetadata(doc("Chapter One", "2026-05-27T10:15:00.000Z"), "en", "unknown date")).toBe(
+      "Chapter One.pdf · May 27, 2026"
+    );
+  });
+
+  it("formats document metadata from filename and last opened date (it)", () => {
+    expect(studioDocumentMetadata(doc("Chapter One", "2026-05-27T10:15:00.000Z"), "it", "data sconosciuta")).toBe(
       "Chapter One.pdf · 27 mag 2026"
     );
   });

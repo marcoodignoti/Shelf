@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openStudioDocumentFile, revealStudioDocumentFile, StudioDocument, StudioProject } from "../lib/studio";
 import { clampContextMenuPosition } from "../lib/contextMenu";
+import { useLocale, useT } from "../lib/i18n";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { DEFAULT_STUDIO_PROJECT_ID, groupStudioDocumentsByProject, studioDocumentMetadata } from "../lib/studioDocuments";
 import type { StudioProjectGroup } from "../lib/studioDocuments";
@@ -29,9 +30,6 @@ const STUDIO_DOCUMENT_MENU_HEIGHT = 178;
 const STUDIO_PROJECT_MENU_WIDTH = 190;
 const STUDIO_PROJECT_MENU_HEIGHT = 134;
 
-function formatStudioCount(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
 
 type ProjectNameDialogRequest = {
   title: string;
@@ -47,6 +45,7 @@ function StudioProjectNameDialog({
   onCancel: () => void;
   onSubmit: (name: string, parentId: string | null) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -70,7 +69,7 @@ function StudioProjectNameDialog({
         <div className="text-sm font-semibold text-foreground">{request.title}</div>
         <input
           ref={inputRef}
-          aria-label="Project name"
+          aria-label={t("studio.projectNameAriaLabel")}
           className="mt-3 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -83,10 +82,10 @@ function StudioProjectNameDialog({
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="on-button-secondary" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" className="on-button-primary" disabled={!name.trim()}>
-            Create
+            {t("studio.create")}
           </button>
         </div>
       </form>
@@ -104,6 +103,7 @@ function StudioDocumentRenameDialog({
   onCancel: () => void;
   onSubmit: (title: string) => void;
 }) {
+  const t = useT();
   const [title, setTitle] = useState(initialTitle);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -116,7 +116,7 @@ function StudioDocumentRenameDialog({
     <div className="on-modal-overlay z-[240] items-center justify-center p-4" onMouseDown={onCancel}>
       <form
         role="dialog"
-        aria-label="Rename Studio document"
+        aria-label={t("studio.renameStudioDocumentAriaLabel")}
         className="on-modal-panel w-[360px] max-w-[calc(100vw-2rem)] p-4"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
@@ -125,10 +125,10 @@ function StudioDocumentRenameDialog({
           if (nextTitle) onSubmit(nextTitle);
         }}
       >
-        <div className="text-sm font-semibold text-foreground">Rename Studio document</div>
+        <div className="text-sm font-semibold text-foreground">{t("studio.renameStudioDocument")}</div>
         <input
           ref={inputRef}
-          aria-label="Document title"
+          aria-label={t("studio.documentTitleAriaLabel")}
           className="mt-3 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
@@ -141,10 +141,10 @@ function StudioDocumentRenameDialog({
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="on-button-secondary" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" className="on-button-primary" disabled={!title.trim()}>
-            Rename
+            {t("studio.rename")}
           </button>
         </div>
       </form>
@@ -178,6 +178,8 @@ function StudioDocumentRow({
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
 
@@ -227,7 +229,7 @@ function StudioDocumentRow({
 
   const handleDelete = () => {
     setMenuPosition(null);
-    if (window.confirm(`Delete "${document.title}" and its linked note? This cannot be undone.`)) {
+    if (window.confirm(t("studio.deleteDocumentConfirm", { title: document.title }))) {
       onDelete();
     }
   };
@@ -283,14 +285,14 @@ function StudioDocumentRow({
             <span className="block truncate">{document.title}</span>
             {showMetadata && (
               <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                {studioDocumentMetadata(document)}
+                {studioDocumentMetadata(document, locale, t("studio.unknownDate"))}
               </span>
             )}
           </span>
         </div>
         <button
           type="button"
-          aria-label={`Actions for ${document.title}`}
+          aria-label={t("studio.documentActionsAriaLabel", { title: document.title })}
           className={`ml-2 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground ${menuPosition ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
           onClick={(event) => {
             event.preventDefault();
@@ -324,23 +326,23 @@ function StudioDocumentRow({
           >
             <button type="button" className="on-menu-item" onClick={handleRename}>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-              Rename
+              {t("studio.rename")}
             </button>
             <button type="button" className="on-menu-item" onClick={handleReveal}>
               <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-              Reveal in Finder
+              {t("studio.revealInFinder")}
             </button>
             <button type="button" className="on-menu-item" onClick={handleOpen}>
               <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-              Open PDF
+              {t("studio.openPdf")}
             </button>
             <div className="my-1 border-t border-border/70" />
             <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Move to project
+              {t("studio.moveToProject")}
             </div>
             <button type="button" role="menuitem" className="on-menu-item" onClick={() => handleMove(null)}>
               <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-              Move to Inbox
+              {t("studio.moveToInbox")}
             </button>
             {projects.map((project) => (
               <button
@@ -351,13 +353,13 @@ function StudioDocumentRow({
                 onClick={() => handleMove(project.id)}
               >
                 <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-                Move to {project.name}
+                {t("studio.moveTo", { name: project.name })}
               </button>
             ))}
             <div className="my-1 border-t border-border/70" />
             <button type="button" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
-              Delete document
+              {t("studio.deleteDocument")}
             </button>
           </div>,
           globalThis.document.body
@@ -403,6 +405,7 @@ function StudioProjectHeader({
   onProjectDragStart: () => void;
   onProjectDragEnd: () => void;
 }) {
+  const t = useT();
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(project.name);
@@ -461,7 +464,7 @@ function StudioProjectHeader({
 
   const handleDelete = () => {
     setMenuPosition(null);
-    if (window.confirm(`Delete "${project.name}"? Documents move back to Inbox.`)) {
+    if (window.confirm(t("studio.deleteProjectConfirm", { name: project.name }))) {
       onDelete();
     }
   };
@@ -503,7 +506,7 @@ function StudioProjectHeader({
       >
         <button
           type="button"
-          aria-label={`Toggle project ${project.name}`}
+          aria-label={t("studio.toggleProjectAriaLabel", { name: project.name })}
           aria-expanded={expanded}
           className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={(event) => {
@@ -533,7 +536,7 @@ function StudioProjectHeader({
         {isRenaming && !isInbox ? (
           <input
             ref={inputRef}
-            aria-label="Project name"
+            aria-label={t("studio.projectNameAriaLabel")}
             className="min-w-0 flex-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-0.5 text-xs text-foreground outline-none focus:border-ring"
             value={draftName}
             onChange={(event) => setDraftName(event.target.value)}
@@ -553,7 +556,7 @@ function StudioProjectHeader({
         ) : (
           <button
             type="button"
-            aria-label={`Select project ${project.name}`}
+            aria-label={t("studio.selectProjectAriaLabel", { name: project.name })}
             className="min-w-0 flex-1 truncate text-left text-foreground/80 hover:text-foreground"
             onClick={onSelect}
             onDoubleClick={() => {
@@ -567,7 +570,7 @@ function StudioProjectHeader({
         {!isInbox && (
           <button
             type="button"
-            aria-label={`Actions for project ${project.name}`}
+            aria-label={t("studio.projectActionsAriaLabel", { name: project.name })}
             className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();
@@ -591,25 +594,25 @@ function StudioProjectHeader({
           >
             <button type="button" role="menuitem" className="on-menu-item" onClick={handleRename}>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-              Rename project
+              {t("studio.renameProject")}
             </button>
             <button type="button" role="menuitem" className="on-menu-item" onClick={handleCreateChild}>
               <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-              New subfolder
+              {t("studio.newSubfolder")}
             </button>
             <div className="on-menu-separator" />
             <button type="button" role="menuitem" className="on-menu-item" onClick={handleExportNotesMarkdown}>
               <Download className="h-3.5 w-3.5 text-muted-foreground" />
-              Export notes (Markdown)
+              {t("studio.exportNotesMarkdown")}
             </button>
             <button type="button" role="menuitem" className="on-menu-item" onClick={handleExportNotesJSON}>
               <Download className="h-3.5 w-3.5 text-muted-foreground" />
-              Export notes (JSON)
+              {t("studio.exportNotesJSON")}
             </button>
             <div className="on-menu-separator" />
             <button type="button" role="menuitem" className="on-menu-item text-destructive hover:text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
-              Delete project
+              {t("studio.deleteProject")}
             </button>
           </div>,
           globalThis.document.body
@@ -633,6 +636,7 @@ export function StudioSidebar({
   onRenameDocument,
   onDeleteDocument,
 }: StudioSidebarProps) {
+  const t = useT();
   const projectGroups = groupStudioDocumentsByProject(documents, projects);
   const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
@@ -686,7 +690,7 @@ export function StudioSidebar({
 
   const handleCreateProject = () => {
     setProjectNameDialog({
-      title: currentImportProjectId ? "New Studio subfolder" : "New Studio project",
+      title: currentImportProjectId ? t("studio.newStudioSubfolder") : t("studio.newStudioProject"),
       parentId: currentImportProjectId,
     });
   };
@@ -701,7 +705,7 @@ export function StudioSidebar({
 
   const openChildProjectDialog = (parentId: string) => {
     setProjectNameDialog({
-      title: "New Studio subfolder",
+      title: t("studio.newStudioSubfolder"),
       parentId,
     });
   };
@@ -769,7 +773,9 @@ export function StudioSidebar({
     if (second.project.id === DEFAULT_STUDIO_PROJECT_ID) return 1;
     return 0;
   });
-  const projectHeaderSummary = `${formatStudioCount(documents.length, "PDF", "PDFs")} / ${formatStudioCount(projects.length, "project")}`;
+  const pdfCount = documents.length === 1 ? t("studio.countPdf", { count: String(documents.length) }) : t("studio.countPdfs", { count: String(documents.length) });
+  const projectCount = projects.length === 1 ? t("studio.countProject", { count: String(projects.length) }) : t("studio.countProjects", { count: String(projects.length) });
+  const projectHeaderSummary = `${pdfCount} / ${projectCount}`;
 
   const selectProject = (projectId: string) => {
     setCurrentProjectId(projectId);
@@ -856,7 +862,7 @@ export function StudioSidebar({
                 style={{ paddingLeft: 34 + depth * 18 }}
                 data-studio-project-empty
               >
-                Drop PDFs here
+                {t("studio.dropPdfsHere")}
               </div>
             )}
             {group.documents.map((document) => (
@@ -887,32 +893,32 @@ export function StudioSidebar({
       <div className="px-2">
         <button type="button" className="on-studio-import-button" onClick={() => onImport(currentImportProjectId)}>
           <Upload className="h-4 w-4" />
-          <span>Import PDF</span>
+          <span>{t("studio.importPdf")}</span>
         </button>
       </div>
       <div className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto px-2 pb-20 pt-3">
         {isLoading && (
           <div className="mx-1 flex items-center gap-2 rounded-xl border border-border/60 bg-background/35 p-3 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading Studio documents...
+            {t("studio.loadingDocuments")}
           </div>
         )}
         {!isLoading && documents.length === 0 && (
           <div className="mx-1 rounded-xl border border-dashed border-border/70 bg-background/35 p-3 text-xs text-muted-foreground">
-            <div className="font-medium text-foreground/80">No Studio documents</div>
-            <div className="mt-1">Import a PDF to create a linked note.</div>
+            <div className="font-medium text-foreground/80">{t("studio.noDocuments")}</div>
+            <div className="mt-1">{t("studio.noDocumentsHint")}</div>
           </div>
         )}
         {!isLoading && (
           <section className="mb-4" data-studio-current-project-id={currentProjectId ?? "root"}>
             <div className="mb-2 flex items-end justify-between gap-2">
               <div className="min-w-0">
-                <div className="on-studio-tree-title">Projects</div>
+                <div className="on-studio-tree-title">{t("studio.projectsSection")}</div>
                 <div className="on-studio-section-subtitle px-3">{projectHeaderSummary}</div>
               </div>
               <button
                 type="button"
-                aria-label={currentImportProjectId ? "New Studio subfolder" : "New Studio project"}
+                aria-label={currentImportProjectId ? t("studio.newStudioSubfolder") : t("studio.newStudioProject")}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={handleCreateProject}
               >
@@ -921,7 +927,7 @@ export function StudioSidebar({
             </div>
             {projectGroups.length === 0 && (
               <div className="mx-1 rounded-lg border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                Create a project to organize PDFs.
+                {t("studio.noProjects")}
               </div>
             )}
             <div className="on-studio-tree">

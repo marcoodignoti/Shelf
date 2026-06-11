@@ -1,3 +1,4 @@
+import type { Locale } from "./i18n";
 import { StudioDocument, StudioPanelLayout, StudioProject } from "./studio";
 
 export const DEFAULT_STUDIO_PROJECT_ID = "studio-inbox";
@@ -30,12 +31,11 @@ export function remainingStudioDocuments(
   return allStudioDocuments(documents).filter((document) => !excludedIds.has(document.id));
 }
 
-export function studioDocumentMetadata(document: StudioDocument): string {
+export function studioDocumentMetadata(document: StudioDocument, locale: Locale = "en", unknownDateLabel = "unknown date"): string {
   const openedAt = new Date(document.last_opened_at);
-  const monthLabels = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
   const date = Number.isNaN(openedAt.getTime())
-    ? "data sconosciuta"
-    : `${openedAt.getDate()} ${monthLabels[openedAt.getMonth()]} ${openedAt.getFullYear()}`;
+    ? unknownDateLabel
+    : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(openedAt);
 
   return `${document.original_filename} · ${date}`;
 }
