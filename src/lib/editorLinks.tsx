@@ -61,7 +61,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
     },
   },
   {
-    render: ({ inlineContent, updateInlineContent, contentRef }) => {
+    render: ({ inlineContent, updateInlineContent }) => {
       const t = useT();
       const props = inlineContent.props as PageLinkProps;
       const title = props.title || t("sidebar.untitled");
@@ -118,8 +118,9 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
       };
 
       return (
+        // No contentRef: content "none" (leaf) spec. A content hole on a leaf
+        // node makes ProseMirror's clipboard serializer throw on copy.
         <span
-          ref={contentRef}
           className="on-page-link-shell"
           onMouseEnter={openPreview}
           onMouseLeave={closePreviewSoon}
@@ -227,13 +228,13 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
         </span>
       );
     },
-    toExternalHTML: ({ inlineContent, contentRef }) => {
+    toExternalHTML: ({ inlineContent }) => {
       const props = inlineContent.props as PageLinkProps;
       const label = props.label || props.title || "Untitled";
 
       return (
+        // No contentRef: leaf spec, see the note in render above.
         <span
-          ref={contentRef}
           className="on-page-link"
           data-page-id={props.pageId}
           data-page-title={props.title}
