@@ -19,6 +19,9 @@ function assert(condition, message) {
 async function launchApp(userDataDir) {
   const app = await electron.launch({
     executablePath,
+    // Pin the renderer locale: parity assertions use English strings and must
+    // not depend on the host machine's system language.
+    args: ["--lang=en-US"],
     env: {
       ...process.env,
       OPENNOTION_USER_DATA_DIR: userDataDir,

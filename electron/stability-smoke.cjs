@@ -47,6 +47,9 @@ async function main() {
 
   const app = await electron.launch({
     executablePath,
+    // Pin the renderer locale: smoke assertions use English strings and must
+    // not depend on the host machine's system language.
+    args: ["--lang=en-US"],
     env: {
       ...process.env,
       OPENNOTION_USER_DATA_DIR: userDataDir,

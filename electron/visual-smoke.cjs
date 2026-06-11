@@ -19,6 +19,8 @@ async function main() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-smoke-"));
   const app = await electron.launch({
     executablePath,
+    // Pin the renderer locale so screenshots are stable across host languages.
+    args: ["--lang=en-US"],
     env: {
       ...process.env,
       OPENNOTION_USER_DATA_DIR: userDataDir,
