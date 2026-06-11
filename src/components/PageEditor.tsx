@@ -605,6 +605,7 @@ function slashMenuElement(): HTMLElement | null {
 }
 
 function OpenNotionBlockTypeSelect() {
+  const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -818,7 +819,7 @@ function OpenNotionBlockTypeSelect() {
         zIndex={240}
         className="on-popover opennotion-block-type-menu"
       >
-        <div role="menu" aria-label="Block type" className="grid gap-0.5" onKeyDown={handleMenuKeyDown}>
+        <div role="menu" aria-label={t("editor.blockType")} className="grid gap-0.5" onKeyDown={handleMenuKeyDown}>
           {selectItems.map((item, index) => (
             <button
               key={`${item.text}-${item.isSelected ? "selected" : "available"}`}
@@ -1992,7 +1993,7 @@ export function Editor({
               className={`text-xs text-muted-foreground/60 transition-colors ${saveState.status === "error" ? "text-destructive" : ""}`}
               title={saveState.status === "error" ? saveState.message : t("editor.saveStatus")}
             >
-              {saveStatusLabel(saveState, t as (key: string, params?: Record<string, string>) => string)}
+              {saveStatusLabel(saveState, t)}
             </div>
             <button
               type="button"

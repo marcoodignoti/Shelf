@@ -1,3 +1,5 @@
+import type { TranslationKey } from "./i18n";
+
 export type EditorSaveState =
   | { status: "saved" }
   | { status: "dirty" }
@@ -31,9 +33,9 @@ export function editorSaveReducer(
 
 export function saveStatusLabel(
   state: EditorSaveState,
-  t?: (key: string, params?: Record<string, string>) => string,
+  t?: (key: TranslationKey, params?: Record<string, string>) => string,
 ): string {
-  const tr = t ?? ((k: string) => k);
+  const tr = t ?? ((k: TranslationKey) => k);
   switch (state.status) {
     case "saved":
       return tr("editor.saveStatusSaved");
