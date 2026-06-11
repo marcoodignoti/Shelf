@@ -369,6 +369,7 @@ export const it: Record<keyof typeof en, string> = {
   "notice.updateAvailable": "Aggiornamento{version} disponibile. Download in corso in background.",
   "notice.updateDownloaded": "Aggiornamento scaricato e verificato.",
   "notice.noPlatformDownload": "Nessun download beta disponibile per questa piattaforma al momento.",
+  "notice.windowsUpdateFailed": "Aggiornamento di Windows non riuscito.",
   "notice.somethingWentWrong": "Qualcosa è andato storto. Riprova.",
   "notice.noPermission": "OpenNotion non ha il permesso di completare quell'azione.",
   "notice.mediaCouldNotImport": "Impossibile importare quel file multimediale.",

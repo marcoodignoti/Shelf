@@ -96,6 +96,7 @@ interface AppState {
   clearNotice: () => void;
   showSuccess: (key: TranslationKey, params?: TranslationParams) => void;
   showError: (error: unknown) => void;
+  showErrorKey: (key: TranslationKey, params?: TranslationParams) => void;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   isSidebarOpen: boolean;
@@ -290,6 +291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setError: (error) => set({ error, notice: error ? { kind: 'error', rawMessage: error } : null }),
   clearNotice: () => set({ notice: null }),
   showSuccess: (key, params) => set({ notice: { kind: 'success', messageKey: key, params }, error: null }),
+  showErrorKey: (key, params) => set({ notice: { kind: 'error', messageKey: key, params }, error: key }),
   showError: (error) => {
     const noticePart = noticeKeyForError(error);
     const notice: AppNotice = { kind: 'error', ...noticePart } as AppNotice;

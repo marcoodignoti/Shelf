@@ -41,6 +41,7 @@ export default function App() {
   const replaceStudioPdfAction = useAppStore((state) => state.replaceStudioPdfAction);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const showError = useAppStore((state) => state.showError);
+  const showErrorKey = useAppStore((state) => state.showErrorKey);
   const [readyUpdate, setReadyUpdate] = useState<{ version: string | null } | null>(null);
 
   useEffect(() => {
@@ -103,15 +104,18 @@ export default function App() {
         setReadyUpdate({ version: updateInfo.version ?? null });
       }
       if (eventName === "desktop-update-error") {
-        const message = typeof payload === "string" ? payload : "Windows update failed.";
-        showError(message);
+        if (typeof payload === "string") {
+          showError(payload);
+        } else {
+          showErrorKey("notice.windowsUpdateFailed");
+        }
       }
     });
 
     return () => {
       unsubscribe?.();
     };
-  }, [showError, showSuccess]);
+  }, [showError, showErrorKey, showSuccess]);
 
   const currentPage = useMemo(
     () => pages.find(p => p.id === currentPageId),

@@ -6,7 +6,7 @@ import { Download, RefreshCw } from 'lucide-react';
 
 export function UpdatesSection() {
   const t = useT();
-  const { showSuccess, showError } = useAppStore();
+  const { showSuccess, showError, showErrorKey } = useAppStore();
   const [updateState, setUpdateState] = useState<BetaUpdateState>({ status: 'idle' });
   const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
 
@@ -25,7 +25,7 @@ export function UpdatesSection() {
   const handleDownloadUpdate = async () => {
     if (updateState.status !== 'available') return;
     if (!updateState.download) {
-      showError(t('settings.updates.noPlatformDownload'));
+      showErrorKey('settings.updates.noPlatformDownload');
       return;
     }
 

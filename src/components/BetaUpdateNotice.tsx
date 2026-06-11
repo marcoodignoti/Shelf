@@ -34,6 +34,7 @@ function isMacPlatform(): boolean {
 export function BetaUpdateNotice() {
   const t = useT();
   const showError = useAppStore((state) => state.showError);
+  const showErrorKey = useAppStore((state) => state.showErrorKey);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const [state, setState] = useState<BetaUpdateState>({ status: "idle" });
   const [copiedHomebrewCommand, setCopiedHomebrewCommand] = useState(false);
@@ -70,7 +71,7 @@ export function BetaUpdateNotice() {
   const handleDownload = useCallback(async () => {
     if (state.status !== "available") return;
     if (!state.download) {
-      showError(t("notice.noPlatformDownload"));
+      showErrorKey("notice.noPlatformDownload");
       return;
     }
 
@@ -83,7 +84,7 @@ export function BetaUpdateNotice() {
     } finally {
       setIsDownloading(false);
     }
-  }, [showError, showSuccess, state, t]);
+  }, [showError, showErrorKey, showSuccess, state]);
 
   const handleCopyHomebrewCommand = useCallback(async () => {
     try {

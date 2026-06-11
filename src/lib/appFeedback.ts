@@ -27,11 +27,6 @@ export function noticeKeyForError(error: unknown): { messageKey: TranslationKey;
   if (lower.includes("content is not a supported video")) return { messageKey: "notice.videoContentUnsupported" };
   if (lower.includes("permission denied") || lower.includes("access denied")) return { messageKey: "notice.noPermission" };
 
-  // Media-specific messages that come pre-translated from editorMediaUserMessage
-  if (lower.includes("image must be 10 mb or smaller")) return { messageKey: "notice.imageTooLarge" };
-  if (lower.includes("video must be 512 mb or smaller")) return { messageKey: "notice.videoTooLarge" };
-  if (lower.includes("could not import that media file")) return { messageKey: "notice.mediaCouldNotImport" };
-
   if (message) return { rawMessage: message };
   return { messageKey: "notice.somethingWentWrong" };
 }

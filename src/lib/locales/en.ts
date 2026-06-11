@@ -367,6 +367,7 @@ export const en = {
   "notice.updateAvailable": "Update{version} available. Downloading in background.",
   "notice.updateDownloaded": "Downloaded and verified update.",
   "notice.noPlatformDownload": "No beta download is available for this platform yet.",
+  "notice.windowsUpdateFailed": "Windows update failed.",
   "notice.somethingWentWrong": "Something went wrong. Please try again.",
   "notice.noPermission": "OpenNotion does not have permission to complete that action.",
   "notice.mediaCouldNotImport": "Could not import that media file.",
