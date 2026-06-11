@@ -118,10 +118,10 @@ if (Object.keys(downloads).length === 0) {
 
 const manifest = {
   version,
-  channel: env("OPENNOTION_UPDATE_CHANNEL", "beta"),
+  channel: env("OPENNOTION_UPDATE_CHANNEL", "stable"),
   publishedAt: env("OPENNOTION_UPDATE_PUBLISHED_AT", new Date().toISOString()),
   title: env("OPENNOTION_UPDATE_TITLE", `OpenNotion ${version}`),
-  summary: env("OPENNOTION_UPDATE_SUMMARY", "New beta build ready for testers."),
+  summary: env("OPENNOTION_UPDATE_SUMMARY", "New OpenNotion build is ready."),
   changes: changesFromEnv(),
   downloads,
 };
