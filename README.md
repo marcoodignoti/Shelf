@@ -87,11 +87,17 @@ your explicit choice.
 
 ## Installation
 
-Grab the latest build from the **[releases page](https://github.com/marcoodignoti/OpenNotion/releases/latest)**.
+Grab the latest build from the **[releases page](https://github.com/marcoodignoti/OpenNotion/releases/latest)** — pick the file for your platform:
+
+| Platform | File | Notes |
+|---|---|---|
+| macOS (Apple Silicon) | `OpenNotion_<version>_arm64.dmg` | First launch needs one extra step, see below |
+| Windows 10/11 (x64) | `OpenNotion_<version>_setup_win-x64.exe` | Installer with built-in auto-update |
+| Windows portable | `OpenNotion_<version>_win-x64.zip` | Extract and run `OpenNotion.exe` |
 
 ### macOS (Apple Silicon)
 
-Download `OpenNotion_<version>_arm64.dmg`, or use Homebrew:
+Download the `.dmg`, or use Homebrew:
 
 ```sh
 brew tap marcoodignoti/opennotion
@@ -99,12 +105,15 @@ brew install --cask opennotion-beta
 ```
 
 The macOS build is ad-hoc signed (hardened runtime, not notarized), so
-Gatekeeper shows an unidentified-developer warning. After copying the app to
-`/Applications`:
+Gatekeeper warns about an unidentified developer on first launch. After
+copying the app to `/Applications`, either:
 
-```sh
-xattr -dr com.apple.quarantine /Applications/OpenNotion.app
-```
+- **Right-click the app → Open → Open** (only needed once), or
+- clear the quarantine flag from a terminal:
+
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/OpenNotion.app
+  ```
 
 The app checks for updates itself: signed manifest, SHA-256-verified
 downloads.
@@ -119,7 +128,7 @@ Prefer no installer? `OpenNotion_<version>_win-x64.zip` is a portable build —
 extract and run `OpenNotion.exe`.
 
 Windows builds are not yet Authenticode-signed, so SmartScreen may warn on
-first run.
+first run — choose **More info → Run anyway**.
 
 ## Privacy Model
 
