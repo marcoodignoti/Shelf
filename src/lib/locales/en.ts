@@ -385,6 +385,7 @@ export const en = {
   "commandPalette.search": "Search pages...",
   "commandPalette.searching": "Searching...",
   "commandPalette.noResults": "No results.",
+  "commandPalette.searchFailed": "Search failed.",
   "commandPalette.noPagesYet": "No pages yet.",
   "commandPalette.suggested": "Suggested",
   "commandPalette.favorites": "Favorites",

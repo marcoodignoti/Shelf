@@ -92,7 +92,7 @@ export function CommandPalette() {
         .catch((error) => {
           if (cancelled) return;
           console.error('Search failed:', error);
-          setSearchError(t('commandPalette.noResults'));
+          setSearchError(t('commandPalette.searchFailed'));
         })
         .finally(() => {
           if (!cancelled) setIsSearching(false);

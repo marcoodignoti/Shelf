@@ -387,6 +387,7 @@ export const it: Record<keyof typeof en, string> = {
   "commandPalette.search": "Cerca pagine...",
   "commandPalette.searching": "Ricerca in corso...",
   "commandPalette.noResults": "Nessun risultato.",
+  "commandPalette.searchFailed": "Ricerca non riuscita.",
   "commandPalette.noPagesYet": "Nessuna pagina ancora.",
   "commandPalette.suggested": "Suggeriti",
   "commandPalette.favorites": "Preferiti",
