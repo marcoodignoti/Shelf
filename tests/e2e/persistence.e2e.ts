@@ -1366,11 +1366,17 @@ test.describe("system clipboard", () => {
     await expect(page.getByLabel("Formula: x^2")).toBeVisible();
 
     await page.evaluate(() => navigator.clipboard.writeText("SENTINEL-INLINE"));
-    await page.keyboard.press("Home");
-    await page.keyboard.press("Shift+End");
-    // Wait for ProseMirror to sync the DOM selection before copying, otherwise
-    // its copy handler may not intercept and the browser does a native capture.
-    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? "")).toContain("beta");
+    // Select via ProseMirror-handled mouse events (click + Shift+click): a
+    // browser-native key selection (Home/Shift+End) can leave the PM state
+    // stale, in which case the copy handler skips the event and nothing is
+    // written to the clipboard.
+    const paragraph = page.locator(".bn-inline-content", { hasText: "alpha" }).first();
+    const box = await paragraph.boundingBox();
+    if (!box) throw new Error("paragraph not visible");
+    await page.mouse.click(box.x + 2, box.y + box.height / 2);
+    await page.keyboard.down("Shift");
+    await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+    await page.keyboard.up("Shift");
     await page.keyboard.press("ControlOrMeta+c");
 
     await expect
