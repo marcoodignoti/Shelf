@@ -29,16 +29,20 @@ export function editorSaveReducer(
   }
 }
 
-export function saveStatusLabel(state: EditorSaveState): string {
+export function saveStatusLabel(
+  state: EditorSaveState,
+  t?: (key: string, params?: Record<string, string>) => string,
+): string {
+  const tr = t ?? ((k: string) => k);
   switch (state.status) {
     case "saved":
-      return "Saved";
+      return tr("editor.saveStatusSaved");
     case "dirty":
-      return "Unsaved";
+      return tr("editor.saveStatusUnsaved");
     case "saving":
-      return "Saving...";
+      return tr("editor.saveStatusSaving");
     case "error":
-      return "Save failed";
+      return tr("editor.saveStatusFailed");
   }
 }
 

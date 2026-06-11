@@ -28,6 +28,7 @@ import { Page, updatePage } from "../lib/db";
 import { normalizePageTitle } from "../lib/pageTitle";
 import { appendedSiblingId, dropPositionFromOffset, reorderedSiblingIds } from "../lib/pageOrder";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
+import { useT } from "../lib/i18n";
 import { useAppStore } from "../store/useAppStore";
 import { FloatingPopover } from "./FloatingPopover";
 
@@ -74,6 +75,7 @@ export function DatabaseTableView({
   rows: Page[];
   onSelectPage: (id: string) => void;
 }) {
+  const t = useT();
   const addPage = useAppStore((state) => state.addPage);
   const showError = useAppStore((state) => state.showError);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
@@ -492,14 +494,14 @@ export function DatabaseTableView({
                   onClick={() => void handleAddBoardRow(column.id)}
                 >
                   <PlusCircle className="h-4 w-4" />
-                  New
+                  {t("editor.db.new")}
                 </button>
               </div>
             ))}
           </div>
         ) : (
           <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-            Add a select property to use Board view.
+            {t("editor.db.addSelectForBoard")}
           </div>
         )
       ) : (
@@ -510,7 +512,7 @@ export function DatabaseTableView({
           >
             <div className="flex items-center gap-2 border-r border-border/70 px-3 py-2">
               <span className="text-base leading-none text-muted-foreground/70">Aa</span>
-              <span>Name</span>
+              <span>{t("editor.db.nameColumn")}</span>
             </div>
             {schema.properties.map((property) => (
               <div key={property.id} className="border-r border-border/70 px-2 py-1.5 last:border-r-0">
@@ -545,8 +547,8 @@ export function DatabaseTableView({
               <button
                 type="button"
                 className="rounded-md p-1.5 hover:bg-muted hover:text-foreground"
-                title="Add property"
-                aria-label="Add property"
+                title={t("editor.db.addProperty")}
+                aria-label={t("editor.db.addProperty")}
                 onClick={() => void handleAddProperty()}
               >
                 <Plus className="h-4 w-4" />
@@ -554,8 +556,8 @@ export function DatabaseTableView({
               <button
                 type="button"
                 className="rounded-md px-1.5 py-1 text-lg leading-none hover:bg-muted hover:text-foreground"
-                title="More property options"
-                aria-label="More property options"
+                title={t("editor.db.morePropertyOptions")}
+                aria-label={t("editor.db.morePropertyOptions")}
               >
                 ...
               </button>
@@ -622,7 +624,7 @@ export function DatabaseTableView({
                           value={String(properties[property.id] ?? "")}
                           onChange={(event) => void handlePropertyChange(row, property.id, event.target.value)}
                         >
-                          <option value="">Empty</option>
+                          <option value="">{t("editor.db.empty")}</option>
                           {(property.options ?? []).map((option) => (
                             <option key={option} value={option}>
                               {option}
@@ -644,8 +646,8 @@ export function DatabaseTableView({
                       role="button"
                       tabIndex={0}
                       className="flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 active:cursor-grabbing"
-                      title="Drag row"
-                      aria-label={`Drag ${row.title || "Untitled"}`}
+                      title={t("editor.db.dragRow")}
+                      aria-label={t("editor.db.dragRowLabel", { title: row.title || t("sidebar.untitled") })}
                       onClick={(event) => event.stopPropagation()}
                       onPointerDown={(event) => handleTableDragHandlePointerDown(event, row)}
                     >
@@ -657,7 +659,7 @@ export function DatabaseTableView({
             })}
             {visibleRows.length === 0 && (
               <div className="border-b border-border/70 px-3 py-8 text-center text-sm text-muted-foreground">
-                No rows match current filter.
+                {t("editor.db.noRowsMatch")}
               </div>
             )}
             <button
@@ -668,7 +670,7 @@ export function DatabaseTableView({
             >
               <span className="flex items-center gap-2 border-r border-border/70 px-3 py-2">
                 <Plus className="h-4 w-4" />
-                New page
+                {t("editor.db.newPage")}
               </span>
               {schema.properties.map((property) => (
                 <span key={`new-row-empty-${property.id}`} className="border-r border-border/70 last:border-r-0" />
@@ -687,7 +689,7 @@ export function DatabaseTableView({
             onClick={() => setTemplateMenuOpen((open) => !open)}
           >
             <Copy className="h-4 w-4" />
-            New row from template
+            {t("editor.db.newRowFromTemplate")}
             <ChevronDown className="ml-auto h-4 w-4" />
           </button>
           <FloatingPopover
@@ -727,7 +729,7 @@ export function DatabaseTableView({
             onClick={() => startRowRename(contextMenuRow)}
           >
             <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            Rename
+            {t("editor.db.rename")}
           </button>
           <button
             type="button"
@@ -738,7 +740,7 @@ export function DatabaseTableView({
             }}
           >
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-            Open
+            {t("editor.db.open")}
           </button>
           <button
             type="button"
@@ -746,7 +748,7 @@ export function DatabaseTableView({
             onClick={() => void handleToggleRowFavorite(contextMenuRow)}
           >
             <Star className={`h-3.5 w-3.5 text-muted-foreground ${contextMenuRow.is_favorite === 1 ? "fill-current" : ""}`} />
-            {contextMenuRow.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+            {contextMenuRow.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
           </button>
           <button
             type="button"
@@ -754,7 +756,7 @@ export function DatabaseTableView({
             onClick={() => void handleDuplicateRow(contextMenuRow)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-            Duplicate
+            {t("editor.duplicate")}
           </button>
           <div className="my-1 h-px bg-border" />
           <button
@@ -763,7 +765,7 @@ export function DatabaseTableView({
             onClick={() => void handleToggleRowTemplate(contextMenuRow)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-            {contextMenuRow.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+            {contextMenuRow.is_template === 1 ? t("editor.db.removeRowTemplate") : t("editor.db.useAsRowTemplate")}
           </button>
           <button
             type="button"
@@ -771,7 +773,7 @@ export function DatabaseTableView({
             onClick={() => void handleAddRowSubpage(contextMenuRow)}
           >
             <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-            New subpage
+            {t("sidebar.contextNewSubpage")}
           </button>
           <div className="my-1 h-px bg-border" />
           <button
@@ -780,7 +782,7 @@ export function DatabaseTableView({
             onClick={() => void handleDeleteRow(contextMenuRow)}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
+            {t("sidebar.contextDelete")}
           </button>
         </div>
       )}
@@ -795,6 +797,7 @@ export function DatabaseRowPropertiesPanel({
   databasePage: Page;
   rowPage: Page;
 }) {
+  const t = useT();
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const showError = useAppStore((state) => state.showError);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
@@ -818,9 +821,9 @@ export function DatabaseRowPropertiesPanel({
   return (
     <div className="mb-8 rounded-md border border-border bg-background">
       <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs text-muted-foreground">
-        <span>{databasePage.title || "Database"} properties</span>
+        <span>{t("editor.db.properties", { title: databasePage.title || t("sidebar.untitled") })}</span>
         <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => void handleToggleTemplate()}>
-          {rowPage.is_template === 1 ? "Remove row template" : "Use as row template"}
+          {rowPage.is_template === 1 ? t("editor.db.removeRowTemplate") : t("editor.db.useAsRowTemplate")}
         </button>
       </div>
       <div className="divide-y divide-border">
@@ -835,7 +838,7 @@ export function DatabaseRowPropertiesPanel({
           </div>
         ))}
         {schema.properties.length === 0 && (
-          <div className="px-3 py-4 text-sm text-muted-foreground">No properties yet.</div>
+          <div className="px-3 py-4 text-sm text-muted-foreground">{t("editor.db.noPropertiesYet")}</div>
         )}
       </div>
     </div>
@@ -851,6 +854,7 @@ function DatabasePropertyValueControl({
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
 }) {
+  const t = useT();
   if (property.type === "checkbox") {
     return (
       <input
@@ -869,7 +873,7 @@ function DatabasePropertyValueControl({
         value={String(value ?? "")}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value="">Empty</option>
+        <option value="">{t("editor.db.empty")}</option>
         {(property.options ?? []).map((option) => (
           <option key={option} value={option}>
             {option}
@@ -926,6 +930,7 @@ function DatabaseViewToolbar({
   onBoardPropertyChange: (propertyId: string) => void;
   onDeleteBoardView: () => void;
 }) {
+  const t = useT();
   const sortProperty = properties.find((property) => property.id === schema.sort?.propertyId);
   const filterProperty = properties.find((property) => property.id === schema.filter?.propertyId);
   const selectProperties = properties.filter((property) => property.type === "select");
@@ -942,7 +947,7 @@ function DatabaseViewToolbar({
           onClick={() => onViewChange("table")}
         >
           <Table2 className="h-4 w-4" />
-          Table
+          {t("editor.db.tableView")}
         </button>
         {boardViewEnabled ? (
           <div
@@ -956,13 +961,13 @@ function DatabaseViewToolbar({
               onClick={() => onViewChange("board")}
             >
               <Columns3 className="h-4 w-4" />
-              Board
+              {t("editor.db.boardView")}
             </button>
             <button
               type="button"
               className="mr-1 rounded-full p-1 opacity-0 hover:bg-background/80 group-hover/view:opacity-100 focus:opacity-100"
-              aria-label="Delete board view"
-              title="Delete board view"
+              aria-label={t("editor.db.deleteBoardView")}
+              title={t("editor.db.deleteBoardView")}
               onClick={onDeleteBoardView}
             >
               <X className="h-3.5 w-3.5" />
@@ -975,7 +980,7 @@ function DatabaseViewToolbar({
             onClick={() => onViewChange("board")}
           >
             <Plus className="h-4 w-4" />
-            Board
+            {t("editor.db.boardView")}
           </button>
         )}
       </div>
@@ -988,7 +993,7 @@ function DatabaseViewToolbar({
         >
           {selectProperties.map((property) => (
             <option key={property.id} value={property.id}>
-              Board by {property.name}
+              {t("editor.db.boardBy", { name: property.name })}
             </option>
           ))}
         </select>
@@ -998,13 +1003,13 @@ function DatabaseViewToolbar({
         <select
           className="max-w-24 bg-transparent text-sm outline-none"
           value={sortProperty?.id ?? ""}
-          aria-label="Sort property"
+          aria-label={t("editor.db.sortProperty")}
           onChange={(event) => {
             const property = properties.find((candidate) => candidate.id === event.target.value);
             onSortChange(property ? { propertyId: property.id, direction: schema.sort?.direction ?? "asc" } : null);
           }}
         >
-          <option value="">Sort</option>
+          <option value="">{t("editor.db.sort")}</option>
           {properties.map((property) => (
             <option key={property.id} value={property.id}>
               {property.name}
@@ -1024,11 +1029,11 @@ function DatabaseViewToolbar({
               })
             }
           >
-            <option value="asc">Ascending</option>
-            <option value="desc">Descending</option>
+            <option value="asc">{t("editor.db.ascending")}</option>
+            <option value="desc">{t("editor.db.descending")}</option>
           </select>
           <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => onSortChange(null)}>
-            Clear
+            {t("editor.db.clear")}
           </button>
         </>
       )}
@@ -1038,13 +1043,13 @@ function DatabaseViewToolbar({
         <select
           className="max-w-24 bg-transparent text-sm outline-none"
           value={filterProperty?.id ?? ""}
-          aria-label="Filter property"
+          aria-label={t("editor.db.filterProperty")}
           onChange={(event) => {
             const property = properties.find((candidate) => candidate.id === event.target.value);
             onFilterChange(property ? defaultFilterForProperty(property) : null);
           }}
         >
-          <option value="">Filter</option>
+          <option value="">{t("editor.db.filter")}</option>
           {properties.map((property) => (
             <option key={property.id} value={property.id}>
               {property.name}
@@ -1056,7 +1061,7 @@ function DatabaseViewToolbar({
         <>
           <FilterValueControl property={filterProperty} filter={schema.filter} onChange={onFilterChange} />
           <button type="button" className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" onClick={() => onFilterChange(null)}>
-            Clear
+            {t("editor.db.clear")}
           </button>
         </>
       )}
@@ -1065,7 +1070,7 @@ function DatabaseViewToolbar({
           className="ml-2 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-blue-500"
           onClick={() => onAddRow()}
         >
-          New
+          {t("editor.db.new")}
           <ChevronDown className="h-4 w-4 border-l border-white/25 pl-1" />
         </button>
       </div>
@@ -1082,6 +1087,7 @@ function FilterValueControl({
   filter: DatabaseFilter;
   onChange: (filter: DatabaseFilter) => void;
 }) {
+  const t = useT();
   if (property.type === "checkbox") {
     return (
       <select
@@ -1089,8 +1095,8 @@ function FilterValueControl({
         value={filter.value === false ? "false" : "true"}
         onChange={(event) => onChange({ propertyId: property.id, operator: "equals", value: event.target.value === "true" })}
       >
-        <option value="true">Checked</option>
-        <option value="false">Unchecked</option>
+        <option value="true">{t("editor.db.checked")}</option>
+        <option value="false">{t("editor.db.unchecked")}</option>
       </select>
     );
   }
@@ -1125,8 +1131,8 @@ function FilterValueControl({
             })
           }
         >
-          <option value="equals">Exact</option>
-          <option value="is_empty">Empty</option>
+          <option value="equals">{t("editor.db.exact")}</option>
+          <option value="is_empty">{t("editor.db.empty")}</option>
         </select>
         {filter.operator !== "is_empty" && (
           <input
@@ -1143,7 +1149,7 @@ function FilterValueControl({
   return (
     <input
       className="rounded-md border border-border bg-background px-2 py-1 outline-none"
-      placeholder="Contains..."
+      placeholder={t("editor.db.containsPlaceholder")}
       value={String(filter.value ?? "")}
       onChange={(event) => onChange({ propertyId: property.id, operator: "contains", value: event.target.value })}
     />
@@ -1159,10 +1165,11 @@ function PropertyEditor({
   onUpdate: (updates: Partial<DatabaseProperty>) => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-2">
       <label className="block text-xs text-muted-foreground">
-        Name
+        {t("editor.db.propertyName")}
         <input
           className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
           value={property.name}
@@ -1170,7 +1177,7 @@ function PropertyEditor({
         />
       </label>
       <label className="block text-xs text-muted-foreground">
-        Type
+        {t("editor.db.propertyType")}
         <select
           className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
           value={property.type}
@@ -1185,7 +1192,7 @@ function PropertyEditor({
       </label>
       {property.type === "select" && (
         <label className="block text-xs text-muted-foreground">
-          Options
+          {t("editor.db.propertyOptions")}
           <input
             className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
             value={(property.options ?? []).join(", ")}
@@ -1206,7 +1213,7 @@ function PropertyEditor({
         onClick={onDelete}
       >
         <Trash2 className="h-3.5 w-3.5" />
-        Delete property
+        {t("editor.db.deleteProperty")}
       </button>
     </div>
   );

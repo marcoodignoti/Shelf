@@ -124,23 +124,23 @@ function isTheme(value: string | null): value is Theme {
 }
 
 function getStoredTheme(): Theme {
-  const storedTheme = localStorage.getItem('opennotion-theme');
+  const storedTheme = typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-theme') : null;
   return isTheme(storedTheme) ? storedTheme : 'system';
 }
 
 const getStoredPreference = <T>(key: string, parse: (value: unknown) => T): T =>
-  parse(localStorage.getItem(key));
+  parse(typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null);
 
 function getStoredPageId(): string | null {
-  return localStorage.getItem('opennotion-current-page-id');
+  return typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-current-page-id') : null;
 }
 
 function getStoredWorkspaceMode(): WorkspaceMode {
-  return localStorage.getItem('opennotion-workspace-mode') === 'studio' ? 'studio' : 'notes';
+  return (typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-workspace-mode') : null) === 'studio' ? 'studio' : 'notes';
 }
 
 function getStoredStudioDocumentId(): string | null {
-  return localStorage.getItem('opennotion-current-studio-document-id');
+  return typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-current-studio-document-id') : null;
 }
 
 function clampSidebarWidth(width: number): number {
@@ -148,7 +148,7 @@ function clampSidebarWidth(width: number): number {
 }
 
 function getStoredSidebarWidth(): number {
-  const storedWidth = Number(localStorage.getItem('opennotion-sidebar-width'));
+  const storedWidth = Number(typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-sidebar-width') : null);
   return Number.isFinite(storedWidth) ? clampSidebarWidth(storedWidth) : SIDEBAR_DEFAULT_WIDTH;
 }
 

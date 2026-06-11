@@ -22,10 +22,17 @@ describe("editorSaveReducer", () => {
 });
 
 describe("saveStatusLabel", () => {
-  it("returns compact labels for editor chrome", () => {
-    expect(saveStatusLabel({ status: "saved" })).toBe("Saved");
-    expect(saveStatusLabel({ status: "dirty" })).toBe("Unsaved");
-    expect(saveStatusLabel({ status: "saving" })).toBe("Saving...");
-    expect(saveStatusLabel({ status: "error", message: "network" })).toBe("Save failed");
+  it("returns compact labels for editor chrome (en)", () => {
+    const t = (k: string) =>
+      ({
+        "editor.saveStatusSaved": "Saved",
+        "editor.saveStatusUnsaved": "Unsaved",
+        "editor.saveStatusSaving": "Saving...",
+        "editor.saveStatusFailed": "Save failed",
+      })[k] ?? k;
+    expect(saveStatusLabel({ status: "saved" }, t)).toBe("Saved");
+    expect(saveStatusLabel({ status: "dirty" }, t)).toBe("Unsaved");
+    expect(saveStatusLabel({ status: "saving" }, t)).toBe("Saving...");
+    expect(saveStatusLabel({ status: "error", message: "network" }, t)).toBe("Save failed");
   });
 });

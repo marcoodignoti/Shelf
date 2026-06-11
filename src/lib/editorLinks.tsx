@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
 import type { Page } from "./db";
 import { invoke } from "./desktop";
+import { useT, type TranslationKey } from "./i18n";
 import { normalizePageIcon } from "./pageMetadata";
 
 export const OPEN_PAGE_LINK_EVENT = "opennotion:open-page-link";
@@ -19,8 +20,8 @@ type PageLinkProps = {
   label: string;
 };
 
-function pageKindLabel(kind: string): string {
-  return kind === "studio_note" ? "Studio note" : "Note";
+function pageKindLabel(kind: string, t: (key: TranslationKey) => string): string {
+  return kind === "studio_note" ? t("editor.pageLinkKindStudio") : t("editor.pageLinkKindNote");
 }
 
 function dispatchOpenPage(pageId: string) {
@@ -61,8 +62,9 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
   },
   {
     render: ({ inlineContent, updateInlineContent, contentRef }) => {
+      const t = useT();
       const props = inlineContent.props as PageLinkProps;
-      const title = props.title || "Untitled";
+      const title = props.title || t("sidebar.untitled");
       const label = props.label || title;
       const icon = props.iconOverride || props.icon || "";
       const [isOpen, setIsOpen] = useState(false);
@@ -127,7 +129,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
             type="button"
             className="on-page-link"
             title={title}
-            aria-label={`Page link: ${label}`}
+            aria-label={t("editor.pageLinkAriaLabel", { label })}
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -171,14 +173,14 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
                 <button
                   type="button"
                   className="on-page-link-preview-icon"
-                  title="Change link icon"
+                  title={t("editor.changeLinkIcon")}
                   onClick={openNativeIconPicker}
                 >
                   {icon ? <span>{icon}</span> : <FileText className="h-4 w-4" />}
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">{label}</div>
-                  <div className="truncate text-xs text-muted-foreground">{pageKindLabel(props.kind)}</div>
+                  <div className="truncate text-xs text-muted-foreground">{pageKindLabel(props.kind, t)}</div>
                 </div>
               </div>
               <div className="on-page-link-fields">
@@ -186,7 +188,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
                   className="on-page-link-input"
                   value={props.label}
                   placeholder={title}
-                  aria-label="Page link label"
+                  aria-label={t("editor.pageLinkLabelAriaLabel")}
                   spellCheck={false}
                   onKeyDown={(event) => {
                     event.stopPropagation();
@@ -202,14 +204,14 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
                     onClick={openNativeIconPicker}
                   >
                     <Smile className="h-3.5 w-3.5" />
-                    <span>Native picker</span>
+                    <span>{t("editor.nativePicker")}</span>
                   </button>
                   <input
                     ref={iconInputRef}
                     className="on-page-link-input on-page-link-icon-input"
                     value={icon}
-                    placeholder="Icon"
-                    aria-label="Page link icon"
+                    placeholder={t("editor.pageLinkIconPlaceholder")}
+                    aria-label={t("editor.pageLinkIconAriaLabel")}
                     spellCheck={false}
                     maxLength={4}
                     onKeyDown={(event) => {

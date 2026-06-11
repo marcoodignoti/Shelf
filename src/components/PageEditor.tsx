@@ -33,7 +33,7 @@ import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
 import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { useLocale } from "../lib/i18n";
+import { useLocale, useT, type TranslationKey, type TranslationParams } from "../lib/i18n";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
 import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { editorMediaBlockProps, editorMediaKindForFile, editorMediaUserMessage, fileNameFromPath, type EditorMediaBlock, type EditorMediaKind } from "../lib/editorMedia";
@@ -145,6 +145,7 @@ function PageHeadingRail({
   activeId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const t = useT();
   const activeIndex = Math.max(0, items.findIndex((item) => item.id === activeId));
   const previousItem = items[Math.max(0, activeIndex - 1)] ?? null;
   const nextItem = items[Math.min(items.length - 1, activeIndex + 1)] ?? null;
@@ -153,14 +154,14 @@ function PageHeadingRail({
 
   return (
     <nav
-      aria-label="Page sections"
+      aria-label={t("editor.pageSections")}
       className="group/rail absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center overflow-visible xl:flex"
     >
       <div className="flex h-full max-h-[34rem] flex-col items-center justify-between gap-2 rounded-full py-1 text-muted-foreground/70 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
         <button
           type="button"
           className="on-heading-rail-arrow"
-          aria-label="Previous section"
+          aria-label={t("editor.previousSection")}
           disabled={!previousItem || previousItem.id === activeId}
           onClick={() => previousItem && onSelect(previousItem.id)}
         >
@@ -176,7 +177,7 @@ function PageHeadingRail({
                 key={item.id}
                 type="button"
                 className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label={`Go to ${item.title}`}
+                aria-label={t("editor.goToSection", { title: item.title })}
                 aria-current={isActive ? "true" : undefined}
                 onClick={() => onSelect(item.id)}
               >
@@ -193,7 +194,7 @@ function PageHeadingRail({
         <button
           type="button"
           className="on-heading-rail-arrow"
-          aria-label="Next section"
+          aria-label={t("editor.nextSection")}
           disabled={!nextItem || nextItem.id === activeId}
           onClick={() => nextItem && onSelect(nextItem.id)}
         >
@@ -363,6 +364,7 @@ function blockElementSelector(blockId: string): string {
 }
 
 function OpenNotionDragHandleButton() {
+  const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
   const block = useExtensionState(SideMenuExtension, {
     editor,
@@ -429,7 +431,7 @@ function OpenNotionDragHandleButton() {
     <button
       type="button"
       className="bn-button opennotion-block-drag-handle"
-      aria-label="Drag block"
+      aria-label={t("editor.dragBlock")}
       onPointerDown={handlePointerDown}
     >
       <GripVertical className="h-5 w-5" />
@@ -488,7 +490,8 @@ function editorMediaSlashMenuItem(
   pageId: string,
   kind: EditorMediaKind,
   showError: (message: string) => void,
-  showSuccess: (message: string) => void
+  showSuccess: (message: string) => void,
+  t: (key: TranslationKey, params?: TranslationParams) => string,
 ) {
   const isVideo = kind === "video";
 
@@ -516,7 +519,12 @@ function editorMediaSlashMenuItem(
         );
 
         insertEditorMediaBlocks(editor, media);
-        showSuccess(`${media.length} media file${media.length === 1 ? "" : "s"} imported.`);
+        const count = String(media.length);
+        showSuccess(
+          media.length === 1
+            ? t("editor.mediaImported", { count })
+            : t("editor.mediaImportedPlural", { count })
+        );
       } catch (error) {
         showError(editorMediaUserMessage(error));
       }
@@ -528,14 +536,15 @@ function openNotionSlashMenuItems(
   editor: BlockNoteEditor<any, any, any>,
   pageId: string,
   showError: (message: string) => void,
-  showSuccess: (message: string) => void
+  showSuccess: (message: string) => void,
+  t: (key: TranslationKey, params?: TranslationParams) => string,
 ) {
   const items = [
     ...getDefaultReactSlashMenuItems(editor).filter(
       (item) => !urlEmbedMenuTitles.has(String(item.title ?? "").toLowerCase())
     ),
-    editorMediaSlashMenuItem(editor, pageId, "image", showError, showSuccess),
-    editorMediaSlashMenuItem(editor, pageId, "video", showError, showSuccess),
+    editorMediaSlashMenuItem(editor, pageId, "image", showError, showSuccess, t),
+    editorMediaSlashMenuItem(editor, pageId, "video", showError, showSuccess, t),
     {
       ...formulaSlashMenuItem(editor),
       icon: <Sigma size={18} />,
@@ -545,11 +554,16 @@ function openNotionSlashMenuItems(
   return async (query: string) => rankedSuggestionItems(items, query);
 }
 
-function pageLinkKindLabel(page: Page): string {
-  return page.page_kind === "studio_note" ? "Studio note" : "Note";
+function pageLinkKindLabel(page: Page, t: (key: TranslationKey) => string): string {
+  return page.page_kind === "studio_note" ? t("editor.pageLinkKindStudio") : t("editor.pageLinkKindNote");
 }
 
-function openNotionPageLinkItems(editor: BlockNoteEditor<any, any, any>, pages: Page[], currentPageId: string) {
+function openNotionPageLinkItems(
+  editor: BlockNoteEditor<any, any, any>,
+  pages: Page[],
+  currentPageId: string,
+  t: (key: TranslationKey) => string,
+) {
   return async (query: string) => {
     const candidates = pages
       .filter((candidate) => candidate.id !== currentPageId && candidate.is_deleted === 0)
@@ -566,7 +580,7 @@ function openNotionPageLinkItems(editor: BlockNoteEditor<any, any, any>, pages: 
       .slice(0, 8)
       .map(({ page, title }) => ({
         title,
-        subtext: pageLinkKindLabel(page),
+        subtext: pageLinkKindLabel(page, t),
         group: "Pages",
         icon: page.icon ? (
           <span className="flex h-[18px] w-[18px] items-center justify-center text-sm">{page.icon}</span>
@@ -860,6 +874,7 @@ function SubpageCreateMenu({
   onCreateFromTemplate: (templateId: string) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
   return (
     <FloatingPopover
       anchorElement={anchorElement}
@@ -875,7 +890,7 @@ function SubpageCreateMenu({
         onClick={onCreateBlank}
       >
         <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-        Blank page
+        {t("sidebar.blankPage")}
       </button>
       {templatePages.length > 0 && <div className="my-1 h-px bg-border" />}
       {templatePages.map((template) => (
@@ -890,7 +905,7 @@ function SubpageCreateMenu({
           ) : (
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
           )}
-          <span className="truncate">{template.title || "Untitled"}</span>
+          <span className="truncate">{template.title || t("sidebar.untitled")}</span>
         </button>
       ))}
     </FloatingPopover>
@@ -970,6 +985,7 @@ export function Editor({
   const pageWidth = useAppStore((state) => state.pageWidth);
   const titleEnterBehavior = useAppStore((state) => state.titleEnterBehavior);
   const locale = useLocale();
+  const t = useT();
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   // `locale` is a dependency because a language change recreates the editor:
   // re-parse the latest store content so the new editor does not reset the
@@ -1060,12 +1076,17 @@ export function Editor({
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
   const isStudioVariant = variant === "studio";
   const slashMenuItems = useMemo(
-    () => openNotionSlashMenuItems(editor, page.id, showError, showSuccess),
-    [editor, page.id, showError, showSuccess]
+    () => openNotionSlashMenuItems(editor, page.id, showError, showSuccess, t),
+    // t changes only with locale; locale already recreates editor, so adding t
+    // here does not introduce a new recreation trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, page.id, showError, showSuccess, t]
   );
   const pageLinkItems = useMemo(
-    () => openNotionPageLinkItems(editor, pages, page.id),
-    [editor, page.id, pages]
+    () => openNotionPageLinkItems(editor, pages, page.id, t),
+    // t changes only with locale; locale already recreates editor, no new trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, page.id, pages, t]
   );
   const importDroppedMediaFiles = useCallback(
     async (files: File[]) => {
@@ -1074,7 +1095,7 @@ export function Editor({
         .filter((item): item is { file: File; kind: EditorMediaKind } => item.kind !== null);
 
       if (mediaFiles.length === 0) {
-        showError("Drop PNG, JPG, WebP, GIF, MP4, M4V, MOV, or WebM files.");
+        showError(t("editor.dropMediaHint"));
         return;
       }
 
@@ -1091,12 +1112,20 @@ export function Editor({
         );
 
         insertEditorMediaBlocks(editor, media);
-        showSuccess(`${media.length} media file${media.length === 1 ? "" : "s"} imported.`);
+        const count = String(media.length);
+        showSuccess(
+          media.length === 1
+            ? t("editor.mediaImported", { count })
+            : t("editor.mediaImportedPlural", { count })
+        );
       } catch (error) {
         showError(editorMediaUserMessage(error));
       }
     },
-    [editor, page.id, showError, showSuccess]
+    // t changes only with locale; locale already recreates editor, so adding t
+    // does not introduce a new recreation trigger for this callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, page.id, showError, showSuccess, t]
   );
   const handleMediaDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     if (!dataTransferHasSupportedMedia(event.dataTransfer)) return;
@@ -1666,7 +1695,7 @@ export function Editor({
     setSubpageContextMenu(null);
     try {
       await removePage(childPage.id);
-      showSuccess(`Page "${childPage.title || "Untitled"}" deleted.`);
+      showSuccess(t("editor.pageDeleted", { title: childPage.title || t("sidebar.untitled") }));
     } catch (err) {
       showError(err);
     }
@@ -1678,7 +1707,7 @@ export function Editor({
     try {
       const duplicated = await duplicatePageAction(childPage.id, { select: false });
       if (duplicated) {
-        showSuccess(`Page "${childPage.title || "Untitled"}" duplicated.`);
+        showSuccess(t("editor.pageDuplicated", { title: childPage.title || t("sidebar.untitled") }));
       }
     } catch (err) {
       showError(err);
@@ -1845,8 +1874,8 @@ export function Editor({
       if (!result) return;
       showSuccess(
         isFolderExport
-          ? `Page tree exported as Markdown to folder: ${result.path}`
-          : `Page exported as Markdown to file: ${result.path}`
+          ? t("editor.exportedMarkdownFolder", { path: result.path })
+          : t("editor.exportedMarkdownFile", { path: result.path })
       );
     } catch (error: unknown) {
       showError(error);
@@ -1864,7 +1893,7 @@ export function Editor({
         files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
       if (!result) return;
-      showSuccess(`Page tree exported as JSON to: ${result.path}`);
+      showSuccess(t("editor.exportedJSON", { path: result.path }));
     } catch (error: unknown) {
       showError(error);
     }
@@ -1931,7 +1960,7 @@ export function Editor({
       {!isStudioVariant && (
         <div className={`h-11 border-b border-border/40 flex items-center justify-between pr-6 shrink-0 bg-background/95 backdrop-blur z-40 select-none ${isSidebarOpen ? "pl-6" : "pl-36"}`}>
           {/* Breadcrumbs on the left */}
-          <nav className="flex items-center gap-1 min-w-0" aria-label="Page breadcrumb">
+          <nav className="flex items-center gap-1 min-w-0" aria-label={t("editor.pageBreadcrumb")}>
             {breadcrumbs.map((breadcrumb, index) => {
               const isCurrent = breadcrumb.id === page.id;
               return (
@@ -1939,7 +1968,7 @@ export function Editor({
                   {index > 0 && <span className="mx-1 text-muted-foreground/45 text-[11px]">/</span>}
                   <button
                     type="button"
-                    title={breadcrumb.title || "Untitled"}
+                    title={breadcrumb.title || t("sidebar.untitled")}
                     className={`px-1.5 py-1 rounded-md text-[13px] font-medium transition-colors hover:bg-muted text-muted-foreground truncate ${
                       isCurrent
                         ? "text-foreground font-semibold cursor-default pointer-events-none max-w-[240px] md:max-w-[320px]"
@@ -1950,7 +1979,7 @@ export function Editor({
                     onClick={() => onSelectPage(breadcrumb.id)}
                   >
                     {breadcrumb.icon ? `${breadcrumb.icon} ` : ""}
-                    {breadcrumb.title || "Untitled"}
+                    {breadcrumb.title || t("sidebar.untitled")}
                   </button>
                 </div>
               );
@@ -1961,15 +1990,15 @@ export function Editor({
           <div className="flex items-center gap-3 shrink-0">
             <div
               className={`text-xs text-muted-foreground/60 transition-colors ${saveState.status === "error" ? "text-destructive" : ""}`}
-              title={saveState.status === "error" ? saveState.message : "Save status"}
+              title={saveState.status === "error" ? saveState.message : t("editor.saveStatus")}
             >
-              {saveStatusLabel(saveState)}
+              {saveStatusLabel(saveState, t as (key: string, params?: Record<string, string>) => string)}
             </div>
             <button
               type="button"
               ref={pageMenuButtonRef}
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Page actions"
+              aria-label={t("editor.pageActions")}
               onClick={() => setPageMenuOpen((open) => !open)}
             >
               <MoreHorizontal className="h-4 w-4" />
@@ -1988,7 +2017,7 @@ export function Editor({
                 onClick={() => void handleDuplicatePage()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                Duplicate
+                {t("editor.duplicate")}
               </button>
               <button
                 type="button"
@@ -1996,7 +2025,7 @@ export function Editor({
                 onClick={handleOpenMoveMenu}
               >
                 <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
-                Move to...
+                {t("sidebar.moveTo")}
               </button>
               <div className="on-menu-separator" />
               <button
@@ -2005,7 +2034,7 @@ export function Editor({
                 onClick={() => void handleExportMarkdown()}
               >
                 <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                Export as Markdown
+                {t("editor.exportMarkdown")}
               </button>
               <button
                 type="button"
@@ -2013,7 +2042,7 @@ export function Editor({
                 onClick={() => void handleExportJSON()}
               >
                 <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                Export as JSON
+                {t("editor.exportJSON")}
               </button>
               <div className="on-menu-separator" />
               <button
@@ -2022,7 +2051,7 @@ export function Editor({
                 onClick={() => void handleToggleFavorite()}
               >
                 <Star className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? "fill-current" : ""}`} />
-                {page.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+                {page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
               </button>
               <button
                 type="button"
@@ -2030,7 +2059,7 @@ export function Editor({
                 onClick={() => void handleToggleTemplate()}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                {page.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+                {page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
               </button>
               {page.is_database !== 1 && (
                 <button
@@ -2039,7 +2068,7 @@ export function Editor({
                   onClick={handleTurnIntoDatabase}
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                  Turn into Database
+                  {t("editor.turnIntoDatabase")}
                 </button>
               )}
               <div className="on-menu-separator" />
@@ -2049,7 +2078,7 @@ export function Editor({
                 onClick={handleRequestDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                {t("sidebar.contextDelete")}
               </button>
             </FloatingPopover>
             <FloatingPopover
@@ -2063,7 +2092,7 @@ export function Editor({
               <div className="on-popover-search">
                 <input
                   className="w-full rounded-full bg-background/60 px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
-                  placeholder="Move to..."
+                  placeholder={t("sidebar.moveTo")}
                   value={moveQuery}
                   onChange={(event) => setMoveQuery(event.target.value)}
                   autoFocus
@@ -2075,7 +2104,7 @@ export function Editor({
                   className="on-menu-item justify-between"
                   onClick={() => void handleMovePage(null)}
                 >
-                  <span className="truncate text-muted-foreground">Root</span>
+                  <span className="truncate text-muted-foreground">{t("sidebar.moveRoot")}</span>
                   {page.parent_id === null && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
                 </button>
                 {movablePages.map((target) => (
@@ -2087,13 +2116,13 @@ export function Editor({
                   >
                     <span className="truncate">
                       {target.icon ? `${target.icon} ` : ""}
-                      {target.title || "Untitled"}
+                      {target.title || t("sidebar.untitled")}
                     </span>
                     {page.parent_id === target.id && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
                   </button>
                 ))}
                 {movablePages.length === 0 && moveQuery.trim() && (
-                  <div className="px-2 py-2 text-xs text-muted-foreground">No pages found.</div>
+                  <div className="px-2 py-2 text-xs text-muted-foreground">{t("sidebar.noPagesFound")}</div>
                 )}
               </div>
             </FloatingPopover>
@@ -2123,7 +2152,7 @@ export function Editor({
                     onClick={() => setIsIconMenuOpen((open) => !open)}
                   >
                     <Smile className="h-3.5 w-3.5" />
-                    Add icon
+                    {t("editor.addIcon")}
                   </button>
                 )}
                 {!coverUrl && !isCoverInputOpen && (
@@ -2133,7 +2162,7 @@ export function Editor({
                     onClick={() => void handlePickCoverImage()}
                   >
                     <Image className="h-3.5 w-3.5" />
-                    Add cover
+                    {t("editor.addCover")}
                   </button>
                 )}
                 {coverUrl && (
@@ -2143,7 +2172,7 @@ export function Editor({
                     onClick={() => void handlePickCoverImage()}
                   >
                     <Image className="h-3.5 w-3.5" />
-                    Change cover
+                    {t("editor.changeCover")}
                   </button>
                 )}
                 <button
@@ -2151,7 +2180,7 @@ export function Editor({
                   className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
                   onClick={() => setIsCoverInputOpen((open) => !open)}
                 >
-                  Cover URL
+                  {t("editor.coverUrl")}
                 </button>
                 {isCoverInputOpen && (
                   <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
@@ -2159,8 +2188,8 @@ export function Editor({
                     <input
                       className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
                       value={coverUrl}
-                      placeholder="Paste cover image URL"
-                      aria-label="Cover image URL"
+                      placeholder={t("editor.coverUrlPlaceholder")}
+                      aria-label={t("editor.coverUrlAriaLabel")}
                       onChange={(event) => handleCoverUrlChange(event.target.value)}
                       autoFocus
                     />
@@ -2168,7 +2197,7 @@ export function Editor({
                       <button
                         type="button"
                         className="rounded p-0.5 hover:bg-muted"
-                        aria-label="Remove cover"
+                        aria-label={t("editor.removeCover")}
                         onClick={handleRemoveCover}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -2182,7 +2211,7 @@ export function Editor({
                     className="rounded-md px-2 py-1 hover:bg-muted hover:text-foreground"
                     onClick={() => void handlePickCoverImage()}
                   >
-                    Choose file
+                    {t("editor.chooseFile")}
                   </button>
                 )}
               </div>
@@ -2201,12 +2230,12 @@ export function Editor({
                 className="rounded-md bg-background/85 px-2 py-1 text-xs text-muted-foreground shadow-sm hover:text-foreground"
                 onClick={() => void handlePickCoverImage()}
               >
-                Change cover
+                {t("editor.changeCover")}
               </button>
               <button
                 type="button"
                 className="rounded-md bg-background/85 p-1 text-muted-foreground shadow-sm hover:text-foreground"
-                aria-label="Remove cover"
+                aria-label={t("editor.removeCover")}
                 onClick={handleRemoveCover}
               >
                 <X className="h-4 w-4" />
@@ -2221,7 +2250,7 @@ export function Editor({
               ref={iconMenuButtonRef}
               type="button"
               className="mb-3 flex h-14 w-14 items-center justify-center rounded-md text-5xl hover:bg-muted"
-              aria-label="Change page icon"
+              aria-label={t("editor.changePageIcon")}
               onClick={() => setIsIconMenuOpen((open) => !open)}
             >
               {icon}
@@ -2242,7 +2271,7 @@ export function Editor({
                 onClick={handleOpenNativeIconPicker}
               >
                 <Smile className="h-3.5 w-3.5 text-muted-foreground" />
-                Open native picker
+                {t("editor.openNativePicker")}
               </button>
               <div className="grid grid-cols-6 gap-1">
                 {ICON_OPTIONS.map((option) => (
@@ -2265,8 +2294,8 @@ export function Editor({
                   ref={iconInputRef}
                   className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                   value={icon}
-                  placeholder="Custom icon"
-                  aria-label="Custom page icon"
+                  placeholder={t("editor.customIconPlaceholder")}
+                  aria-label={t("editor.customIconAriaLabel")}
                   onChange={(event) => handleIconChange(event.target.value)}
                   autoFocus
                 />
@@ -2274,7 +2303,7 @@ export function Editor({
                   <button
                     type="button"
                     className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Remove icon"
+                    aria-label={t("editor.removeIcon")}
                     onClick={handleRemoveIcon}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -2290,7 +2319,7 @@ export function Editor({
             ref={titleInputRef}
             className="on-page-title-input text-4xl min-h-[1.15em] min-w-0 flex-1 resize-none overflow-hidden bg-transparent font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground"
             value={title}
-            placeholder="Untitled"
+            placeholder={t("editor.titlePlaceholder")}
             rows={1}
             spellCheck={false}
             onChange={(event) => handleTitleChange(event.target.value)}
@@ -2307,7 +2336,7 @@ export function Editor({
                 onClick={() => setSubpageMenuOpen((open) => !open)}
               >
                 <PlusCircle className="h-4 w-4" />
-                <span>Add subpage</span>
+                <span>{t("editor.addSubpage")}</span>
               </button>
               <SubpageCreateMenu
                 anchorElement={subpageMenuButtonRef.current}
@@ -2324,7 +2353,7 @@ export function Editor({
         {!isStudioVariant && page.is_template === 1 && (
           <div className="mb-6 inline-flex w-fit items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
             <Copy className="h-3.5 w-3.5" />
-            Template
+            {t("editor.template")}
           </div>
         )}
         {!isStudioVariant && databaseParentPage && (
@@ -2335,7 +2364,7 @@ export function Editor({
         ) : !isStudioVariant && subpageMode === "list" ? (
           <div className="mb-8 space-y-1">
             <div className="mb-2 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subpages</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("editor.subpages")}</div>
               <div className="relative">
                 <button
                   ref={subpageMenuButtonRef}
@@ -2343,7 +2372,7 @@ export function Editor({
                   className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() => setSubpageMenuOpen((open) => !open)}
                 >
-                  New subpage
+                  {t("editor.newSubpage")}
                 </button>
                 <SubpageCreateMenu
                   anchorElement={subpageMenuButtonRef.current}
@@ -2357,7 +2386,7 @@ export function Editor({
               </div>
             </div>
             {childPages.map((childPage) => {
-              const childTitle = childPage.title || "Untitled";
+              const childTitle = childPage.title || t("sidebar.untitled");
               const dropClass = subpageDropTarget?.pageId === childPage.id
                 ? subpageDropTarget.position === "before"
                   ? "border-t-primary"
@@ -2376,7 +2405,7 @@ export function Editor({
                   <button
                     type="button"
                     data-subpage-drag-handle=""
-                    aria-label={`Reorder ${childTitle}`}
+                    aria-label={t("editor.reorderSubpage", { title: childTitle })}
                     className="flex h-8 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground active:cursor-grabbing group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onPointerDown={(event) => handleSubpagePointerDown(event, childPage.id)}
                   >
@@ -2430,7 +2459,7 @@ export function Editor({
                   onClick={() => void handleSubpageDuplicate(subpageActionsMenu.page)}
                 >
                   <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  Duplicate
+                  {t("editor.duplicate")}
                 </button>
                 <div className="on-menu-separator" />
                 <button
@@ -2443,7 +2472,7 @@ export function Editor({
                       subpageActionsMenu.page.is_favorite === 1 ? "fill-current" : ""
                     }`}
                   />
-                  {subpageActionsMenu.page.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+                  {subpageActionsMenu.page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
                 </button>
                 <button
                   type="button"
@@ -2451,7 +2480,7 @@ export function Editor({
                   onClick={() => void handleSubpageToggleTemplate(subpageActionsMenu.page)}
                 >
                   <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {subpageActionsMenu.page.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+                  {subpageActionsMenu.page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
                 </button>
                 <div className="on-menu-separator" />
                 <button
@@ -2460,7 +2489,7 @@ export function Editor({
                   onClick={() => void handleSubpageDelete(subpageActionsMenu.page)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Delete
+                  {t("sidebar.contextDelete")}
                 </button>
               </FloatingPopover>
             )}
@@ -2482,7 +2511,7 @@ export function Editor({
                   onClick={() => void handleSubpageDuplicate(subpageContextMenu.page)}
                 >
                   <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  Duplicate
+                  {t("editor.duplicate")}
                 </button>
                 <div className="on-menu-separator" />
                 <button
@@ -2494,14 +2523,14 @@ export function Editor({
                       subpageContextMenu.page.is_favorite === 1 ? "fill-current" : ""
                     }`}
                   />
-                  {subpageContextMenu.page.is_favorite === 1 ? "Remove from Favorites" : "Add to Favorites"}
+                  {subpageContextMenu.page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
                 </button>
                 <button
                   className="on-menu-item"
                   onClick={() => void handleSubpageToggleTemplate(subpageContextMenu.page)}
                 >
                   <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {subpageContextMenu.page.is_template === 1 ? "Remove from Templates" : "Use as Template"}
+                  {subpageContextMenu.page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
                 </button>
                 <div className="on-menu-separator" />
                 <button
@@ -2509,7 +2538,7 @@ export function Editor({
                   onClick={() => void handleSubpageDelete(subpageContextMenu.page)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Delete
+                  {t("sidebar.contextDelete")}
                 </button>
               </div>,
               document.body
@@ -2559,11 +2588,11 @@ export function Editor({
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Delete permanently?</div>
+                <div className="text-sm font-semibold">{t("editor.deleteDialog.title")}</div>
                 <div className="mt-1 text-sm text-muted-foreground">
                   {childPages.length > 0
-                    ? `Delete "${title || "Untitled"}" and its subpages permanently? This cannot be undone.`
-                    : `Delete "${title || "Untitled"}" permanently? This cannot be undone.`}
+                    ? t("editor.deleteDialog.bodyWithChildren", { title: title || t("sidebar.untitled") })
+                    : t("editor.deleteDialog.body", { title: title || t("sidebar.untitled") })}
                 </div>
               </div>
             </div>
@@ -2573,14 +2602,14 @@ export function Editor({
                 className="on-button-secondary"
                 onClick={() => setIsDeleteConfirmOpen(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
                 className="on-button-danger"
                 onClick={() => void handleConfirmDelete()}
               >
-                Delete
+                {t("sidebar.contextDelete")}
               </button>
             </div>
           </div>
