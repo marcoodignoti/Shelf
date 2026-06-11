@@ -6,6 +6,7 @@ import { Copy, ExternalLink } from 'lucide-react';
 
 const REPOSITORY_URL = 'https://github.com/marcoodignoti/OpenNotion';
 const LICENSE_URL = 'https://github.com/marcoodignoti/OpenNotion/blob/main/LICENSE';
+const REPORT_ISSUE_URL = 'https://github.com/marcoodignoti/OpenNotion/issues/new/choose';
 const DATABASE_PATH = '~/Library/Application Support/org.opennotion.desktop/opennotion.db';
 
 export function AboutSection() {
@@ -54,6 +55,16 @@ export function AboutSection() {
           <button onClick={() => void handleOpenUrl(REPOSITORY_URL)} className="on-button-secondary gap-2">
             <ExternalLink className="h-4 w-4" strokeWidth={1.9} />
             {t('settings.about.githubButton')}
+          </button>
+        </div>
+        <div className="on-settings-row">
+          <div className="on-settings-row-copy">
+            <div>{t('settings.about.reportProblem')}</div>
+            <p>{t('settings.about.reportProblemDescription')}</p>
+          </div>
+          <button onClick={() => void handleOpenUrl(REPORT_ISSUE_URL)} className="on-button-secondary gap-2">
+            <ExternalLink className="h-4 w-4" strokeWidth={1.9} />
+            {t('settings.about.reportProblemButton')}
           </button>
         </div>
         <div className="on-settings-row">
