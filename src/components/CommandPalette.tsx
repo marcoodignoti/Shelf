@@ -7,6 +7,7 @@ import { pageContentPreview } from '../lib/pageContent';
 import { splitSearchMatch } from '../lib/searchDisplay';
 import { commandPaletteSections, CommandPalettePage } from '../lib/commandPaletteSections';
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from '../lib/overlay';
+import { useT } from '../lib/i18n';
 
 function HighlightedText({
   text,
@@ -41,13 +42,14 @@ type CommandItem = {
 };
 
 export function CommandPalette() {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
   const { pages, setCurrentPageId, setWorkspaceMode, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export function CommandPalette() {
         .catch((error) => {
           if (cancelled) return;
           console.error('Search failed:', error);
-          setSearchError('Search failed.');
+          setSearchError(t('commandPalette.noResults'));
         })
         .finally(() => {
           if (!cancelled) setIsSearching(false);
@@ -110,7 +112,7 @@ export function CommandPalette() {
     ? [
         {
           id: 'new-page',
-          label: 'New page',
+          label: t('sidebar.newPage'),
           shortcut: '⌘N',
           icon: PlusCircle,
           action: async () => {
@@ -174,7 +176,7 @@ export function CommandPalette() {
           <input 
             ref={inputRef}
             className="min-w-0 flex-1 border-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none"
-            placeholder="Search pages..."
+            placeholder={t('commandPalette.search')}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -187,7 +189,7 @@ export function CommandPalette() {
         <div className="on-command-results">
           {isSearching ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Searching...
+              {t('commandPalette.searching')}
             </div>
           ) : searchError ? (
             <div className="px-4 py-8 text-center text-sm text-destructive">
@@ -195,13 +197,13 @@ export function CommandPalette() {
             </div>
           ) : totalItems === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              {query.trim() ? 'No results.' : 'No pages yet.'}
+              {query.trim() ? t('commandPalette.noResults') : t('commandPalette.noPagesYet')}
             </div>
           ) : (
             <>
             {commandItems.length > 0 && (
               <div className="on-command-section">
-                <div className="on-command-section-title">Suggested</div>
+                <div className="on-command-section-title">{t('commandPalette.suggested')}</div>
                 {commandItems.map((command, index) => {
                   const Icon = command.icon;
                   const isSelected = selectedIndex === index;
@@ -234,23 +236,23 @@ export function CommandPalette() {
               }
 
               return (
-                <div key={section.title} className="on-command-section">
+                <div key={section.titleKey} className="on-command-section">
                   <div className="on-command-section-title flex items-center gap-1.5">
-                    {section.title === 'Favorites' && <Star className="h-3 w-3 fill-current" />}
-                    {section.title}
+                    {section.titleKey === 'commandPalette.favorites' && <Star className="h-3 w-3 fill-current" />}
+                    {t(section.titleKey)}
                   </div>
                   {section.pages.map((page, index) => {
                     const absoluteIndex = sectionStartIndex + index + commandItems.length;
                     const preview = page.matched_content
                       ? pageContentPreview(page.matched_content, query)
                       : null;
-                    const title = page.title || 'Untitled';
+                    const title = page.title || t('sidebar.untitled');
                     const isSelected = absoluteIndex === selectedIndex;
 
                     return (
                       <button
                         type="button"
-                        key={`${section.title}-${page.id}`}
+                        key={`${section.titleKey}-${page.id}`}
                         className={`on-command-item ${isSelected ? 'on-command-item-selected' : ''}`}
                         onClick={() => handleSelect(page.id)}
                         onMouseEnter={() => setSelectedIndex(absoluteIndex)}

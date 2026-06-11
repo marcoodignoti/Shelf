@@ -16,7 +16,7 @@ export function UpdatesSection() {
     setUpdateState(result);
 
     if (result.status === 'current') {
-      showSuccess(t('settings.updates.upToDate'));
+      showSuccess('settings.updates.upToDate');
     } else if (result.status === 'error') {
       showError(result.message);
     }
@@ -32,7 +32,7 @@ export function UpdatesSection() {
     try {
       setIsDownloadingUpdate(true);
       await downloadVerifiedUpdate(updateState.download);
-      showSuccess(t('settings.updates.downloaded'));
+      showSuccess('settings.updates.downloaded');
     } catch (error: unknown) {
       showError(error);
     } finally {

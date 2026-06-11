@@ -359,7 +359,7 @@ export function DatabaseTableView({
 
   const startRowRename = (row: Page) => {
     setRowContextMenu(null);
-    setDraftRowTitle(row.title || "Untitled");
+    setDraftRowTitle(row.title || t("sidebar.untitled"));
     setRenamingRowId(row.id);
   };
 
@@ -374,7 +374,7 @@ export function DatabaseTableView({
   };
 
   const cancelRowRename = (row: Page) => {
-    setDraftRowTitle(row.title || "Untitled");
+    setDraftRowTitle(row.title || t("sidebar.untitled"));
     setRenamingRowId(null);
   };
 
@@ -483,7 +483,7 @@ export function DatabaseTableView({
                           }}
                         />
                       ) : (
-                        <div className="truncate font-medium">{row.title || "Untitled"}</div>
+                        <div className="truncate font-medium">{row.title || t("sidebar.untitled")}</div>
                       )}
                     </div>
                   ))}
@@ -605,7 +605,7 @@ export function DatabaseTableView({
                         className="w-full truncate rounded-sm px-1 py-1 text-left text-sm hover:bg-muted hover:text-foreground"
                         onClick={() => onSelectPage(row.id)}
                       >
-                        {row.title || "Untitled"}
+                        {row.title || t("sidebar.untitled")}
                       </button>
                     )}
                   </div>
@@ -707,7 +707,7 @@ export function DatabaseTableView({
                 onClick={() => void handleAddRowFromTemplate(template.id)}
               >
                 <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="truncate">{template.title || "Untitled"}</span>
+                <span className="truncate">{template.title || t("sidebar.untitled")}</span>
               </button>
             ))}
           </FloatingPopover>

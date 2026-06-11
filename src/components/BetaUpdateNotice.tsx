@@ -3,6 +3,7 @@ import { Clipboard, Download, X } from "lucide-react";
 import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey, downloadVerifiedUpdate } from "../lib/betaUpdates";
 import { desktopAutoUpdateActive } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
+import { useT } from "../lib/i18n";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
 const HOMEBREW_UPDATE_COMMAND = [
@@ -31,6 +32,7 @@ function isMacPlatform(): boolean {
 }
 
 export function BetaUpdateNotice() {
+  const t = useT();
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const [state, setState] = useState<BetaUpdateState>({ status: "idle" });
@@ -68,20 +70,20 @@ export function BetaUpdateNotice() {
   const handleDownload = useCallback(async () => {
     if (state.status !== "available") return;
     if (!state.download) {
-      showError("No beta download is available for this platform yet.");
+      showError(t("notice.noPlatformDownload"));
       return;
     }
 
     try {
       setIsDownloading(true);
       await downloadVerifiedUpdate(state.download);
-      showSuccess("Downloaded and verified update.");
+      showSuccess("notice.updateDownloaded");
     } catch (error: unknown) {
       showError(error);
     } finally {
       setIsDownloading(false);
     }
-  }, [showError, showSuccess, state]);
+  }, [showError, showSuccess, state, t]);
 
   const handleCopyHomebrewCommand = useCallback(async () => {
     try {
@@ -101,8 +103,8 @@ export function BetaUpdateNotice() {
   return (
     <aside className="on-beta-update" role="status" aria-live="polite">
       <div className="on-beta-update-header">
-        <span>Beta update</span>
-        <button type="button" onClick={handleDismiss} aria-label="Dismiss beta update" title="Dismiss">
+        <span>{t("betaUpdate.title")}</span>
+        <button type="button" onClick={handleDismiss} aria-label={t("betaUpdate.dismiss")} title={t("betaUpdate.dismiss")}>
           <X className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
       </div>
@@ -122,17 +124,21 @@ export function BetaUpdateNotice() {
         disabled={isDownloading || !download}
       >
         <Download className="h-4 w-4" strokeWidth={1.9} />
-        {isDownloading ? "Verifying download" : download ? `Download ${manifest.version}` : "No build for this device"}
+        {isDownloading
+          ? t("settings.updates.verifying")
+          : download
+            ? t("settings.updates.download", { label: manifest.version })
+            : t("settings.updates.noBuild")}
       </button>
       {download?.size && <div className="on-beta-update-size">{download.label} - {download.size}</div>}
       <div className="on-beta-update-steps">
-        <span>Close OpenNotion, install the downloaded build, then reopen it.</span>
-        {showHomebrewCommand && <span>macOS testers can use Homebrew instead.</span>}
+        <span>{t("betaUpdate.closeInstallReopen")}</span>
+        {showHomebrewCommand && <span>{t("betaUpdate.homebrewInstead")}</span>}
       </div>
       {showHomebrewCommand && (
         <button type="button" className="on-beta-update-copy" onClick={() => void handleCopyHomebrewCommand()}>
           <Clipboard className="h-3.5 w-3.5" strokeWidth={1.9} />
-          {copiedHomebrewCommand ? "Copied Homebrew command" : "Copy Homebrew command"}
+          {copiedHomebrewCommand ? t("betaUpdate.copiedHomebrew") : t("betaUpdate.copyHomebrew")}
         </button>
       )}
     </aside>

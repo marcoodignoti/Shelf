@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { AppNotice, userMessageForError } from '../lib/appFeedback';
+import { AppNotice, noticeKeyForError } from '../lib/appFeedback';
+import type { TranslationKey, TranslationParams } from '../lib/i18n';
 import {
   PREFERENCE_STORAGE_KEYS,
   parseEditorFont,
@@ -93,7 +94,7 @@ interface AppState {
   clearError: () => void;
   setError: (error: string | null) => void;
   clearNotice: () => void;
-  showSuccess: (message: string) => void;
+  showSuccess: (key: TranslationKey, params?: TranslationParams) => void;
   showError: (error: unknown) => void;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
@@ -231,8 +232,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         return { pages, currentPageId, isLoading: false, error: null };
       });
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message }, isLoading: false });
+      set({ isLoading: false });
+      get().showError(error);
     }
   },
   fetchStudioDocuments: async () => {
@@ -266,8 +267,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return { studioDocuments, studioDocumentPageLinks, studioProjects, currentStudioDocumentId, pages, error: null };
       });
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
     }
   },
   setCurrentPageId: (id) => {
@@ -287,12 +287,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ currentStudioDocumentId: id });
   },
   clearError: () => set({ error: null }),
-  setError: (error) => set({ error, notice: error ? { kind: 'error', message: error } : null }),
+  setError: (error) => set({ error, notice: error ? { kind: 'error', rawMessage: error } : null }),
   clearNotice: () => set({ notice: null }),
-  showSuccess: (message) => set({ notice: { kind: 'success', message }, error: null }),
+  showSuccess: (key, params) => set({ notice: { kind: 'success', messageKey: key, params }, error: null }),
   showError: (error) => {
-    const message = userMessageForError(error);
-    set({ error: message, notice: { kind: 'error', message } });
+    const noticePart = noticeKeyForError(error);
+    const notice: AppNotice = { kind: 'error', ...noticePart } as AppNotice;
+    // Derive a plain string for the legacy `error` field (used in ErrorBoundary / setError)
+    const errorText = 'rawMessage' in noticePart ? noticePart.rawMessage : noticePart.messageKey;
+    set({ error: errorText, notice });
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
@@ -325,8 +328,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return importedDocument;
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },
@@ -345,13 +347,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
         currentStudioDocumentId: document.id,
         error: null,
-        notice: { kind: 'success', message: 'Studio PDF reimported.' }
+        notice: { kind: 'success', messageKey: 'notice.studioPdfReimported' }
       }));
       localStorage.setItem('opennotion-current-studio-document-id', document.id);
       return document;
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },
@@ -365,8 +366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await updateStudioDocumentViewerState(id, { ...updates, last_opened_at });
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       await get().fetchStudioDocuments();
     }
   },
@@ -380,12 +380,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         studioProjects: [...state.studioProjects.filter((candidate) => candidate.id !== project.id), project]
           .sort((first, second) => first.sort_order - second.sort_order || first.name.localeCompare(second.name)),
         error: null,
-        notice: { kind: 'success', message: 'Studio project created.' }
+        notice: { kind: 'success', messageKey: 'notice.studioProjectCreated' }
       }));
       return project;
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },
@@ -405,8 +404,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await renameStudioProject(id, trimmedName);
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });
+      set({ studioProjects: previousProjects });
+      get().showError(error);
     }
   },
   updateStudioProjectParentAction: async (id, parentId) => {
@@ -424,8 +423,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await updateStudioProjectParent(id, parentId);
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ studioProjects: previousProjects, error: message, notice: { kind: 'error', message } });
+      set({ studioProjects: previousProjects });
+      get().showError(error);
     }
   },
   deleteStudioProjectAction: async (id) => {
@@ -443,8 +442,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await deleteStudioProject(id);
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ studioProjects: previousProjects, studioDocuments: previousDocuments, error: message, notice: { kind: 'error', message } });
+      set({ studioProjects: previousProjects, studioDocuments: previousDocuments });
+      get().showError(error);
     }
   },
   updateStudioDocumentProjectAction: async (documentId, projectId) => {
@@ -461,8 +460,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await updateStudioDocumentProject(documentId, projectId);
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ studioDocuments: previousDocuments, error: message, notice: { kind: 'error', message } });
+      set({ studioDocuments: previousDocuments });
+      get().showError(error);
     }
   },
   createMissingStudioNoteAction: async (documentId): Promise<Page | null> => {
@@ -475,12 +474,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         pages: [note, ...state.pages.filter((page) => page.id !== note.id)],
         error: null,
-        notice: { kind: 'success', message: 'Linked note created.' }
+        notice: { kind: 'success', messageKey: 'notice.studioLinkedNoteCreated' }
       }));
       return note;
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       await get().fetchStudioDocuments();
       return null;
     }
@@ -509,8 +507,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await renameStudioDocument(id, nextTitle);
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ studioDocuments: previousDocuments, pages: previousPages, error: message, notice: { kind: 'error', message } });
+      set({ studioDocuments: previousDocuments, pages: previousPages });
+      get().showError(error);
     }
   },
   deleteStudioDocumentAction: async (id) => {
@@ -537,12 +535,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           currentStudioDocumentId,
           pages: state.pages.filter((page) => page.id !== document.note_page_id),
           error: null,
-          notice: { kind: 'success', message: 'Studio document deleted.' }
+          notice: { kind: 'success', messageKey: 'notice.studioDocumentDeleted' }
         };
       });
     } catch (error: unknown) {
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       await get().fetchStudioDocuments();
     }
   },
@@ -570,12 +567,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
           await invoke("import_pages", { pages });
           await get().fetchPages();
-          get().showSuccess("Page tree imported successfully.");
+          get().showSuccess("notice.pageTreeImported");
           return rootPage || null;
         } else if (parsed.version === 1 && Array.isArray(parsed.pages)) {
           await invoke("import_backup", { path: filePath });
           await get().fetchPages();
-          get().showSuccess("Workspace backup imported successfully.");
+          get().showSuccess("notice.workspaceBackupImported");
           return null;
         } else {
           throw new Error("Unsupported JSON export format");
@@ -594,7 +591,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (newPage) {
           await updatePage(newPage.id, { content: JSON.stringify(blocks) });
           await get().fetchPages();
-          get().showSuccess(`Page "${title}" imported from Markdown.`);
+          get().showSuccess("notice.markdownPageImported", { title });
           const updatedPage = get().pages.find((p) => p.id === newPage.id);
           return updatedPage || newPage;
         }
@@ -610,7 +607,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const docs = get().studioDocuments.filter((d) => d.project_id === project.id);
       if (docs.length === 0) {
-        get().showSuccess("Project has no documents to export.");
+        get().showSuccess("notice.projectNoDocuments");
         return;
       }
 
@@ -619,7 +616,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         .map((doc) => pages.find((p) => p.id === doc.note_page_id))
         .filter((page): page is Page => Boolean(page));
       if (rootPages.length === 0) {
-        get().showSuccess("Project has no notes to export.");
+        get().showSuccess("notice.projectNoNotes");
         return;
       }
 
@@ -632,7 +629,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (!result) return;
 
-      get().showSuccess(`Project notes exported to: ${result.path}`);
+      get().showSuccess("notice.projectNotesExportedMarkdown", { path: result.path });
     } catch (error: unknown) {
       get().showError(error);
     }
@@ -641,7 +638,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const docs = get().studioDocuments.filter((d) => d.project_id === project.id);
       if (docs.length === 0) {
-        get().showSuccess("Project has no documents to export.");
+        get().showSuccess("notice.projectNoDocuments");
         return;
       }
 
@@ -656,7 +653,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (!result) return;
 
-      get().showSuccess(`Project notes exported as JSON to: ${result.path}`);
+      get().showSuccess("notice.projectNotesExportedJSON", { path: result.path });
     } catch (error: unknown) {
       get().showError(error);
     }
@@ -675,8 +672,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return newPage;
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },
@@ -693,8 +689,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await updatePage(id, { title });
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ pages: previousPages, error: message, notice: { kind: 'error', message } });
+      set({ pages: previousPages });
+      get().showError(error);
     }
   },
   removePage: async (id) => {
@@ -724,13 +720,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchStudioDocuments();
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
       set({
         pages: previousPages,
         studioDocumentPageLinks: previousStudioDocumentPageLinks,
-        error: message,
-        notice: { kind: 'error', message }
       });
+      get().showError(error);
     }
   },
   movePageAction: async (id, parentId) => {
@@ -742,8 +736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await movePage(id, parentId);
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       await get().fetchPages();
     }
   },
@@ -761,8 +754,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       await reorderPages(parentId, orderedIds);
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ pages: previousPages, error: message, notice: { kind: 'error', message } });
+      set({ pages: previousPages });
+      get().showError(error);
     }
   },
   toggleFavoriteAction: async (id, isFavorite) => {
@@ -773,8 +766,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await toggleFavorite(id, isFavorite);
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
     }
   },
   toggleTemplateAction: async (id, isTemplate) => {
@@ -785,8 +777,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await toggleTemplate(id, isTemplate);
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
     }
   },
   addPageFromTemplate: async (templateId, parentId = null, options = {}) => {
@@ -803,8 +794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return newPage;
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },
@@ -822,8 +812,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return newPage;
     } catch (error: unknown) {
       logStoreError(error);
-      const message = userMessageForError(error);
-      set({ error: message, notice: { kind: 'error', message } });
+      get().showError(error);
       return null;
     }
   },

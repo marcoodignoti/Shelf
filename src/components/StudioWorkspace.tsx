@@ -259,7 +259,7 @@ export function StudioWorkspace({
       setSelectedLinkedPageId(page.id);
       await fetchPages();
       await fetchStudioDocuments();
-      showSuccess(pdfPage ? t("studio.pdfBookmarkNoteCreated") : t("studio.linkedNoteCreated"));
+      showSuccess(pdfPage ? "studio.pdfBookmarkNoteCreated" : "studio.linkedNoteCreated");
     } catch (error: unknown) {
       showError(error);
     } finally {
@@ -278,7 +278,7 @@ export function StudioWorkspace({
       setIsExistingPagePickerOpen(false);
       setExistingPageQuery("");
       await fetchStudioDocuments();
-      showSuccess(pdfPage ? t("studio.pdfBookmarkLinked") : t("studio.pageLinked"));
+      showSuccess(pdfPage ? "studio.pdfBookmarkLinked" : "studio.pageLinked");
     } catch (error: unknown) {
       showError(error);
     }
@@ -292,7 +292,7 @@ export function StudioWorkspace({
     setLinkedPageLinks((links) => links.filter((candidate) => candidate.page_id !== link.page_id));
     setSelectedLinkedPageId((currentId) => currentId === link.page_id ? null : currentId);
     await removePage(link.page_id);
-    showSuccess(t("studio.linkedNoteDeleted"));
+    showSuccess("studio.linkedNoteDeleted");
   };
 
   const commitPageDraft = () => {

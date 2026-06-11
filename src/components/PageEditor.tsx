@@ -177,7 +177,7 @@ function PageHeadingRail({
                 key={item.id}
                 type="button"
                 className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label={t("editor.goToSection", { title: item.title })}
+                aria-label={t("editor.goToSection", { title: item.title || t("editor.untitledSection") })}
                 aria-current={isActive ? "true" : undefined}
                 onClick={() => onSelect(item.id)}
               >
@@ -185,7 +185,7 @@ function PageHeadingRail({
                   className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
                 />
                 <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 z-10 max-w-80 -translate-y-1/2 translate-x-1 truncate px-4 py-2 text-sm font-semibold leading-tight text-popover-foreground opacity-0 transition-all duration-150 group-hover/railitem:pointer-events-auto group-hover/railitem:translate-x-0 group-hover/railitem:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:pointer-events-auto group-focus-visible/railitem:translate-x-0 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
-                  {item.title}
+                  {item.title || t("editor.untitledSection")}
                 </span>
               </button>
             );
@@ -349,7 +349,7 @@ function headingItemsFromBlocks(blocks: Block<any, any, any>[]): HeadingRailItem
 
     const props = block.props as Record<string, unknown>;
     const level = typeof props.level === "number" ? props.level : 1;
-    const title = textFromInlineContent(block.content) || "Untitled section";
+    const title = textFromInlineContent(block.content) || "";
 
     return [{ id: block.id, level, title }, ...children];
   });
@@ -489,16 +489,16 @@ function editorMediaSlashMenuItem(
   editor: BlockNoteEditor<any, any, any>,
   pageId: string,
   kind: EditorMediaKind,
-  showError: (message: string) => void,
-  showSuccess: (message: string) => void,
+  showError: (error: unknown) => void,
+  showSuccess: (key: TranslationKey, params?: TranslationParams) => void,
   t: (key: TranslationKey, params?: TranslationParams) => string,
 ) {
   const isVideo = kind === "video";
 
   return {
-    title: isVideo ? "Video" : "Image",
-    subtext: "From this device",
-    group: "Media",
+    title: isVideo ? t("editor.slashVideo") : t("editor.slashImage"),
+    subtext: t("editor.slashFromDevice"),
+    group: t("editor.slashMediaGroup"),
     icon: isVideo ? <Video size={18} /> : <Image size={18} />,
     onItemClick: async () => {
       const paths = await pickEditorMediaPaths(kind);
@@ -521,9 +521,8 @@ function editorMediaSlashMenuItem(
         insertEditorMediaBlocks(editor, media);
         const count = String(media.length);
         showSuccess(
-          media.length === 1
-            ? t("editor.mediaImported", { count })
-            : t("editor.mediaImportedPlural", { count })
+          media.length === 1 ? "editor.mediaImported" : "editor.mediaImportedPlural",
+          { count }
         );
       } catch (error) {
         showError(editorMediaUserMessage(error));
@@ -535,8 +534,8 @@ function editorMediaSlashMenuItem(
 function openNotionSlashMenuItems(
   editor: BlockNoteEditor<any, any, any>,
   pageId: string,
-  showError: (message: string) => void,
-  showSuccess: (message: string) => void,
+  showError: (error: unknown) => void,
+  showSuccess: (key: TranslationKey, params?: TranslationParams) => void,
   t: (key: TranslationKey, params?: TranslationParams) => string,
 ) {
   const items = [
@@ -569,7 +568,7 @@ function openNotionPageLinkItems(
       .filter((candidate) => candidate.id !== currentPageId && candidate.is_deleted === 0)
       .map((candidate) => ({
         page: candidate,
-        title: candidate.title || "Untitled",
+        title: candidate.title || t("sidebar.untitled"),
         aliases: [
           candidate.page_kind === "studio_note" ? "studio" : "note",
           candidate.icon || "",
@@ -581,7 +580,7 @@ function openNotionPageLinkItems(
       .map(({ page, title }) => ({
         title,
         subtext: pageLinkKindLabel(page, t),
-        group: "Pages",
+        group: t("editor.slashPagesGroup"),
         icon: page.icon ? (
           <span className="flex h-[18px] w-[18px] items-center justify-center text-sm">{page.icon}</span>
         ) : (
@@ -1115,9 +1114,8 @@ export function Editor({
         insertEditorMediaBlocks(editor, media);
         const count = String(media.length);
         showSuccess(
-          media.length === 1
-            ? t("editor.mediaImported", { count })
-            : t("editor.mediaImportedPlural", { count })
+          media.length === 1 ? "editor.mediaImported" : "editor.mediaImportedPlural",
+          { count }
         );
       } catch (error) {
         showError(editorMediaUserMessage(error));
@@ -1696,7 +1694,7 @@ export function Editor({
     setSubpageContextMenu(null);
     try {
       await removePage(childPage.id);
-      showSuccess(t("editor.pageDeleted", { title: childPage.title || t("sidebar.untitled") }));
+      showSuccess("editor.pageDeleted", { title: childPage.title || t("sidebar.untitled") });
     } catch (err) {
       showError(err);
     }
@@ -1708,7 +1706,7 @@ export function Editor({
     try {
       const duplicated = await duplicatePageAction(childPage.id, { select: false });
       if (duplicated) {
-        showSuccess(t("editor.pageDuplicated", { title: childPage.title || t("sidebar.untitled") }));
+        showSuccess("editor.pageDuplicated", { title: childPage.title || t("sidebar.untitled") });
       }
     } catch (err) {
       showError(err);
@@ -1874,9 +1872,8 @@ export function Editor({
       });
       if (!result) return;
       showSuccess(
-        isFolderExport
-          ? t("editor.exportedMarkdownFolder", { path: result.path })
-          : t("editor.exportedMarkdownFile", { path: result.path })
+        isFolderExport ? "editor.exportedMarkdownFolder" : "editor.exportedMarkdownFile",
+        { path: result.path }
       );
     } catch (error: unknown) {
       showError(error);
@@ -1894,7 +1891,7 @@ export function Editor({
         files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
       if (!result) return;
-      showSuccess(t("editor.exportedJSON", { path: result.path }));
+      showSuccess("editor.exportedJSON", { path: result.path });
     } catch (error: unknown) {
       showError(error);
     }

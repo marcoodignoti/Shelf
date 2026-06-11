@@ -22,7 +22,7 @@ export function DataSection() {
       const exportedCount = await exportWorkspaceBackup(path);
       const message = t('settings.data.exported', { count: String(exportedCount) });
       setBackupStatus(message);
-      showSuccess(message);
+      showSuccess('settings.data.exported', { count: String(exportedCount) });
     } catch (error: unknown) {
       setBackupStatus(t('settings.data.exportFailed'));
       showError(error);
@@ -42,7 +42,7 @@ export function DataSection() {
       await fetchPages();
       const message = t('settings.data.imported', { count: String(importedCount) });
       setBackupStatus(message);
-      showSuccess(message);
+      showSuccess('settings.data.imported', { count: String(importedCount) });
     } catch (error: unknown) {
       setBackupStatus(null);
       showError(error);

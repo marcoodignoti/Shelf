@@ -7,7 +7,7 @@ import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { DesktopUpdateRestartNotice } from "./components/DesktopUpdateRestartNotice";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
-import { resolveLocale } from "./lib/i18n";
+import { resolveLocale, useT } from "./lib/i18n";
 import { HomeView } from "./components/HomeView";
 import type { DesktopUpdateInfo } from "./lib/desktop";
 
@@ -16,9 +16,10 @@ const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
 
 function WorkspaceLoadingFallback() {
+  const t = useT();
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      Loading workspace...
+      {t("common.loadingWorkspace")}
     </div>
   );
 }
@@ -96,7 +97,7 @@ export default function App() {
       const updateInfo = payload && typeof payload === "object" ? payload as DesktopUpdateInfo : {};
       const version = updateInfo.version ? ` ${updateInfo.version}` : "";
       if (eventName === "desktop-update-available") {
-        showSuccess(`Update${version} available. Downloading in background.`);
+        showSuccess("notice.updateAvailable", { version });
       }
       if (eventName === "desktop-update-downloaded") {
         setReadyUpdate({ version: updateInfo.version ?? null });

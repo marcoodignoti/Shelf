@@ -32,7 +32,7 @@ describe("commandPaletteSections", () => {
       searchResults: [],
     });
 
-    expect(sections.map((section) => section.title)).toEqual(["Favorites", "Recent"]);
+    expect(sections.map((section) => section.titleKey)).toEqual(["commandPalette.favorites", "commandPalette.recent"]);
     expect(sections.flatMap((section) => section.pages.map((item) => item.id))).toEqual(["favorite", "favorite", "old"]);
   });
 
@@ -45,6 +45,6 @@ describe("commandPaletteSections", () => {
         pages: [page("other", "2026-05-18T09:00:00.000Z", 1)],
         searchResults: [result],
       })
-    ).toEqual([{ title: "Search results", pages: [result] }]);
+    ).toEqual([{ titleKey: "commandPalette.searchResults", pages: [result] }]);
   });
 });

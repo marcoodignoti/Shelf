@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { installDesktopUpdateNow } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
+import { useT } from "../lib/i18n";
 
 export function DesktopUpdateRestartNotice({
   version,
@@ -10,6 +11,7 @@ export function DesktopUpdateRestartNotice({
   version: string | null;
   onDismiss: () => void;
 }) {
+  const t = useT();
   const showError = useAppStore((state) => state.showError);
   const [isRestarting, setIsRestarting] = useState(false);
 
@@ -28,13 +30,13 @@ export function DesktopUpdateRestartNotice({
   return (
     <aside className="on-beta-update" role="status" aria-live="polite">
       <div className="on-beta-update-header">
-        <span>Update ready</span>
-        <button type="button" onClick={onDismiss} aria-label="Dismiss update notice" title="Dismiss">
+        <span>{t("desktopUpdate.title")}</span>
+        <button type="button" onClick={onDismiss} aria-label={t("desktopUpdate.dismiss")} title={t("desktopUpdate.dismiss")}>
           <X className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
       </div>
-      <div className="on-beta-update-title">{`OpenNotion${versionLabel} is ready to install`}</div>
-      <p>Restart now to finish updating, or keep working and it installs when you quit.</p>
+      <div className="on-beta-update-title">{t("desktopUpdate.readyToInstall", { version: versionLabel })}</div>
+      <p>{t("desktopUpdate.restartPrompt")}</p>
       <button
         type="button"
         className="on-button-secondary on-beta-update-button"
@@ -42,7 +44,7 @@ export function DesktopUpdateRestartNotice({
         disabled={isRestarting}
       >
         <RefreshCw className="h-4 w-4" strokeWidth={1.9} />
-        {isRestarting ? "Restarting" : "Restart to update"}
+        {isRestarting ? t("desktopUpdate.restarting") : t("desktopUpdate.restartToUpdate")}
       </button>
     </aside>
   );

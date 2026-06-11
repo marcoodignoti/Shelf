@@ -24,7 +24,7 @@ export function AboutSection() {
   const handleCopyDatabasePath = async () => {
     try {
       await navigator.clipboard.writeText(DATABASE_PATH);
-      showSuccess(t('settings.about.copied'));
+      showSuccess('settings.about.copied');
     } catch (error: unknown) {
       showError(error);
     }

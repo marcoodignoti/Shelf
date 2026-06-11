@@ -2,8 +2,10 @@ import React from 'react';
 import { Sidebar } from './Sidebar';
 import { useAppStore } from '../store/useAppStore';
 import { PanelLeft } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const { isSidebarOpen, sidebarWidth, toggleSidebar } = useAppStore();
   const sidebarGap = 8;
   const sidebarMargin = 8;
@@ -64,7 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <button
           onClick={toggleSidebar}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          title="Toggle sidebar"
+          title={t("layout.toggleSidebar")}
         >
           <PanelLeft className="h-3.5 w-3.5" />
         </button>

@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { useT } from "../lib/i18n";
 
 const SUCCESS_NOTICE_AUTO_DISMISS_MS = 4_200;
 const ERROR_NOTICE_AUTO_DISMISS_MS = 6_500;
 
 export function AppNotice() {
+  const t = useT();
   const { notice, clearNotice } = useAppStore();
   const autoDismissMs = notice?.kind === "error"
     ? ERROR_NOTICE_AUTO_DISMISS_MS
@@ -19,6 +21,10 @@ export function AppNotice() {
   }, [autoDismissMs, clearNotice, notice]);
 
   if (!notice) return null;
+
+  const message = "messageKey" in notice
+    ? t(notice.messageKey, notice.params)
+    : notice.rawMessage;
 
   const NoticeIcon = notice.kind === "error" ? AlertCircle : CheckCircle2;
   const ariaLive = notice.kind === "error" ? "assertive" : "polite";
@@ -37,12 +43,12 @@ export function AppNotice() {
         <div className="on-notice-icon" aria-hidden="true">
           <NoticeIcon className="h-4 w-4" strokeWidth={2} />
         </div>
-        <span className="on-notice-message min-w-0 flex-1">{notice.message}</span>
+        <span className="on-notice-message min-w-0 flex-1">{message}</span>
         <button
           className="on-notice-close"
           onClick={clearNotice}
-          aria-label="Dismiss notification"
-          title="Dismiss"
+          aria-label={t("appNotice.dismiss")}
+          title={t("appNotice.dismiss")}
         >
           <X className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
