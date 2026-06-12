@@ -164,9 +164,36 @@ function runMigrations(db) {
     );
   `);
 
+  if (!hasColumn(db, "studio_documents", "title")) {
+    db.exec("ALTER TABLE studio_documents ADD COLUMN title TEXT");
+    db.exec(`
+      UPDATE studio_documents
+      SET title = COALESCE(
+        NULLIF(TRIM((SELECT pages.title FROM pages WHERE pages.id = studio_documents.id)), ''),
+        NULLIF(TRIM(CASE
+          WHEN lower(original_filename) LIKE '%.pdf' THEN substr(original_filename, 1, length(original_filename) - 4)
+          ELSE original_filename
+        END), ''),
+        'Imported PDF'
+      )
+      WHERE title IS NULL OR TRIM(title) = ''
+    `);
+  }
+  if (!hasColumn(db, "studio_documents", "note_page_id")) {
+    db.exec("ALTER TABLE studio_documents ADD COLUMN note_page_id TEXT");
+    db.exec("UPDATE studio_documents SET note_page_id = id WHERE note_page_id IS NULL OR TRIM(note_page_id) = ''");
+  }
   if (!hasColumn(db, "studio_documents", "project_id")) {
     db.exec("ALTER TABLE studio_documents ADD COLUMN project_id TEXT");
   }
+  db.exec(`
+    UPDATE studio_documents
+    SET title = 'Imported PDF'
+    WHERE title IS NULL OR TRIM(title) = '';
+    UPDATE studio_documents
+    SET note_page_id = id
+    WHERE note_page_id IS NULL OR TRIM(note_page_id) = '';
+  `);
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_studio_documents_last_opened

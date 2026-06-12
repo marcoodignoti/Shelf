@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { DatabaseSync } = require("node:sqlite");
 const { ShelfBackend } = require("./backend.cjs");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-"));
@@ -42,8 +43,94 @@ function signedUpdateManifest(payload) {
   };
 }
 
+async function verifyLegacyStudioDocumentMigration(updateManifestPublicKey) {
+  const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-legacy-studio-"));
+  const legacyDb = new DatabaseSync(path.join(legacyRoot, "opennotion.db"));
+  const createdAt = "2026-06-01T00:00:00.000Z";
+  try {
+    legacyDb.exec(`
+      CREATE TABLE app_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      INSERT INTO app_metadata (key, value) VALUES ('schema_version', '2');
+
+      CREATE TABLE pages (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        parent_id TEXT,
+        content TEXT,
+        icon TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        cover_url TEXT,
+        search_text TEXT,
+        is_deleted INTEGER DEFAULT 0,
+        is_favorite INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        is_template INTEGER DEFAULT 0,
+        is_database INTEGER DEFAULT 0,
+        database_schema TEXT,
+        properties TEXT,
+        page_kind TEXT NOT NULL DEFAULT 'note'
+      );
+      CREATE TABLE studio_documents (
+        id TEXT PRIMARY KEY,
+        original_filename TEXT NOT NULL,
+        stored_file_path TEXT NOT NULL,
+        last_opened_at TEXT NOT NULL,
+        viewer_zoom INTEGER NOT NULL DEFAULT 100,
+        viewer_page INTEGER NOT NULL DEFAULT 1,
+        panel_layout TEXT NOT NULL DEFAULT 'pdf-left',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(id) REFERENCES pages(id) ON DELETE CASCADE
+      );
+      CREATE TABLE studio_document_page_links (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        pdf_page INTEGER,
+        label TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(document_id, page_id)
+      );
+    `);
+    legacyDb.prepare(`
+      INSERT INTO pages (id, title, parent_id, content, icon, created_at, updated_at, page_kind)
+      VALUES ('legacy-doc', 'Legacy PDF Notes', NULL, NULL, NULL, ?, ?, 'studio_note')
+    `).run(createdAt, createdAt);
+    legacyDb.prepare(`
+      INSERT INTO studio_documents (id, original_filename, stored_file_path, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
+      VALUES ('legacy-doc', 'legacy.pdf', '/tmp/legacy.pdf', ?, 100, 1, 'pdf-left', ?, ?)
+    `).run(createdAt, createdAt, createdAt);
+  } finally {
+    legacyDb.close();
+  }
+
+  const legacyBackend = new ShelfBackend({ appConfigDir: legacyRoot, updateManifestPublicKey });
+  try {
+    const documents = await legacyBackend.invoke("list_studio_documents");
+    assert.strictEqual(documents.length, 1);
+    assert.strictEqual(documents[0].id, "legacy-doc");
+    assert.strictEqual(documents[0].title, "Legacy PDF Notes");
+    assert.strictEqual(documents[0].note_page_id, "legacy-doc");
+    assert.strictEqual(documents[0].project_id, null);
+
+    const links = await legacyBackend.invoke("list_studio_document_page_links", { documentId: "legacy-doc" });
+    assert.strictEqual(links.length, 1);
+    assert.strictEqual(links[0].page_id, "legacy-doc");
+  } finally {
+    legacyBackend.close();
+  }
+}
+
 async function run() {
   const createdAt = "2026-06-03T00:00:00.000Z";
+  await verifyLegacyStudioDocumentMigration(updateManifestPublicKey);
+
   const initialMigrationPreview = await backend.invoke("preview_studio_page_unification");
   if (initialMigrationPreview.schema_version !== "2") {
     throw new Error("new databases should start page-unified");
