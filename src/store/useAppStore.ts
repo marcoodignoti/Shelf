@@ -106,6 +106,21 @@ const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 240;
 
+function pageTreeIds(pages: Page[], rootId: string): Set<string> {
+  const ids = new Set<string>([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const page of pages) {
+      if (page.parent_id && ids.has(page.parent_id) && !ids.has(page.id)) {
+        ids.add(page.id);
+        changed = true;
+      }
+    }
+  }
+  return ids;
+}
+
 function isTheme(value: string | null): value is Theme {
   return value === 'light' || value === 'dark' || value === 'system';
 }
@@ -276,7 +291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const document = await importStudioDocument(path);
       const importedDocument = projectId ? { ...document, project_id: projectId } : document;
-      const note = await getPage(document.note_page_id);
+      const pages = await getPages();
       const studioDocumentPageLinks = await listAllStudioDocumentPageLinks();
       const opensInPageTree = document.id === document.note_page_id;
       if (opensInPageTree) {
@@ -285,7 +300,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         studioDocumentPageLinks,
-        pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
+        pages,
         currentStudioDocumentId: opensInPageTree ? null : document.id,
         currentPageId: opensInPageTree ? document.id : state.currentPageId,
         error: null
@@ -391,12 +406,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         const currentStudioDocumentId = state.currentStudioDocumentId === id
           ? studioDocuments[0]?.id ?? null
           : state.currentStudioDocumentId;
+        const deletedPageIds = pageTreeIds(state.pages, document.note_page_id);
 
         return {
           studioDocuments,
           studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => link.document_id !== id),
           currentStudioDocumentId,
-          pages: state.pages.filter((page) => page.id !== document.note_page_id),
+          pages: state.pages.filter((page) => !deletedPageIds.has(page.id)),
           error: null,
           notice: { kind: 'success', messageKey: 'notice.studioDocumentDeleted' }
         };

@@ -108,24 +108,28 @@ test.beforeEach(async ({ page }) => {
           return links;
         }
         if (cmd === "import_studio_document") {
+          const documentId = args.documentId as string;
+          const notePageId = args.notePageId as string;
+          const importedAt = args.importedAt as string;
+          const linkedNoteId = `${documentId}-linked-note`;
           const document = {
-            id: args.documentId as string,
+            id: documentId,
             title: "civil-law",
             original_filename: "civil-law.pdf",
             stored_file_path: "/tmp/civil-law.pdf",
-            note_page_id: args.notePageId as string,
+            note_page_id: notePageId,
             project_id: null,
-            last_opened_at: args.importedAt as string,
+            last_opened_at: importedAt,
             viewer_zoom: 100,
             viewer_page: 1,
             panel_layout: "pdf-left",
-            created_at: args.importedAt as string,
-            updated_at: args.importedAt as string,
+            created_at: importedAt,
+            updated_at: importedAt,
           };
           const shouldSkipNote = window.localStorage.getItem("opennotion-e2e-missing-studio-note") === "1";
-          const note = {
-            id: args.notePageId as string,
-            title: "civil-law Notes",
+          const documentPage = {
+            id: notePageId,
+            title: "civil-law",
             parent_id: null,
             content: null,
             search_text: null,
@@ -138,13 +142,50 @@ test.beforeEach(async ({ page }) => {
             database_schema: null,
             properties: null,
             sort_order: 0,
-            page_kind: args.documentId === args.notePageId ? "note" : "studio_note",
-            created_at: args.importedAt as string,
-            updated_at: args.importedAt as string,
+            page_kind: documentId === notePageId ? "note" : "studio_note",
+            created_at: importedAt,
+            updated_at: importedAt,
+          };
+          const linkedNote = {
+            id: linkedNoteId,
+            title: "civil-law Notes",
+            parent_id: notePageId,
+            content: null,
+            search_text: null,
+            icon: null,
+            cover_url: null,
+            is_deleted: 0,
+            is_favorite: 0,
+            is_template: 0,
+            is_database: 0,
+            database_schema: null,
+            properties: null,
+            sort_order: -1,
+            page_kind: "note",
+            created_at: importedAt,
+            updated_at: importedAt,
+          };
+          const linkedNoteLink = {
+            id: `link-${documentId}-${linkedNoteId}`,
+            document_id: documentId,
+            page_id: linkedNoteId,
+            pdf_page: null,
+            label: "Linked note",
+            sort_order: 1,
+            created_at: importedAt,
+            updated_at: importedAt,
           };
           save(documentsKey, [document]);
           if (!shouldSkipNote) {
-            save(pagesKey, [note, ...load<any>(pagesKey).filter((page) => page.id !== note.id)]);
+            save(pagesKey, [
+              documentPage,
+              linkedNote,
+              ...load<any>(pagesKey).filter((page) => page.id !== documentPage.id && page.id !== linkedNote.id),
+            ]);
+            save(linksKey, [
+              ...load<any>(linksKey).filter((link) => link.document_id !== documentId || link.page_id !== linkedNoteId),
+              linkedNoteLink,
+            ]);
           }
           return document;
         }
@@ -263,7 +304,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
   await expect(page.locator(".on-section-label", { hasText: "Private" })).toBeVisible();
-  await expect(page.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" })).toBeVisible();
+  await expect(page.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" }).first()).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
@@ -283,46 +324,57 @@ test("uses normal note editor scale inside Studio notes", async ({ page }) => {
   await expect.poll(async () => editorShell.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("32px");
 });
 
-test("opens Studio notes in a dedicated Notes sidebar section", async ({ page }) => {
+test("opens imported PDFs in the unified private page tree", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  await expect(page.locator(".on-section-label", { hasText: "Studio notes" })).toBeVisible();
-  await expect(page.getByText("No private pages yet.")).toBeVisible();
-  await expect(page.locator(".on-studio-note-document-node", { hasText: "civil-law" })).toBeVisible();
+  await expect(page.locator(".on-section-label", { hasText: "Private" })).toBeVisible();
+  await expect(page.getByText("No private pages yet.")).toBeHidden();
+  await expect(page.locator(".on-section-label", { hasText: "Studio notes" })).toBeHidden();
 
-  const studioNoteRow = page.locator("[data-studio-note-id]", { hasText: "civil-law Notes" });
-  await expect(studioNoteRow).toBeVisible();
-  await studioNoteRow.click();
+  const importedPdfRow = page.locator("[data-page-id]", { hasText: "civil-law" }).first();
+  const linkedNoteRow = page.locator("[data-page-id]", { hasText: "civil-law Notes" });
+  await expect(importedPdfRow).toBeVisible();
+  await expect(importedPdfRow.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" })).toBeVisible();
+  await expect(linkedNoteRow).toBeVisible();
+  await expect(linkedNoteRow.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" })).toBeVisible();
+  await linkedNoteRow.click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 });
 
-test("unlinking a primary Studio note preserves the page and does not recreate the link", async ({ page }) => {
+test("imported PDFs create a nested linked note", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  const studioNoteId = await page.evaluate(() => {
+  const linkState = await page.evaluate(() => {
     const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
       id: string;
       title: string;
+      parent_id: string | null;
     }>;
-    return pages.find((item) => item.title === "civil-law Notes")?.id ?? null;
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
+      id: string;
+      note_page_id: string;
+      title: string;
+    }>;
+    const links = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-page-links") ?? "[]") as Array<{
+      document_id: string;
+      page_id: string;
+      label: string | null;
+    }>;
+    const document = documents[0] ?? null;
+    const documentPage = document ? pages.find((item) => item.id === document.note_page_id) : null;
+    const linkedNote = document ? pages.find((item) => item.parent_id === document.note_page_id && item.title === "civil-law Notes") : null;
+    const linkedNoteLink = linkedNote ? links.find((link) => link.page_id === linkedNote.id && link.label === "Linked note") : null;
+    return { document, documentPage, linkedNote, linkedNoteLink };
   });
-  expect(studioNoteId).toBeTruthy();
 
-  await page.getByLabel("Delete linked note civil-law Notes").click();
-  await page.getByRole("button", { name: "Remove link" }).click();
-
-  await page.waitForFunction(() => {
-    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ id: string; title: string }>;
-    const unlinked = JSON.parse(window.localStorage.getItem("opennotion-e2e-unlinked-primary-links") ?? "[]") as string[];
-    return pages.some((item) => item.id === unlinked[0] && item.title === "civil-law Notes");
-  });
-  await expect(page.getByText("Linked note missing.")).toBeVisible();
-  await page.waitForTimeout(400);
-  await expect(page.getByText("Linked note missing.")).toBeVisible();
-
-  await expect(page.locator("[data-studio-note-id]", { hasText: "civil-law Notes" })).toBeHidden();
+  expect(linkState.document?.id).toBe(linkState.document?.note_page_id);
+  expect(linkState.documentPage?.title).toBe("civil-law");
+  expect(linkState.linkedNote?.title).toBe("civil-law Notes");
+  expect(linkState.linkedNoteLink?.document_id).toBe(linkState.document?.id);
+  await expect(page.getByText("Linked note missing.")).toBeHidden();
+  await expect(page.locator("[data-page-id]", { hasText: "civil-law Notes" }).locator(".on-sidebar-linked-pdf-badge")).toBeVisible();
 });
 
 test("creates multiple linked notes and PDF bookmarks for a Studio document", async ({ page }) => {
@@ -946,7 +998,6 @@ test("navigates PDF pages with arrow keys and swipe gestures", async ({ page }) 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
 
@@ -1033,7 +1084,6 @@ test("changes single-mode pages in place without blanking the canvas", async ({ 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
 

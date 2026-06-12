@@ -3,7 +3,7 @@ import type { TouchEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
-import { createStudioNotePage, Page } from "../lib/db";
+import { createPage, Page } from "../lib/db";
 import { useT } from "../lib/i18n";
 import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
 import { useAppStore } from "../store/useAppStore";
@@ -168,9 +168,7 @@ export function StudioWorkspace({
         if (cancelled) return;
         setLinkedPageLinks(links);
         setSelectedLinkedPageId((currentId) =>
-          currentId && links.some((link) => link.page_id === currentId)
-            ? currentId
-            : links[0]?.page_id ?? document.note_page_id
+          preferredLinkedPageId(links, document.note_page_id, currentId)
         );
       })
       .catch((error: unknown) => {
@@ -250,7 +248,8 @@ export function StudioWorkspace({
     setIsCreatingLinkedPage(true);
     try {
       const title = pdfPage ? `${document.title} p. ${pdfPage}` : `${document.title} Note`;
-      const page = await createStudioNotePage(crypto.randomUUID(), title);
+      const parentId = document.id === document.note_page_id ? document.id : null;
+      const page = await createPage(title, parentId);
       const link = await linkStudioDocumentPage(document.id, page.id, {
         pdfPage,
         label: pdfPage ? `p. ${pdfPage}` : t("studio.linkedNote"),
@@ -1423,4 +1422,17 @@ function getStoredPdfDisplayMode(documentId: string): StudioPdfDisplayMode {
 
 function storePdfDisplayMode(documentId: string, mode: StudioPdfDisplayMode): void {
   localStorage.setItem(pdfDisplayModeStorageKey(documentId), mode);
+}
+
+function preferredLinkedPageId(
+  links: StudioDocumentPageLink[],
+  primaryPageId: string,
+  currentId: string | null
+): string {
+  const hasCurrent = currentId ? links.some((link) => link.page_id === currentId) : false;
+  const firstLinkedNote = links.find((link) => link.page_id !== primaryPageId)?.page_id ?? null;
+  if (hasCurrent && currentId && currentId !== primaryPageId) return currentId;
+  if (firstLinkedNote) return firstLinkedNote;
+  if (hasCurrent && currentId) return currentId;
+  return links[0]?.page_id ?? primaryPageId;
 }

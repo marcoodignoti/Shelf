@@ -1623,11 +1623,8 @@ class ShelfBackend {
         const pageKind = documentIdValue === notePageIdValue ? "note" : "studio_note";
         this.db.prepare(`
           INSERT INTO pages (${PAGE_COLUMNS})
-          VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, 'studio_note', ?, ?)
-        `).run(notePageIdValue, pageTitle, imported, imported);
-        if (pageKind === "note") {
-          this.db.prepare("UPDATE pages SET page_kind = 'note' WHERE id = ?").run(notePageIdValue);
-        }
+          VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, ?, ?, ?)
+        `).run(notePageIdValue, pageTitle, pageKind, imported, imported);
         this.db.prepare(`
           INSERT INTO studio_documents (id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, 100, 1, 'pdf-left', ?, ?)
@@ -1636,6 +1633,22 @@ class ShelfBackend {
           INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
           VALUES (?, ?, ?, NULL, 'Primary note', 0, ?, ?)
         `).run(crypto.randomUUID(), documentIdValue, notePageIdValue, imported, imported);
+        if (documentIdValue === notePageIdValue) {
+          const linkedNotePageId = crypto.randomUUID();
+          const linkedNoteSortOrder = rowValue(this.db.prepare(`
+            SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
+            FROM pages
+            WHERE is_deleted = 0 AND parent_id = ?
+          `).get(documentIdValue), "value");
+          this.db.prepare(`
+            INSERT INTO pages (${PAGE_COLUMNS})
+            VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
+          `).run(linkedNotePageId, `${title} Notes`, documentIdValue, linkedNoteSortOrder, imported, imported);
+          this.db.prepare(`
+            INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
+            VALUES (?, ?, ?, NULL, 'Linked note', 1, ?, ?)
+          `).run(crypto.randomUUID(), documentIdValue, linkedNotePageId, imported, imported);
+        }
       });
     } catch (error) {
       fs.rmSync(destination, { force: true });
@@ -1715,7 +1728,16 @@ class ShelfBackend {
     this.withTransaction(() => {
       this.db.prepare("DELETE FROM studio_document_page_links WHERE document_id = ?").run(id);
       this.db.prepare("DELETE FROM studio_documents WHERE id = ?").run(id);
-      this.db.prepare("DELETE FROM pages WHERE id = ?").run(current.note_page_id);
+      this.db.prepare(`
+        WITH RECURSIVE descendants(id) AS (
+          SELECT id FROM pages WHERE id = ?
+          UNION ALL
+          SELECT pages.id FROM pages
+          JOIN descendants ON pages.parent_id = descendants.id
+        )
+        DELETE FROM pages
+        WHERE id IN (SELECT id FROM descendants)
+      `).run(current.note_page_id);
     });
     removeStoredStudioDocumentFile(current.stored_file_path, this.studioDocumentsRoot());
   }
