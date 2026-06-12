@@ -724,6 +724,7 @@ export function Sidebar() {
     fetchStudioDocuments,
     setCurrentStudioDocumentId,
     importStudioPdfAction,
+    deleteStudioDocumentAction,
     sidebarWidth,
     setSidebarWidth,
   } = useAppStore();
@@ -767,6 +768,11 @@ export function Sidebar() {
   const rootPages = sortedPages.filter(p => p.parent_id === null);
   const templatePages = sortedPages.filter(p => p.is_template === 1);
   const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
+  const pendingDeleteStudioDocument = pendingDelete
+    ? studioContextsByPageId
+        .get(pendingDelete.page.id)
+        ?.find((context) => context.document.note_page_id === pendingDelete.page.id)?.document ?? null
+    : null;
 
   useEffect(() => {
     if (!newPageMenuPosition) return;
@@ -828,7 +834,11 @@ export function Sidebar() {
   const handleConfirmDelete = async () => {
     if (!pendingDelete) return;
 
-    await removePage(pendingDelete.page.id);
+    if (pendingDeleteStudioDocument) {
+      await deleteStudioDocumentAction(pendingDeleteStudioDocument.id);
+    } else {
+      await removePage(pendingDelete.page.id);
+    }
     setPendingDelete(null);
   };
 
@@ -1073,7 +1083,9 @@ export function Sidebar() {
   };
 
   const deleteTitle = pendingDelete?.page.title || 'Untitled';
-  const deleteMessage = pendingDelete?.hasChildren
+  const deleteMessage = pendingDeleteStudioDocument
+    ? `Delete "${deleteTitle}" and its PDF permanently? This cannot be undone.`
+    : pendingDelete?.hasChildren
     ? `Delete "${deleteTitle}" and its subpages permanently? This cannot be undone.`
     : `Delete "${deleteTitle}" permanently? This cannot be undone.`;
   const deleteDialog = pendingDelete ? createPortal(

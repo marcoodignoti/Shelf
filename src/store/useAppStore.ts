@@ -401,22 +401,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       await deleteStudioDocument(id);
+      let nextCurrentPageId = HOME_PAGE_ID;
       set((state) => {
         const studioDocuments = state.studioDocuments.filter((candidate) => candidate.id !== id);
         const currentStudioDocumentId = state.currentStudioDocumentId === id
           ? studioDocuments[0]?.id ?? null
           : state.currentStudioDocumentId;
         const deletedPageIds = pageTreeIds(state.pages, document.note_page_id);
+        const pages = state.pages.filter((page) => !deletedPageIds.has(page.id));
+        nextCurrentPageId = resolveCurrentPageIdAfterDeletion(pages, state.currentPageId, document.note_page_id, deletedPageIds, state.pages);
 
         return {
           studioDocuments,
           studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => link.document_id !== id),
           currentStudioDocumentId,
-          pages: state.pages.filter((page) => !deletedPageIds.has(page.id)),
+          currentPageId: nextCurrentPageId,
+          pages,
           error: null,
           notice: { kind: 'success', messageKey: 'notice.studioDocumentDeleted' }
         };
       });
+      localStorage.setItem('opennotion-current-page-id', nextCurrentPageId || HOME_PAGE_ID);
     } catch (error: unknown) {
       get().showError(error);
       await get().fetchStudioDocuments();

@@ -287,6 +287,26 @@ test.beforeEach(async ({ page }) => {
           save(linksKey, load<any>(linksKey).filter((link) => !deleteIds.has(link.page_id)));
           return null;
         }
+        if (cmd === "delete_studio_document") {
+          const document = load<any>(documentsKey).find((candidate) => candidate.id === args.id);
+          if (!document) throw new Error("document not found");
+          const pages = load<any>(pagesKey);
+          const deleteIds = new Set<string>([document.note_page_id]);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const item of pages) {
+              if (item.parent_id && deleteIds.has(item.parent_id) && !deleteIds.has(item.id)) {
+                deleteIds.add(item.id);
+                changed = true;
+              }
+            }
+          }
+          save(documentsKey, load<any>(documentsKey).filter((candidate) => candidate.id !== args.id));
+          save(pagesKey, pages.filter((item) => !deleteIds.has(item.id)));
+          save(linksKey, load<any>(linksKey).filter((link) => link.document_id !== args.id && !deleteIds.has(link.page_id)));
+          return null;
+        }
         if (cmd === "search_pages") return [];
         if (cmd === "get_workspace_profile") return { name: "", workspaceName: "Shelf", avatarPath: null };
         throw new Error(`Unhandled e2e command: ${cmd}`);
@@ -375,6 +395,37 @@ test("imported PDFs create a nested linked note", async ({ page }) => {
   expect(linkState.linkedNoteLink?.document_id).toBe(linkState.document?.id);
   await expect(page.getByText("Linked note missing.")).toBeHidden();
   await expect(page.locator("[data-page-id]", { hasText: "civil-law Notes" }).locator(".on-sidebar-linked-pdf-badge")).toBeVisible();
+});
+
+test("deletes a unified Studio PDF from the private page tree", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Import PDF" }).click();
+
+  const documentId = await page.evaluate(() => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{ id: string }>;
+    return documents[0]?.id ?? "";
+  });
+  expect(documentId).not.toBe("");
+  const linkedNoteId = `${documentId}-linked-note`;
+  const importedPdfRow = page.locator(`[data-page-id='${documentId}']`);
+  await expect(importedPdfRow).toBeVisible();
+  await importedPdfRow.click({ button: "right" });
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText('Delete "civil-law" and its PDF permanently?')).toBeVisible();
+  await page.locator(".on-delete-dialog").getByRole("button", { name: "Delete" }).click();
+
+  await expect(importedPdfRow).toBeHidden();
+  await expect(page.getByText("Studio document deleted.")).toBeVisible();
+  await expect(page.getByText("delete the Studio document before deleting its primary note")).toBeHidden();
+  await expect.poll(async () => page.evaluate(({ documentId, linkedNoteId }) => {
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as unknown[];
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ id: string }>;
+    return {
+      documents: documents.length,
+      hasDocumentPage: pages.some((item) => item.id === documentId),
+      hasLinkedNote: pages.some((item) => item.id === linkedNoteId),
+    };
+  }, { documentId, linkedNoteId })).toEqual({ documents: 0, hasDocumentPage: false, hasLinkedNote: false });
 });
 
 test("creates multiple linked notes and PDF bookmarks for a Studio document", async ({ page }) => {
