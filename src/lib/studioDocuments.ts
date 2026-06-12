@@ -31,6 +31,10 @@ export function remainingStudioDocuments(
   return allStudioDocuments(documents).filter((document) => !excludedIds.has(document.id));
 }
 
+export function isStudioPageUnified(documents: StudioDocument[]): boolean {
+  return documents.every((document) => document.id === document.note_page_id);
+}
+
 export function studioDocumentMetadata(document: StudioDocument, locale: Locale = "en", unknownDateLabel = "unknown date"): string {
   const openedAt = new Date(document.last_opened_at);
   const date = Number.isNaN(openedAt.getTime())

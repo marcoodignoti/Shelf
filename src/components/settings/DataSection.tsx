@@ -13,7 +13,7 @@ export function DataSection() {
   const handleExport = async () => {
     try {
       const path = await saveDialog({
-        defaultPath: `opennotion-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        defaultPath: `shelf-backup-${new Date().toISOString().slice(0, 10)}.json`,
         filters: [{ name: t('settings.data.backupFilterName'), extensions: ['json'] }],
       });
 

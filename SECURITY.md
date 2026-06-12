@@ -24,7 +24,7 @@ Include:
 
 ## Security Model
 
-OpenNotion is local-first:
+Shelf is local-first:
 
 - no account system
 - no hosted sync backend

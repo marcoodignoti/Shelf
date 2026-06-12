@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentType } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { FileText, PlusCircle, Search, Star } from 'lucide-react';
+import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
+import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.mjs';
+import Search from 'lucide-react/dist/esm/icons/search.mjs';
+import Star from 'lucide-react/dist/esm/icons/star.mjs';
 import { SearchResult, searchPages } from '../lib/db';
 import { pageContentPreview } from '../lib/pageContent';
 import { splitSearchMatch } from '../lib/searchDisplay';
@@ -49,8 +52,7 @@ export function CommandPalette() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const { pages, setCurrentPageId, setWorkspaceMode, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
+  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
 
   useEffect(() => {
     if (isCommandPaletteOpen) {
@@ -125,7 +127,6 @@ export function CommandPalette() {
   const totalItems = commandItems.length + flattenedPages.length;
 
   const handleSelect = (id: string) => {
-    setWorkspaceMode('notes');
     setCurrentPageId(id);
     closeCommandPalette();
   };

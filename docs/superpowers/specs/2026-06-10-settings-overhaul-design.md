@@ -5,7 +5,7 @@ Stato: approvato in brainstorming, in attesa di review finale sul documento
 
 ## Obiettivo
 
-Rinnovare il modal Impostazioni di OpenNotion: nuove impostazioni reali (lingua, font, comportamento editor), nuove sezioni (Aspetto, Scorciatoie, Info), profilo Account funzionante, polish UI. Vincolo trasversale: **nessun elemento decorativo — tutto ciò che è visibile deve funzionare**.
+Rinnovare il modal Impostazioni di Shelf: nuove impostazioni reali (lingua, font, comportamento editor), nuove sezioni (Aspetto, Scorciatoie, Info), profilo Account funzionante, polish UI. Vincolo trasversale: **nessun elemento decorativo — tutto ciò che è visibile deve funzionare**.
 
 ## Scope
 
@@ -44,8 +44,8 @@ Stesso pattern di `theme` (lettura sincrona all'avvio, setter che scrive localSt
 | Chiave localStorage | Valori | Default |
 |---|---|---|
 | `opennotion-locale` | `'system' \| 'en' \| 'it'` | `'system'` |
-| `opennotion-editor-font` | `'sans' \| 'serif' \| 'mono'` | `'sans'` |
-| `opennotion-editor-font-size` | `'small' \| 'default' \| 'large'` | `'default'` |
+| `shelf-editor-font` | `'sans' \| 'serif' \| 'mono'` | `'sans'` |
+| `shelf-editor-font-size` | `'small' \| 'default' \| 'large'` | `'default'` |
 | `opennotion-page-width` | `'centered' \| 'full'` | `'centered'` |
 | `opennotion-title-enter` | `'body' \| 'newline'` | `'body'` |
 

@@ -86,31 +86,31 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          Compress-Archive -Path dist-electron/win-x64/OpenNotion/* -DestinationPath "dist-electron/OpenNotion_${version}_win-x64.zip" -Force
+          Compress-Archive -Path dist-electron/win-x64/Shelf/* -DestinationPath "dist-electron/Shelf_${version}_win-x64.zip" -Force
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v7
         with:
-          name: OpenNotion_win-x64
-          path: dist-electron/OpenNotion_*_win-x64.zip
+          name: Shelf_win-x64
+          path: dist-electron/Shelf_*_win-x64.zip
           if-no-files-found: error
 
       - name: Authenticode dry run
         shell: pwsh
         timeout-minutes: 5
         run: |
-          $exePath = "dist-electron/win-x64/OpenNotion/OpenNotion.exe"
+          $exePath = "dist-electron/win-x64/Shelf/Shelf.exe"
           $cert = New-SelfSignedCertificate `
             -Type CodeSigningCert `
-            -Subject "CN=OpenNotion CI Authenticode Dry Run" `
+            -Subject "CN=Shelf CI Authenticode Dry Run" `
             -CertStoreLocation Cert:\CurrentUser\My `
             -KeyExportPolicy Exportable `
             -KeyUsage DigitalSignature
           $signature = Set-AuthenticodeSignature -FilePath $exePath -Certificate $cert -HashAlgorithm SHA256
           if ($signature.Status -eq "NotSigned") {
-            throw "Authenticode dry run did not sign OpenNotion.exe"
+            throw "Authenticode dry run did not sign Shelf.exe"
           }
-          if ($signature.SignerCertificate.Subject -ne "CN=OpenNotion CI Authenticode Dry Run") {
+          if ($signature.SignerCertificate.Subject -ne "CN=Shelf CI Authenticode Dry Run") {
             throw "Authenticode dry run signer mismatch"
           }
 
@@ -120,10 +120,10 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:
-          name: OpenNotion_win-x64_installer
+          name: Shelf_win-x64_installer
           path: |
-            dist-electron/builder/OpenNotion_*_setup_win-x64.exe
-            dist-electron/builder/OpenNotion_*_setup_win-x64.exe.blockmap
+            dist-electron/builder/Shelf_*_setup_win-x64.exe
+            dist-electron/builder/Shelf_*_setup_win-x64.exe.blockmap
             dist-electron/builder/latest.yml
           if-no-files-found: error
 
@@ -146,9 +146,12 @@ jobs:
       - name: Package macOS app
         run: npm run release:package:macos
 
+      - name: Verify macOS package
+        run: npm run release:verify:macos
+
       - name: Upload macOS package
         uses: actions/upload-artifact@v7
         with:
-          name: OpenNotion_macos-arm64
-          path: dist-electron/OpenNotion_*_arm64.dmg
+          name: Shelf_macos-arm64
+          path: dist-electron/Shelf_*_arm64.dmg
           if-no-files-found: error

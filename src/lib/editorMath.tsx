@@ -1306,6 +1306,16 @@ function normalizeFormulaForKatex(formula: string): string {
   const strippedFormula = stripFormulaDelimiters(formula);
 
   return strippedFormula
+    .replace(/\$\$/g, " ")
+    .replace(/\$/g, " ")
+    .replace(/[^\x00-\x7F]/g, " ")
+    .replace(/\\(?=\s*(?:\n|$))/g, " ")
+    .replace(/\\Delta\s+V\s*\{([A-Za-z]{2})\}/g, "\\Delta V_{$1}")
+    .replace(/\bV\s*\{([A-Za-z]{2})\}/g, "V_{$1}")
+    .replace(/\bV([A-Z])\b/g, "V_$1")
+    .replace(/\bR\s*\{\s*eq\s*\}/g, "R_{eq}")
+    .replace(/\bR\s+([0-9]+)\b/g, "R_$1")
+    .replace(/\bR([0-9]+)\b/g, "R_$1")
     .replace(/\\(sin|cos|tan)(theta|phi|alpha|beta|gamma|omega)\b/g, (_match, fn, variable) => `\\${fn}\\${variable}`)
     .replace(/!!(?=\s*\\zigzag\b)/g, "\\!")
     .replace(/(\\zigzag\b\s*)!!/g, "$1\\!");

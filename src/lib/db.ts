@@ -159,7 +159,32 @@ export async function importCoverImage(sourcePath: string, pageId: string): Prom
   return await invoke<string>('import_cover_image', { sourcePath, pageId });
 }
 
+const EDITOR_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const EDITOR_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
+const EDITOR_VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'webm']);
+
+function fileExtension(fileName: string): string {
+  return fileName.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function isEditorVideoFile(file: File): boolean {
+  return file.type.startsWith('video/') || EDITOR_VIDEO_EXTENSIONS.has(fileExtension(file.name));
+}
+
+function assertEditorImageSize(file: File): void {
+  if (file.size > EDITOR_IMAGE_MAX_BYTES) {
+    throw new Error('image must be 10 MB or smaller');
+  }
+}
+
+function assertEditorVideoSize(file: File): void {
+  if (file.size > EDITOR_VIDEO_MAX_BYTES) {
+    throw new Error('video must be 512 MB or smaller');
+  }
+}
+
 export async function importEditorImage(file: File, pageId: string): Promise<string> {
+  assertEditorImageSize(file);
   const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
   return await invoke<string>('import_editor_image', {
     pageId,
@@ -173,6 +198,7 @@ export async function importEditorImagePath(sourcePath: string, pageId: string):
 }
 
 export async function importEditorVideo(file: File, pageId: string): Promise<string> {
+  assertEditorVideoSize(file);
   const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
   return await invoke<string>('import_editor_video', {
     pageId,
@@ -186,7 +212,7 @@ export async function importEditorVideoPath(sourcePath: string, pageId: string):
 }
 
 export async function importEditorMedia(file: File, pageId: string): Promise<string> {
-  if (file.type.startsWith('video/')) return await importEditorVideo(file, pageId);
+  if (isEditorVideoFile(file)) return await importEditorVideo(file, pageId);
   return await importEditorImage(file, pageId);
 }
 

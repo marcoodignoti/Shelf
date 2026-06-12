@@ -1,13 +1,13 @@
 # Data Location
 
-OpenNotion stores local app data in the Electron Application Support directory.
+Shelf stores local app data in the Electron Application Support directory.
 
 ## Electron Desktop App
 
 Bundle identifier:
 
 ```text
-org.opennotion.desktop
+com.marcodignoti.shelf
 ```
 
 Default macOS data directory:
@@ -15,6 +15,10 @@ Default macOS data directory:
 ```sh
 ~/Library/Application Support/org.opennotion.desktop/
 ```
+
+Shelf intentionally keeps the legacy `org.opennotion.desktop` data directory so
+existing beta databases, covers, editor images, and Studio PDFs keep working
+after the product rename.
 
 Main files and folders:
 
@@ -24,6 +28,16 @@ covers/
 editor-images/
 studio-documents/
 ```
+
+## Local Development
+
+`npm run electron:dev` uses a separate project-local data directory by default:
+
+```sh
+.shelf-dev/user-data/
+```
+
+Set `SHELF_USER_DATA_DIR` to override that location for one-off debugging.
 
 ## Previous Beta Identifier
 

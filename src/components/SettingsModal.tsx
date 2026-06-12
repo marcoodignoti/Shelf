@@ -81,9 +81,9 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: (
 
   if (!isOpen) return null;
 
-  const cardTitle = profile?.workspaceName || 'OpenNotion';
+  const cardTitle = profile?.workspaceName || 'Shelf';
   const cardSubtitle = profile?.name || t('settings.card.localWorkspace');
-  const avatarInitial = (profile?.name || profile?.workspaceName || 'O').trim().charAt(0).toUpperCase() || 'O';
+  const avatarInitial = (profile?.name || profile?.workspaceName || 'S').trim().charAt(0).toUpperCase() || 'S';
   const ActiveSection = SECTION_COMPONENTS[activeSection];
 
   return createPortal(

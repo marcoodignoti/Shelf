@@ -4,8 +4,8 @@ const path = require("node:path");
 const { _electron: electron } = require("playwright");
 
 const root = path.resolve(__dirname, "..");
-const executablePath = path.join(root, "dist-electron", "mac-arm64", "OpenNotion.app", "Contents", "MacOS", "OpenNotion");
-const screenshotPath = path.join(os.tmpdir(), "opennotion-electron-visual-smoke.png");
+const executablePath = path.join(root, "dist-electron", "mac-arm64", "Shelf.app", "Contents", "MacOS", "Shelf");
+const screenshotPath = path.join(os.tmpdir(), "shelf-electron-visual-smoke.png");
 
 async function main() {
   if (process.platform !== "darwin") {
@@ -16,14 +16,14 @@ async function main() {
     throw new Error(`Packaged Electron app missing: ${executablePath}`);
   }
 
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-smoke-"));
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-smoke-"));
   const app = await electron.launch({
     executablePath,
     // Pin the renderer locale so screenshots are stable across host languages.
     args: ["--lang=en-US"],
     env: {
       ...process.env,
-      OPENNOTION_USER_DATA_DIR: userDataDir,
+      SHELF_USER_DATA_DIR: userDataDir,
       ELECTRON_ENABLE_LOGGING: "1",
     },
   });

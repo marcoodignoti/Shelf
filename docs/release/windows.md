@@ -1,6 +1,6 @@
 # Windows Release Checklist
 
-OpenNotion's Windows release ships two artifacts from GitHub Actions:
+Shelf's Windows release ships two artifacts from GitHub Actions:
 
 - unsigned portable Electron zip for compatibility with existing testers
 - unsigned NSIS installer for Windows auto-update support
@@ -11,15 +11,15 @@ The `Windows package` job in `.github/workflows/ci.yml` runs on
 `windows-2025` and uploads:
 
 ```text
-OpenNotion_0.1.4_win-x64.zip
-OpenNotion_0.1.4_setup_win-x64.exe
+Shelf_0.1.4_win-x64.zip
+Shelf_0.1.4_setup_win-x64.exe
 latest.yml
 ```
 
 Inside the extracted zip:
 
 ```text
-OpenNotion.exe
+Shelf.exe
 ```
 
 `latest.yml` must be uploaded to the same GitHub Release as the installer.
@@ -39,19 +39,19 @@ npm run release:package:windows:installer
 Generated portable directory:
 
 ```text
-dist-electron/win-x64/OpenNotion/
+dist-electron/win-x64/Shelf/
 ```
 
 Generated installer files:
 
 ```text
-dist-electron/builder/OpenNotion_0.1.4_setup_win-x64.exe
+dist-electron/builder/Shelf_0.1.4_setup_win-x64.exe
 dist-electron/builder/latest.yml
 ```
 
 ## Acceptance Criteria
 
-- `OpenNotion.exe` launches on a clean Windows account.
+- `Shelf.exe` launches on a clean Windows account.
 - Notes, images, Studio documents, and settings persist after relaunch.
 - App data is created per user and is not bundled into the zip.
 - SmartScreen warning is expected until code signing is implemented.

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Clipboard, Download, X } from "lucide-react";
+import Clipboard from "lucide-react/dist/esm/icons/clipboard.mjs";
+import Download from "lucide-react/dist/esm/icons/download.mjs";
+import X from "lucide-react/dist/esm/icons/x.mjs";
 import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey, downloadVerifiedUpdate } from "../lib/betaUpdates";
 import { desktopAutoUpdateActive } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
@@ -7,8 +9,8 @@ import { useT } from "../lib/i18n";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
 const HOMEBREW_UPDATE_COMMAND = [
-  "brew tap marcoodignoti/opennotion",
-  "brew upgrade --cask opennotion-beta || brew install --cask opennotion-beta",
+  "brew tap marcoodignoti/shelf",
+  "brew upgrade --cask shelf-beta || brew install --cask shelf-beta",
 ].join("\n");
 
 function hasDismissedUpdate(version: string): boolean {

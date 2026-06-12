@@ -1,16 +1,16 @@
 name: Bug report
-description: Report a reproducible OpenNotion problem.
+description: Report a reproducible Shelf problem.
 title: "[Bug]: "
 labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing OpenNotion. Please include enough detail to reproduce the issue.
+        Thanks for testing Shelf. Please include enough detail to reproduce the issue.
   - type: input
     id: version
     attributes:
-      label: OpenNotion version
+      label: Shelf version
       description: "Example: v0.1.0"
       placeholder: v0.1.0
     validations:

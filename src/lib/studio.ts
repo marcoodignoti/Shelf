@@ -53,6 +53,22 @@ export interface StudioViewerUpdates {
   last_opened_at?: string;
 }
 
+export interface StudioPageUnificationPreview {
+  schema_version: string;
+  project_count: number;
+  nested_project_count: number;
+  document_count: number;
+  document_without_project_count: number;
+  link_count: number;
+  linked_regular_page_count: number;
+  linked_studio_note_count: number;
+  missing_primary_page_count: number;
+  missing_primary_link_count: number;
+  orphan_link_count: number;
+  blockers: string[];
+  can_migrate: boolean;
+}
+
 export interface StudioContinuousPageWindow {
   pages: number[];
   beforeHeight: number;
@@ -65,6 +81,16 @@ export async function listStudioDocuments(): Promise<StudioDocument[]> {
 
 export async function listStudioProjects(): Promise<StudioProject[]> {
   return await invoke<StudioProject[]>("list_studio_projects");
+}
+
+export async function previewStudioPageUnification(): Promise<StudioPageUnificationPreview> {
+  return await invoke<StudioPageUnificationPreview>("preview_studio_page_unification");
+}
+
+export async function migrateStudioPageUnification(): Promise<StudioPageUnificationPreview> {
+  return await invoke<StudioPageUnificationPreview>("migrate_studio_page_unification", {
+    migratedAt: new Date().toISOString(),
+  });
 }
 
 export async function listAllStudioDocumentPageLinks(): Promise<StudioDocumentPageLink[]> {
@@ -148,9 +174,10 @@ export async function unlinkStudioDocumentPage(id: string): Promise<void> {
 }
 
 export async function importStudioDocument(sourcePath: string): Promise<StudioDocument> {
+  const id = crypto.randomUUID();
   return await invoke<StudioDocument>("import_studio_document", {
-    documentId: crypto.randomUUID(),
-    notePageId: crypto.randomUUID(),
+    documentId: id,
+    notePageId: id,
     sourcePath,
     importedAt: new Date().toISOString(),
   });

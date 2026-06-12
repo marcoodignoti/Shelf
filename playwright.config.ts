@@ -16,10 +16,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: process.env.PLAYWRIGHT_SKIP_WEB_SERVER ? undefined : {
-    command: "npm run preview -- --host 127.0.0.1 --port 1420 --strictPort",
+    command: "node scripts/serve-dist.cjs 1420",
     url: "http://127.0.0.1:1420",
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    timeout: 30_000,
   },
   projects: [
     {

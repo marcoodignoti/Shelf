@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require("electron");
 const { pathToFileURL } = require("node:url");
-const { OpenNotionBackend } = require("./backend.cjs");
+const { ShelfBackend } = require("./backend.cjs");
 
 const APP_PROTOCOL = "opennotion-app";
 const APP_RENDERER_HOST = "renderer";
@@ -31,16 +31,17 @@ protocol.registerSchemesAsPrivileged([{
 }]);
 
 function configureAppIdentity() {
-  app.setName("OpenNotion");
-  const userDataPath = process.env.OPENNOTION_USER_DATA_DIR
-    ? path.resolve(process.env.OPENNOTION_USER_DATA_DIR)
+  app.setName("Shelf");
+  const configuredUserDataPath = process.env.SHELF_USER_DATA_DIR || process.env.OPENNOTION_USER_DATA_DIR;
+  const userDataPath = configuredUserDataPath
+    ? path.resolve(configuredUserDataPath)
     : path.join(app.getPath("appData"), LEGACY_TAURI_CONFIG_DIR);
   app.setPath("userData", userDataPath);
 }
 
 function createBackend() {
   if (backend) return backend;
-  backend = new OpenNotionBackend({
+  backend = new ShelfBackend({
     appConfigDir: app.getPath("userData"),
     downloadsDir: app.getPath("downloads"),
     openPath: (filePath) => shell.openPath(filePath),
@@ -413,8 +414,11 @@ function createMainWindow() {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: "OpenNotion",
-    backgroundColor: "#f7f7f5",
+    title: "Shelf",
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#f7f7f5",
+    transparent: process.platform === "darwin",
+    vibrancy: process.platform === "darwin" ? "sidebar" : undefined,
+    visualEffectState: process.platform === "darwin" ? "active" : undefined,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 16, y: 14 },
     ...(icon ? { icon } : {}),

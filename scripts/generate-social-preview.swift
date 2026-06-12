@@ -2,9 +2,9 @@ import AppKit
 import Foundation
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-let outputURL = root.appendingPathComponent("docs/assets/opennotion-social-preview.png")
+let outputURL = root.appendingPathComponent("docs/assets/shelf-social-preview.png")
 let iconURL = root.appendingPathComponent("assets/app-icon.png")
-let screenshotURL = root.appendingPathComponent("docs/assets/opennotion-studio-pdf.png")
+let screenshotURL = root.appendingPathComponent("docs/assets/shelf-studio-pdf.png")
 
 guard
   let icon = NSImage(contentsOf: iconURL),
@@ -94,7 +94,7 @@ NSShadow().set()
 icon.draw(in: iconFrame.insetBy(dx: 10, dy: 10), from: .zero, operation: .sourceOver, fraction: 1)
 
 drawText(
-  "OpenNotion",
+  "Shelf",
   in: NSRect(x: 82, y: 392, width: 390, height: 78),
   size: 58,
   weight: .bold,

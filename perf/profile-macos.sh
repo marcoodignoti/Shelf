@@ -8,7 +8,7 @@ set -euo pipefail
 RSS_BUDGET_MB="${RSS_BUDGET_MB:-400}"   # documented budget; tune after baseline
 HOLD_SECONDS="${HOLD_SECONDS:-8}"
 
-BIN="dist-electron/mac-arm64/OpenNotion.app/Contents/MacOS/OpenNotion"
+BIN="dist-electron/mac-arm64/Shelf.app/Contents/MacOS/Shelf"
 if [ -z "${BIN}" ]; then
   echo "ERROR: no Electron binary configured." >&2
   exit 1

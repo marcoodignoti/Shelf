@@ -6,8 +6,8 @@ export type TitleEnterBehavior = "body" | "newline";
 
 export const PREFERENCE_STORAGE_KEYS = {
   locale: "opennotion-locale",
-  editorFont: "opennotion-editor-font",
-  editorFontSize: "opennotion-editor-font-size",
+  editorFont: "shelf-editor-font",
+  editorFontSize: "shelf-editor-font-size",
   pageWidth: "opennotion-page-width",
   titleEnter: "opennotion-title-enter",
 } as const;

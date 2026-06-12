@@ -127,11 +127,11 @@ function blockDropTargetFromPoint(editor: BlockNoteEditor, clientX: number, clie
   return { blockId, placement, element };
 }
 
-function OpenNotionSideMenu() {
+function ShelfSideMenu() {
   return (
     <SideMenu>
       <AddBlockButton />
-      <OpenNotionDragHandleButton />
+      <ShelfDragHandleButton />
     </SideMenu>
   );
 }
@@ -363,7 +363,7 @@ function blockElementSelector(blockId: string): string {
   return `.bn-block-outer[data-id="${escaped}"]`;
 }
 
-function OpenNotionDragHandleButton() {
+function ShelfDragHandleButton() {
   const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
   const block = useExtensionState(SideMenuExtension, {
@@ -603,7 +603,7 @@ function slashMenuElement(): HTMLElement | null {
   return document.querySelector<HTMLElement>(".bn-suggestion-menu");
 }
 
-function OpenNotionBlockTypeSelect() {
+function ShelfBlockTypeSelect() {
   const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
   const [isOpen, setIsOpen] = useState(false);
@@ -848,10 +848,10 @@ function OpenNotionBlockTypeSelect() {
   );
 }
 
-function OpenNotionFormattingToolbar() {
+function ShelfFormattingToolbar() {
   return (
     <FormattingToolbar>
-      <OpenNotionBlockTypeSelect />
+      <ShelfBlockTypeSelect />
       {getFormattingToolbarItems([]).slice(1)}
     </FormattingToolbar>
   );
@@ -975,7 +975,6 @@ export function Editor({
   const removePage = useAppStore((state) => state.removePage);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
-  const setWorkspaceMode = useAppStore((state) => state.setWorkspaceMode);
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const appTheme = useAppStore((state) => state.theme);
@@ -1185,15 +1184,12 @@ export function Editor({
       const pageId = (event as CustomEvent<{ pageId?: string }>).detail?.pageId;
       if (!pageId) return;
 
-      if (variant === "studio") {
-        setWorkspaceMode("notes");
-      }
       onSelectPage(pageId);
     };
 
     window.addEventListener(OPEN_PAGE_LINK_EVENT, handleOpenPageLink);
     return () => window.removeEventListener(OPEN_PAGE_LINK_EVENT, handleOpenPageLink);
-  }, [onSelectPage, setWorkspaceMode, variant]);
+  }, [onSelectPage]);
 
   useEffect(() => {
     setTitle(page.title || "");
@@ -1887,7 +1883,7 @@ export function Editor({
       const fileName = `${sanitizeExportFilename(page.title || "Untitled")}.json`;
       const result = await exportFilesWithDialog({
         defaultPath: fileName,
-        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+        filters: [{ name: "Shelf Page Tree", extensions: ["json"] }],
         files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
       if (!result) return;
@@ -2567,7 +2563,7 @@ export function Editor({
             portalElements={{ default: null }}
             onChange={handleEditorChange}
           >
-            <FormattingToolbarController formattingToolbar={OpenNotionFormattingToolbar} />
+            <FormattingToolbarController formattingToolbar={ShelfFormattingToolbar} />
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={slashMenuItems}
@@ -2580,7 +2576,7 @@ export function Editor({
               portalElement={null}
               floatingUIOptions={slashMenuFloatingOptions}
             />
-            <SideMenuController sideMenu={OpenNotionSideMenu} />
+            <SideMenuController sideMenu={ShelfSideMenu} />
           </BlockNoteView>
         </div>
       </div>

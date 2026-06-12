@@ -5,8 +5,8 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
-const appDir = path.join(root, "dist-electron", "mac-arm64", "OpenNotion.app");
-const dmgPath = path.join(root, "dist-electron", `OpenNotion_${packageJson.version}_arm64.dmg`);
+const appDir = path.join(root, "dist-electron", "mac-arm64", "Shelf.app");
+const dmgPath = path.join(root, "dist-electron", `Shelf_${packageJson.version}_arm64.dmg`);
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: "inherit" });
@@ -33,15 +33,15 @@ function assertDarwin() {
 }
 
 function assertPackagedApp() {
-  const executablePath = path.join(appDir, "Contents", "MacOS", "OpenNotion");
+  const executablePath = path.join(appDir, "Contents", "MacOS", "Shelf");
   if (!fs.existsSync(executablePath)) {
     throw new Error(`Packaged Electron app missing: ${executablePath}`);
   }
 }
 
 function createDmgStagingDir() {
-  const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-dmg-"));
-  const stagedAppDir = path.join(stagingDir, "OpenNotion.app");
+  const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-dmg-"));
+  const stagedAppDir = path.join(stagingDir, "Shelf.app");
   run("ditto", ["--norsrc", appDir, stagedAppDir]);
   run("xattr", ["-cr", stagedAppDir]);
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", stagedAppDir]);
@@ -63,7 +63,7 @@ for (let attempt = 1; attempt <= 3; attempt += 1) {
     lastCreateStatus = runResult("hdiutil", [
       "create",
       "-volname",
-      "OpenNotion",
+      "Shelf",
       "-srcfolder",
       stagingDir,
       "-ov",

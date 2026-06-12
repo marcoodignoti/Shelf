@@ -1,6 +1,7 @@
 import { BlockNoteEditor } from "@blocknote/core";
 import { createReactInlineContentSpec } from "@blocknote/react";
-import { FileText, Smile } from "lucide-react";
+import FileText from "lucide-react/dist/esm/icons/file-text.mjs";
+import Smile from "lucide-react/dist/esm/icons/smile.mjs";
 import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";

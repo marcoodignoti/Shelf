@@ -1,6 +1,6 @@
 # macOS Electron Release Checklist
 
-OpenNotion's current macOS release candidate is an unsigned private Electron DMG
+Shelf's current macOS release candidate is an unsigned private Electron DMG
 under `dist-electron`. Public distribution still needs Developer ID signing,
 hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -18,8 +18,8 @@ npm run release:verify:macos
 The current unsigned artifacts are generated at:
 
 ```text
-dist-electron/mac-arm64/OpenNotion.app
-dist-electron/OpenNotion_0.1.1_arm64.dmg
+dist-electron/mac-arm64/Shelf.app
+dist-electron/Shelf_0.1.1_arm64.dmg
 ```
 
 ## Acceptance Criteria

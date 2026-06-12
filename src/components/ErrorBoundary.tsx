@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </>
             ) : (
               <div>
-                OpenNotion hit an unexpected error. Your local data is still stored on this device.
+                Shelf hit an unexpected error. Your local data is still stored on this device.
               </div>
             )}
           </div>

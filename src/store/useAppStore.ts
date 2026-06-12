@@ -23,27 +23,20 @@ import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importPr
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { openNotionEditorSchema } from '../lib/editorMath';
 import {
-  createStudioProject,
   deleteStudioDocument,
-  deleteStudioProject,
   importStudioDocument,
   listAllStudioDocumentPageLinks,
   listStudioDocuments,
-  listStudioProjects,
   renameStudioDocument,
-  renameStudioProject,
   replaceStudioDocumentFile,
   StudioDocument,
   StudioDocumentPageLink,
   StudioPanelLayout,
   StudioProject,
-  updateStudioDocumentProject,
   updateStudioDocumentViewerState,
-  updateStudioProjectParent
 } from '../lib/studio';
 
 type Theme = 'light' | 'dark' | 'system';
-type WorkspaceMode = 'notes' | 'studio';
 type CreatePageOptions = { select?: boolean };
 
 interface AppState {
@@ -53,10 +46,8 @@ interface AppState {
   error: string | null;
   notice: AppNotice | null;
   isCommandPaletteOpen: boolean;
-  workspaceMode: WorkspaceMode;
   studioDocuments: StudioDocument[];
   studioDocumentPageLinks: StudioDocumentPageLink[];
-  studioProjects: StudioProject[];
   currentStudioDocumentId: string | null;
   profile: WorkspaceProfile | null;
   fetchProfile: () => Promise<void>;
@@ -65,16 +56,10 @@ interface AppState {
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
-  setWorkspaceMode: (mode: WorkspaceMode) => void;
   setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: (projectId?: string | null) => Promise<StudioDocument | null>;
   replaceStudioPdfAction: (documentId: string) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
-  createStudioProjectAction: (name: string, parentId?: string | null) => Promise<StudioProject | null>;
-  renameStudioProjectAction: (id: string, name: string) => Promise<void>;
-  updateStudioProjectParentAction: (id: string, parentId: string | null) => Promise<void>;
-  deleteStudioProjectAction: (id: string) => Promise<void>;
-  updateStudioDocumentProjectAction: (documentId: string, projectId: string | null) => Promise<void>;
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
@@ -137,14 +122,6 @@ function getStoredPageId(): string | null {
   return typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-current-page-id') : null;
 }
 
-function getStoredWorkspaceMode(): WorkspaceMode {
-  return (typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-workspace-mode') : null) === 'studio' ? 'studio' : 'notes';
-}
-
-function getStoredStudioDocumentId(): string | null {
-  return typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-current-studio-document-id') : null;
-}
-
 function clampSidebarWidth(width: number): number {
   return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(width)));
 }
@@ -183,11 +160,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   notice: null,
   isCommandPaletteOpen: false,
-  workspaceMode: getStoredWorkspaceMode(),
   studioDocuments: [],
   studioDocumentPageLinks: [],
-  studioProjects: [],
-  currentStudioDocumentId: getStoredStudioDocumentId(),
+  currentStudioDocumentId: null,
   isSidebarOpen: true,
   sidebarWidth: getStoredSidebarWidth(),
   theme: getStoredTheme(),
@@ -239,33 +214,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   fetchStudioDocuments: async () => {
     try {
-      const [studioDocuments, studioProjects, studioDocumentPageLinks] = await Promise.all([
+      const [studioDocuments, studioDocumentPageLinks] = await Promise.all([
         listStudioDocuments(),
-        listStudioProjects(),
         listAllStudioDocumentPageLinks(),
       ]);
-      const studioNotes = (await Promise.all(
-        studioDocuments.map(async (document) => {
-          return await getPage(document.note_page_id);
-        })
+      const linkedPagesById = new Map(studioDocumentPageLinks.map((link) => [link.page_id, link.page]));
+      const linkedStudioNotes = studioDocuments
+        .map((document) => linkedPagesById.get(document.note_page_id) ?? null)
+        .filter((page): page is Page => Boolean(page));
+      const missingStudioNoteIds = studioDocuments
+        .map((document) => document.note_page_id)
+        .filter((pageId) => !linkedPagesById.has(pageId));
+      const missingStudioNotes = (await Promise.all(
+        missingStudioNoteIds.map(async (pageId) => await getPage(pageId))
       )).filter((page): page is Page => Boolean(page));
+      const studioNotes = [...linkedStudioNotes, ...missingStudioNotes];
       set((state) => {
         const currentStudioDocumentId = studioDocuments.some((document) => document.id === state.currentStudioDocumentId)
           ? state.currentStudioDocumentId
-          : studioDocuments[0]?.id ?? null;
+          : null;
         const studioNoteIds = new Set(studioNotes.map((page) => page.id));
         const pages = [
           ...state.pages.filter((page) => !studioNoteIds.has(page.id)),
           ...studioNotes,
         ];
 
-        if (currentStudioDocumentId) {
-          localStorage.setItem('opennotion-current-studio-document-id', currentStudioDocumentId);
-        } else {
-          localStorage.removeItem('opennotion-current-studio-document-id');
-        }
-
-        return { studioDocuments, studioDocumentPageLinks, studioProjects, currentStudioDocumentId, pages, error: null };
+        return { studioDocuments, studioDocumentPageLinks, currentStudioDocumentId, pages, error: null };
       });
     } catch (error: unknown) {
       get().showError(error);
@@ -273,18 +247,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setCurrentPageId: (id) => {
     localStorage.setItem('opennotion-current-page-id', id || HOME_PAGE_ID);
-    set({ currentPageId: id });
-  },
-  setWorkspaceMode: (mode) => {
-    localStorage.setItem('opennotion-workspace-mode', mode);
-    set({ workspaceMode: mode });
+    set({ currentPageId: id, currentStudioDocumentId: null });
   },
   setCurrentStudioDocumentId: (id) => {
-    if (id) {
-      localStorage.setItem('opennotion-current-studio-document-id', id);
-    } else {
-      localStorage.removeItem('opennotion-current-studio-document-id');
-    }
     set({ currentStudioDocumentId: id });
   },
   clearError: () => set({ error: null }),
@@ -310,22 +275,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!path || Array.isArray(path)) return null;
 
       const document = await importStudioDocument(path);
-      const importedDocument = projectId
-        ? { ...document, project_id: projectId, updated_at: new Date().toISOString() }
-        : document;
-      if (projectId) {
-        await updateStudioDocumentProject(document.id, projectId);
-      }
+      const importedDocument = projectId ? { ...document, project_id: projectId } : document;
       const note = await getPage(document.note_page_id);
       const studioDocumentPageLinks = await listAllStudioDocumentPageLinks();
-      localStorage.setItem('opennotion-workspace-mode', 'studio');
-      localStorage.setItem('opennotion-current-studio-document-id', document.id);
+      const opensInPageTree = document.id === document.note_page_id;
+      if (opensInPageTree) {
+        localStorage.setItem('opennotion-current-page-id', document.id);
+      }
       set((state) => ({
         studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         studioDocumentPageLinks,
         pages: note ? [...state.pages.filter((page) => page.id !== note.id), note] : state.pages,
-        currentStudioDocumentId: document.id,
-        workspaceMode: 'studio',
+        currentStudioDocumentId: opensInPageTree ? null : document.id,
+        currentPageId: opensInPageTree ? document.id : state.currentPageId,
         error: null
       }));
       return importedDocument;
@@ -351,7 +313,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: null,
         notice: { kind: 'success', messageKey: 'notice.studioPdfReimported' }
       }));
-      localStorage.setItem('opennotion-current-studio-document-id', document.id);
       return document;
     } catch (error: unknown) {
       get().showError(error);
@@ -370,100 +331,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error: unknown) {
       get().showError(error);
       await get().fetchStudioDocuments();
-    }
-  },
-  createStudioProjectAction: async (name, parentId = null): Promise<StudioProject | null> => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return null;
-
-    try {
-      const project = await createStudioProject(trimmedName, parentId);
-      set((state) => ({
-        studioProjects: [...state.studioProjects.filter((candidate) => candidate.id !== project.id), project]
-          .sort((first, second) => first.sort_order - second.sort_order || first.name.localeCompare(second.name)),
-        error: null,
-        notice: { kind: 'success', messageKey: 'notice.studioProjectCreated' }
-      }));
-      return project;
-    } catch (error: unknown) {
-      get().showError(error);
-      return null;
-    }
-  },
-  renameStudioProjectAction: async (id, name) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-
-    const previousProjects = get().studioProjects;
-    const updated_at = new Date().toISOString();
-    set((state) => ({
-      studioProjects: state.studioProjects.map((project) =>
-        project.id === id ? { ...project, name: trimmedName, updated_at } : project
-      ),
-      error: null
-    }));
-
-    try {
-      await renameStudioProject(id, trimmedName);
-    } catch (error: unknown) {
-      set({ studioProjects: previousProjects });
-      get().showError(error);
-    }
-  },
-  updateStudioProjectParentAction: async (id, parentId) => {
-    if (id === parentId) return;
-
-    const previousProjects = get().studioProjects;
-    const updated_at = new Date().toISOString();
-    set((state) => ({
-      studioProjects: state.studioProjects.map((project) =>
-        project.id === id ? { ...project, parent_id: parentId, updated_at } : project
-      ),
-      error: null
-    }));
-
-    try {
-      await updateStudioProjectParent(id, parentId);
-    } catch (error: unknown) {
-      set({ studioProjects: previousProjects });
-      get().showError(error);
-    }
-  },
-  deleteStudioProjectAction: async (id) => {
-    const previousProjects = get().studioProjects;
-    const previousDocuments = get().studioDocuments;
-
-    set((state) => ({
-      studioProjects: state.studioProjects.filter((project) => project.id !== id),
-      studioDocuments: state.studioDocuments.map((document) =>
-        document.project_id === id ? { ...document, project_id: null } : document
-      ),
-      error: null
-    }));
-
-    try {
-      await deleteStudioProject(id);
-    } catch (error: unknown) {
-      set({ studioProjects: previousProjects, studioDocuments: previousDocuments });
-      get().showError(error);
-    }
-  },
-  updateStudioDocumentProjectAction: async (documentId, projectId) => {
-    const previousDocuments = get().studioDocuments;
-    const updated_at = new Date().toISOString();
-
-    set((state) => ({
-      studioDocuments: state.studioDocuments.map((document) =>
-        document.id === documentId ? { ...document, project_id: projectId, updated_at } : document
-      ),
-      error: null
-    }));
-
-    try {
-      await updateStudioDocumentProject(documentId, projectId);
-    } catch (error: unknown) {
-      set({ studioDocuments: previousDocuments });
-      get().showError(error);
     }
   },
   createMissingStudioNoteAction: async (documentId): Promise<Page | null> => {
@@ -524,12 +391,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         const currentStudioDocumentId = state.currentStudioDocumentId === id
           ? studioDocuments[0]?.id ?? null
           : state.currentStudioDocumentId;
-
-        if (currentStudioDocumentId) {
-          localStorage.setItem('opennotion-current-studio-document-id', currentStudioDocumentId);
-        } else {
-          localStorage.removeItem('opennotion-current-studio-document-id');
-        }
 
         return {
           studioDocuments,
@@ -650,7 +511,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const fileName = `${sanitizeExportFilename(project.name)} Notes.json`;
       const result = await exportFilesWithDialog({
         defaultPath: fileName,
-        filters: [{ name: "OpenNotion Page Tree", extensions: ["json"] }],
+        filters: [{ name: "Shelf Page Tree", extensions: ["json"] }],
         files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
       });
       if (!result) return;

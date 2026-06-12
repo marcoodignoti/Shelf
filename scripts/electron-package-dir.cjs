@@ -8,9 +8,9 @@ const packageJson = require(path.join(root, "package.json"));
 const electronApp = path.join(root, "node_modules", "electron", "dist", "Electron.app");
 const outputDir = path.join(root, "dist-electron", "mac-arm64");
 const workingOutputDir =
-  process.platform === "darwin" ? fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-package-")) : outputDir;
-const appDir = path.join(workingOutputDir, "OpenNotion.app");
-const finalAppDir = path.join(outputDir, "OpenNotion.app");
+  process.platform === "darwin" ? fs.mkdtempSync(path.join(os.tmpdir(), "shelf-package-")) : outputDir;
+const appDir = path.join(workingOutputDir, "Shelf.app");
+const finalAppDir = path.join(outputDir, "Shelf.app");
 const resourcesDir = path.join(appDir, "Contents", "Resources");
 const appResourcesDir = path.join(resourcesDir, "app");
 const appIcon = path.join(root, "assets", "app-icon.icns");
@@ -33,7 +33,7 @@ function macCodesignArgs(appPath) {
   if (fs.existsSync(macEntitlements)) {
     args.push("--entitlements", macEntitlements);
   }
-  args.push("--sign", env("OPENNOTION_MAC_CODESIGN_IDENTITY", "-"), appPath);
+  args.push("--sign", env("SHELF_MAC_CODESIGN_IDENTITY", env("OPENNOTION_MAC_CODESIGN_IDENTITY", "-")), appPath);
   return args;
 }
 
@@ -54,7 +54,7 @@ fs.mkdirSync(workingOutputDir, { recursive: true });
 copyAppBundle(electronApp, appDir);
 
 const macOsDir = path.join(appDir, "Contents", "MacOS");
-fs.renameSync(path.join(macOsDir, "Electron"), path.join(macOsDir, "OpenNotion"));
+fs.renameSync(path.join(macOsDir, "Electron"), path.join(macOsDir, "Shelf"));
 
 fs.rmSync(appResourcesDir, { recursive: true, force: true });
 fs.mkdirSync(appResourcesDir, { recursive: true });
@@ -66,7 +66,7 @@ fs.writeFileSync(
   path.join(appResourcesDir, "package.json"),
   JSON.stringify(
     {
-      name: "opennotion",
+      name: "shelf",
       version: packageJson.version,
       description: packageJson.description,
       author: packageJson.author,
@@ -78,10 +78,10 @@ fs.writeFileSync(
 );
 
 const plist = path.join(appDir, "Contents", "Info.plist");
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName OpenNotion", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName OpenNotion", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier org.opennotion.desktop", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable OpenNotion", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName Shelf", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName Shelf", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.marcodignoti.shelf", plist]);
+run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable Shelf", plist]);
 run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleShortVersionString ${packageJson.version}`, plist]);
 run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleVersion ${packageJson.version}`, plist]);
 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);

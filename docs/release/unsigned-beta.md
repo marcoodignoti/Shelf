@@ -34,28 +34,28 @@ npm run release:verify:macos
 Local Electron artifacts are generated under:
 
 ```text
-dist-electron/mac-arm64/OpenNotion.app
-dist-electron/OpenNotion_0.1.1_arm64.dmg
+dist-electron/mac-arm64/Shelf.app
+dist-electron/Shelf_0.1.1_arm64.dmg
 ```
 
 Build the unsigned Windows zip and installer from GitHub Actions by running the
 `Windows package` job. It uploads:
 
 ```text
-OpenNotion_0.1.4_win-x64.zip
-OpenNotion_0.1.4_setup_win-x64.exe
+Shelf_0.1.4_win-x64.zip
+Shelf_0.1.4_setup_win-x64.exe
 latest.yml
 ```
 
 Generate the update manifest after packaging:
 
 ```sh
-OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
+SHELF_UPDATE_PRIVATE_KEY_PATH=.secrets/shelf-update-private.pem \
 npm run release:update-manifest
 ```
 
 Local macOS dry-runs can generate a manifest with only the DMG present. Full
-multi-platform releases should set `OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS=1`
+multi-platform releases should set `SHELF_UPDATE_REQUIRE_ALL_ARTIFACTS=1`
 after the Windows ZIP exists.
 
 Upload signed `beta-update.json` with the DMG, ZIP, installer, and `latest.yml`
@@ -70,15 +70,15 @@ macOS packaging uses ad-hoc signing with hardened runtime. If you later get a
 Developer ID certificate, set:
 
 ```sh
-OPENNOTION_MAC_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+SHELF_MAC_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 ```
 
 Windows Authenticode signing is optional and only runs when certificate env vars
 exist:
 
 ```sh
-OPENNOTION_WINDOWS_PFX_PATH=.secrets/windows-code-signing.pfx
-OPENNOTION_WINDOWS_PFX_PASSWORD=...
+SHELF_WINDOWS_PFX_PATH=.secrets/windows-code-signing.pfx
+SHELF_WINDOWS_PFX_PASSWORD=...
 ```
 
 ## User Warning
@@ -91,7 +91,7 @@ Beta users must expect OS trust warnings:
 For macOS private testing:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/OpenNotion.app
+xattr -dr com.apple.quarantine /Applications/Shelf.app
 ```
 
-Run that after copying `OpenNotion.app` into `/Applications`, then open the app. This only removes the browser quarantine marker; it does not sign or notarize the app.
+Run that after copying `Shelf.app` into `/Applications`, then open the app. This only removes the browser quarantine marker; it does not sign or notarize the app.

@@ -1,5 +1,7 @@
 import { useEffect } from "react";
-import { AlertCircle, CheckCircle2, X } from "lucide-react";
+import AlertCircle from "lucide-react/dist/esm/icons/circle-alert.mjs";
+import CheckCircle2 from "lucide-react/dist/esm/icons/circle-check.mjs";
+import X from "lucide-react/dist/esm/icons/x.mjs";
 import { useAppStore } from "../store/useAppStore";
 import { useT } from "../lib/i18n";
 

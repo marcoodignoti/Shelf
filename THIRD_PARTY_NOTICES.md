@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-OpenNotion depends on open-source packages. This file summarizes the direct
+Shelf depends on open-source packages. This file summarizes the direct
 runtime and development dependencies declared in `package.json`.
 
 For exact resolved versions, see `package-lock.json`. When building or
@@ -50,7 +50,7 @@ corresponding packages and review transitive dependency obligations.
 
 ## License Notes
 
-- OpenNotion project code is MIT licensed.
+- Shelf project code is MIT licensed.
 - BlockNote packages are MPL-2.0. Keep upstream notices and source-availability
   obligations in mind when modifying those packages themselves.
 - `pdfjs-dist`, Playwright, and TypeScript use Apache-2.0; preserve copyright,
@@ -60,8 +60,8 @@ corresponding packages and review transitive dependency obligations.
   distribution.
 - Windows packaging uses `rcedit` to set executable metadata and the application
   icon.
-- The generated OpenNotion app icon and repository screenshots are project
-  assets and are included for use with OpenNotion.
+- The generated Shelf app icon and repository screenshots are project
+  assets and are included for use with Shelf.
 
 This notice is not legal advice. Re-check dependency licenses before a public
 binary release or app-store distribution.

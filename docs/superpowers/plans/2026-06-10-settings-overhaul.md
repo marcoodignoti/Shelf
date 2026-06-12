@@ -23,7 +23,7 @@
 - `app_metadata`: creazione `backend.cjs:70-73`; lettura/scrittura esempio `:191-200`, `:259-264`.
 - Avatar riusa il validatore cover: `backend.cjs:1507-1517` (`importCoverImage`, `validatedCoverExtension`, `COVER_IMAGE_MAX_BYTES` = 10MB, riga 10).
 - Backup: `backend.cjs:1068-1091`, formato `{ version: 1, exported_at, pages }`.
-- Test backend: `electron/smoke.cjs` (`new OpenNotionBackend({ appConfigDir: tempRoot, updateManifestPublicKey })`, righe 5-10), eseguito da `npm run electron:smoke` e `electron:smoke:runtime`.
+- Test backend: `electron/smoke.cjs` (`new ShelfBackend({ appConfigDir: tempRoot, updateManifestPublicKey })`, righe 5-10), eseguito da `npm run electron:smoke` e `electron:smoke:runtime`.
 - BlockNote: creato in `src/components/PageEditor.tsx:986` (`BlockNoteEditor.create({...})`); locale it in `@blocknote/core` (export `locales`).
 - Titolo, Enter: `PageEditor.tsx:1322` (`handleTitleKeyDown`): oggi Enter → blur+focus editor, Alt/Shift+Enter → newline.
 - Larghezza contenuto editor: `PageEditor.tsx:2095` `max-w-3xl px-8 pt-8 mx-auto`.
@@ -94,8 +94,8 @@ describe("preferences parsing", () => {
 
   it("exposes stable storage keys", () => {
     expect(PREFERENCE_STORAGE_KEYS.locale).toBe("opennotion-locale");
-    expect(PREFERENCE_STORAGE_KEYS.editorFont).toBe("opennotion-editor-font");
-    expect(PREFERENCE_STORAGE_KEYS.editorFontSize).toBe("opennotion-editor-font-size");
+    expect(PREFERENCE_STORAGE_KEYS.editorFont).toBe("shelf-editor-font");
+    expect(PREFERENCE_STORAGE_KEYS.editorFontSize).toBe("shelf-editor-font-size");
     expect(PREFERENCE_STORAGE_KEYS.pageWidth).toBe("opennotion-page-width");
     expect(PREFERENCE_STORAGE_KEYS.titleEnter).toBe("opennotion-title-enter");
   });
@@ -119,8 +119,8 @@ export type TitleEnterBehavior = "body" | "newline";
 
 export const PREFERENCE_STORAGE_KEYS = {
   locale: "opennotion-locale",
-  editorFont: "opennotion-editor-font",
-  editorFontSize: "opennotion-editor-font-size",
+  editorFont: "shelf-editor-font",
+  editorFontSize: "shelf-editor-font-size",
   pageWidth: "opennotion-page-width",
   titleEnter: "opennotion-title-enter",
 } as const;
@@ -515,7 +515,7 @@ Nel punto in cui l'editor viene creato (memo/effect attorno a riga 986), aggiung
 - [ ] **Step 5: Verifica manuale + unit**
 
 Run: `npm test` → PASS.
-Run: `npm run electron:dev` → cambia font/dimensione/larghezza da console (`localStorage.setItem("opennotion-editor-font","serif"); location.reload()`): l'editor cambia. Titolo: Enter va al corpo; con `opennotion-title-enter=newline` Enter inserisce a capo.
+Run: `npm run electron:dev` → cambia font/dimensione/larghezza da console (`localStorage.setItem("shelf-editor-font","serif"); location.reload()`): l'editor cambia. Titolo: Enter va al corpo; con `opennotion-title-enter=newline` Enter inserisce a capo.
 
 - [ ] **Step 6: Commit**
 
@@ -627,7 +627,7 @@ In `electron/smoke.cjs`, dopo i blocchi backup esistenti (riga ~80):
 
 ```js
   const emptyProfile = await backend.invoke("get_workspace_profile");
-  assert.deepStrictEqual(emptyProfile, { name: "", workspaceName: "OpenNotion", avatarPath: null });
+  assert.deepStrictEqual(emptyProfile, { name: "", workspaceName: "Shelf", avatarPath: null });
 
   await backend.invoke("update_workspace_profile", { name: "Marco", workspaceName: "Studio Marco" });
   const updatedProfile = await backend.invoke("get_workspace_profile");
@@ -696,7 +696,7 @@ Metodi (stesso stile dei vicini, vicino a `importCoverImage`):
   getWorkspaceProfile() {
     return {
       name: this.readMetadataValue(PROFILE_METADATA_KEYS.name) || "",
-      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "OpenNotion",
+      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "Shelf",
       avatarPath: this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath),
     };
   }
@@ -751,7 +751,7 @@ In `exportBackup` (riga 1068-1085), aggiungi al JSON esportato (campo additivo, 
       })(),
 ```
 
-L'avatar (file binario, path locale) NON entra nel backup. In `importBackup`, dopo l'import pagine: applica `backup.profile` SOLO se il profilo corrente è ai default (`name === "" && workspaceName === "OpenNotion"`), così un import "as duplicates" non sovrascrive un profilo personalizzato; backup senza chiave `profile` → nessuna azione.
+L'avatar (file binario, path locale) NON entra nel backup. In `importBackup`, dopo l'import pagine: applica `backup.profile` SOLO se il profilo corrente è ai default (`name === "" && workspaceName === "Shelf"`), così un import "as duplicates" non sovrascrive un profilo personalizzato; backup senza chiave `profile` → nessuna azione.
 
 - [ ] **Step 4: Verifica pass**
 
@@ -1040,7 +1040,7 @@ import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    const profile = { name: "", workspaceName: "OpenNotion", avatarPath: null as string | null };
+    const profile = { name: "", workspaceName: "Shelf", avatarPath: null as string | null };
 
     window.openNotion = {
       invoke: async (cmd: string, args?: Record<string, unknown>) => {
@@ -1077,8 +1077,8 @@ test("appearance preferences apply to the editor container", async ({ page }) =>
   await page.getByLabel("Font").selectOption("serif");
   await page.getByLabel("Text size").selectOption("large");
   await expect(page.locator(".on-editor-font-serif")).toHaveCount(0); // settings aperto, editor non montato: verifica su localStorage
-  expect(await page.evaluate(() => localStorage.getItem("opennotion-editor-font"))).toBe("serif");
-  expect(await page.evaluate(() => localStorage.getItem("opennotion-editor-font-size"))).toBe("large");
+  expect(await page.evaluate(() => localStorage.getItem("shelf-editor-font"))).toBe("serif");
+  expect(await page.evaluate(() => localStorage.getItem("shelf-editor-font-size"))).toBe("large");
 });
 
 test("switching language to Italian translates the modal instantly", async ({ page }) => {

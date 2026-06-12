@@ -1,6 +1,6 @@
 # Electron Migration
 
-Goal: one maintained OpenNotion desktop app on Electron.
+Goal: one maintained Shelf desktop app on Electron.
 
 ## Current State
 

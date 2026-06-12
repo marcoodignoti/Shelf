@@ -7,8 +7,8 @@ function env(name, fallback = "") {
   return process.env[name] && process.env[name].trim() ? process.env[name].trim() : fallback;
 }
 
-const inputPath = path.resolve(root, env("OPENNOTION_UPDATE_SIGNED_MANIFEST", "dist-electron/beta-update.json"));
-const outputPath = path.resolve(root, env("OPENNOTION_UPDATE_COMPAT_MANIFEST_OUT", "dist-electron/beta-update-compat.json"));
+const inputPath = path.resolve(root, env("SHELF_UPDATE_SIGNED_MANIFEST", env("OPENNOTION_UPDATE_SIGNED_MANIFEST", "dist-electron/beta-update.json")));
+const outputPath = path.resolve(root, env("SHELF_UPDATE_COMPAT_MANIFEST_OUT", env("OPENNOTION_UPDATE_COMPAT_MANIFEST_OUT", "dist-electron/beta-update-compat.json")));
 
 if (!fs.existsSync(inputPath)) {
   throw new Error(`Signed update manifest missing: ${inputPath}`);

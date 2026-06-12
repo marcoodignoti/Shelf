@@ -1,4 +1,4 @@
-# OpenNotion performance harness
+# Shelf performance harness
 
 Pre-distribution perf gate for the five dimensions in the root README:
 memory, disk use, startup time, PDF import, long-session stability.

@@ -5,6 +5,7 @@ const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { electronDevEnv } = require("./electron-dev-paths.cjs");
 
 const root = path.resolve(__dirname, "..");
 const rendererUrl = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:1420";
@@ -94,9 +95,7 @@ function removeStaleViteOptimizerTemps() {
 function startElectron() {
   if (shuttingDown) return;
   electronProcess = spawnProcess(electronBin, ["."], {
-    env: {
-      ELECTRON_RENDERER_URL: rendererUrl,
-    },
+    env: electronDevEnv(process.env, root, rendererUrl),
   });
 
   electronProcess.on("exit", () => {

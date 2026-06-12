@@ -6,6 +6,7 @@ const { pipeline } = require("node:stream/promises");
 const { DatabaseSync } = require("node:sqlite");
 
 const APP_SCHEMA_VERSION = "1";
+const STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION = "2";
 const APP_ASSET_PROTOCOL = "opennotion-app";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const PROFILE_TEXT_MAX_LENGTH = 120;
@@ -45,11 +46,11 @@ const BACKUP_MAX_METADATA_LENGTH = 1024 * 1024;
 const BACKUP_MAX_ICON_LENGTH = 512;
 const BACKUP_MAX_COVER_URL_LENGTH = 4096;
 const UPDATE_MANIFEST_URLS = new Set([
-  "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json",
-  "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json",
+  "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json",
+  "https://github.com/marcoodignoti/Shelf/releases/latest/download/beta-update.json",
 ]);
 const UPDATE_DOWNLOAD_URL_PATTERN =
-  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip|exe)$/i;
+  /^https:\/\/github\.com\/marcoodignoti\/Shelf\/releases\/download\/[^/]+\/Shelf_[^/]+\.(dmg|zip|exe)$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const DEFAULT_UPDATE_PUBLIC_KEY_PATH = path.join(__dirname, "update-public-key.pem");
 
@@ -92,8 +93,16 @@ function runMigrations(db) {
   db.prepare(`
     INSERT INTO app_metadata (key, value)
     VALUES ('schema_version', ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    ON CONFLICT(key) DO NOTHING
   `).run(APP_SCHEMA_VERSION);
+  const currentSchemaVersion = String(rowValue(
+    db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
+    "value",
+    APP_SCHEMA_VERSION
+  ));
+  if (numericSchemaVersion(currentSchemaVersion) < numericSchemaVersion(APP_SCHEMA_VERSION)) {
+    db.prepare("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'").run(APP_SCHEMA_VERSION);
+  }
 
   const pageColumns = db.prepare("SELECT name FROM pragma_table_info('pages')").all().map((row) => row.name);
   const addPageColumn = (column, sql) => {
@@ -207,7 +216,7 @@ function readStoredAppVersion(db) {
 
 function pruneDatabaseBackups(backupsDir) {
   const backups = fs.readdirSync(backupsDir)
-    .filter((name) => name.startsWith("opennotion-") && name.endsWith(".db"))
+    .filter((name) => (name.startsWith("shelf-") || name.startsWith("opennotion-")) && name.endsWith(".db"))
     .map((name) => {
       const filePath = path.join(backupsDir, name);
       return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
@@ -225,7 +234,7 @@ function backupDatabaseFile(db, dbPath, storedVersion) {
   // self-contained snapshot.
   db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = path.join(backupsDir, `opennotion-v${storedVersion || "unknown"}-${stamp}.db`);
+  const backupPath = path.join(backupsDir, `shelf-v${storedVersion || "unknown"}-${stamp}.db`);
   fs.copyFileSync(dbPath, backupPath);
   pruneDatabaseBackups(backupsDir);
   return backupPath;
@@ -286,6 +295,15 @@ function normalizeOptionalString(value) {
 
 function rowValue(row, key, fallback = 0) {
   return row && row[key] !== undefined ? row[key] : fallback;
+}
+
+function studioProjectPageId(projectId) {
+  return `studio-project:${projectId}`;
+}
+
+function numericSchemaVersion(value) {
+  const parsed = Number.parseInt(String(value ?? "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function lowerLikePattern(query) {
@@ -566,7 +584,7 @@ function validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot) 
 
 function validateManagedAssetPath(filePath, appConfigDir) {
   const canonicalPath = fs.realpathSync(filePath);
-  const roots = ["covers", "editor-images", "editor-videos", "studio-documents"]
+  const roots = ["covers", "editor-images", "editor-videos", "studio-documents", "avatars"]
     .map((directory) => path.join(appConfigDir, directory))
     .filter((directory) => fs.existsSync(directory))
     .map((directory) => fs.realpathSync(directory));
@@ -596,11 +614,13 @@ function normalizePem(value) {
 
 function updateManifestPublicKey(configuredKey) {
   if (configuredKey) return normalizePem(configuredKey);
-  if (process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH) {
-    return normalizePem(fs.readFileSync(path.resolve(process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH), "utf8"));
+  const publicKeyPath = process.env.SHELF_UPDATE_PUBLIC_KEY_PATH || process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH;
+  if (publicKeyPath) {
+    return normalizePem(fs.readFileSync(path.resolve(publicKeyPath), "utf8"));
   }
-  if (process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM) {
-    return normalizePem(process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM);
+  const publicKeyPem = process.env.SHELF_UPDATE_PUBLIC_KEY_PEM || process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM;
+  if (publicKeyPem) {
+    return normalizePem(publicKeyPem);
   }
   return normalizePem(fs.readFileSync(DEFAULT_UPDATE_PUBLIC_KEY_PATH, "utf8"));
 }
@@ -643,7 +663,7 @@ function signedManifestPayload(value, publicKeyPem) {
 
 function updateArtifactFileName(parsedUrl) {
   const fileName = decodeURIComponent(path.basename(parsedUrl.pathname));
-  if (!/^OpenNotion_[a-zA-Z0-9._-]+\.(dmg|zip|exe)$/i.test(fileName)) {
+  if (!/^Shelf_[a-zA-Z0-9._-]+\.(dmg|zip|exe)$/i.test(fileName)) {
     throw new Error("update artifact filename is not trusted");
   }
   return fileName;
@@ -656,7 +676,7 @@ function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
   fs.rmSync(path.dirname(storedPath), { recursive: true, force: true });
 }
 
-class OpenNotionBackend {
+class ShelfBackend {
   constructor({ appConfigDir, downloadsDir, openPath, revealPath, openExternalUrl, updateManifestPublicKey: publicKey }) {
     this.appConfigDir = appConfigDir;
     this.downloadsDir = downloadsDir || path.join(appConfigDir, "downloads");
@@ -680,6 +700,8 @@ class OpenNotionBackend {
       import_pages: (args) => this.importPages(args),
       list_studio_documents: () => this.listStudioDocuments(),
       list_studio_projects: () => this.listStudioProjects(),
+      preview_studio_page_unification: () => this.previewStudioPageUnification(),
+      migrate_studio_page_unification: (args) => this.migrateStudioPageUnification(args),
       create_studio_project: (args) => this.createStudioProject(args),
       rename_studio_project: (args) => this.renameStudioProject(args),
       update_studio_project_parent: (args) => this.updateStudioProjectParent(args),
@@ -712,6 +734,7 @@ class OpenNotionBackend {
       import_profile_avatar: (args) => this.importProfileAvatar(args),
       show_character_palette: () => null,
     };
+    this.autoMigrateStudioPageUnification();
   }
 
   async invoke(command, args = {}) {
@@ -782,6 +805,57 @@ class OpenNotionBackend {
       }
       throw error;
     }
+  }
+
+  schemaVersion() {
+    return String(rowValue(
+      this.db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
+      "value",
+      "1"
+    ));
+  }
+
+  isStudioPageUnified() {
+    return numericSchemaVersion(this.schemaVersion()) >= 2;
+  }
+
+  mirrorStudioProjectPage(project, updatedAt = project.updated_at) {
+    const pageId = studioProjectPageId(project.id);
+    const parentPageId = project.parent_id ? studioProjectPageId(project.parent_id) : null;
+    const existing = this.db.prepare("SELECT id FROM pages WHERE id = ?").get(pageId);
+    if (existing) {
+      this.db.prepare(`
+        UPDATE pages
+        SET title = ?, parent_id = ?, is_deleted = 0, page_kind = 'note', sort_order = ?, updated_at = ?
+        WHERE id = ?
+      `).run(project.name, parentPageId, project.sort_order, updatedAt, pageId);
+      return pageId;
+    }
+
+    this.db.prepare(`
+      INSERT INTO pages (${PAGE_COLUMNS})
+      VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
+    `).run(pageId, project.name, parentPageId, project.sort_order, project.created_at, updatedAt);
+    return pageId;
+  }
+
+  mirrorStudioDocumentPageParent(documentId, projectId, updatedAt) {
+    if (!this.isStudioPageUnified()) return;
+    const document = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(documentId);
+    if (!document) return;
+    const parentPageId = projectId ? studioProjectPageId(projectId) : null;
+    this.db.prepare(`
+      UPDATE pages
+      SET parent_id = ?, page_kind = 'note', updated_at = ?
+      WHERE id = ?
+    `).run(parentPageId, updatedAt, document.note_page_id);
+  }
+
+  autoMigrateStudioPageUnification() {
+    if (this.isStudioPageUnified()) return;
+    const preview = this.previewStudioPageUnification();
+    if (!preview.can_migrate) return;
+    this.migrateStudioPageUnification({ migratedAt: new Date().toISOString() });
   }
 
   fileSrc(filePath) {
@@ -972,6 +1046,22 @@ class OpenNotionBackend {
   }
 
   deletePage({ id }) {
+    const studioDocumentMatch = this.db.prepare(`
+      WITH RECURSIVE descendants(id) AS (
+        SELECT id FROM pages WHERE id = ?
+        UNION ALL
+        SELECT pages.id FROM pages
+        JOIN descendants ON pages.parent_id = descendants.id
+      )
+      SELECT studio_documents.id
+      FROM studio_documents
+      JOIN descendants ON descendants.id = studio_documents.note_page_id
+      LIMIT 1
+    `).get(id);
+    if (studioDocumentMatch) {
+      throw new Error("delete the Studio document before deleting its primary note");
+    }
+
     this.withTransaction(() => {
       this.db.prepare(`
         WITH RECURSIVE descendants(id) AS (
@@ -1103,7 +1193,7 @@ class OpenNotionBackend {
     const importedCount = this.importPageRecords(prepareImportedBackupPages(backup.pages, imported));
     if (backup.profile && typeof backup.profile === "object") {
       const current = this.getWorkspaceProfile();
-      if (current.name === "" && current.workspaceName === "OpenNotion") {
+      if (current.name === "" && current.workspaceName === "Shelf") {
         const { name, workspaceName } = backup.profile;
         if (name !== undefined) {
           if (typeof name !== "string" || name.length > PROFILE_TEXT_MAX_LENGTH) {
@@ -1130,6 +1220,137 @@ class OpenNotionBackend {
     return this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`).all();
   }
 
+  previewStudioPageUnification() {
+    const schemaVersion = String(rowValue(
+      this.db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
+      "value",
+      APP_SCHEMA_VERSION
+    ));
+    const scalar = (sql) => Number(rowValue(this.db.prepare(sql).get(), "value"));
+    const missingPrimaryPages = scalar(`
+      SELECT COUNT(*) AS value
+      FROM studio_documents documents
+      LEFT JOIN pages ON pages.id = documents.note_page_id AND pages.is_deleted = 0
+      WHERE pages.id IS NULL
+    `);
+    const missingPrimaryLinks = scalar(`
+      SELECT COUNT(*) AS value
+      FROM studio_documents documents
+      LEFT JOIN studio_document_page_links links
+        ON links.document_id = documents.id
+       AND links.page_id = documents.note_page_id
+      WHERE links.id IS NULL
+    `);
+    const orphanLinks = scalar(`
+      SELECT COUNT(*) AS value
+      FROM studio_document_page_links links
+      LEFT JOIN studio_documents documents ON documents.id = links.document_id
+      LEFT JOIN pages ON pages.id = links.page_id AND pages.is_deleted = 0
+      WHERE documents.id IS NULL OR pages.id IS NULL
+    `);
+    const blockers = [];
+    if (missingPrimaryPages > 0) blockers.push("missing_primary_pages");
+    if (missingPrimaryLinks > 0) blockers.push("missing_primary_links");
+    if (orphanLinks > 0) blockers.push("orphan_links");
+
+    return {
+      schema_version: schemaVersion,
+      project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects"),
+      nested_project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects WHERE parent_id IS NOT NULL"),
+      document_count: scalar("SELECT COUNT(*) AS value FROM studio_documents"),
+      document_without_project_count: scalar("SELECT COUNT(*) AS value FROM studio_documents WHERE project_id IS NULL"),
+      link_count: scalar("SELECT COUNT(*) AS value FROM studio_document_page_links"),
+      linked_regular_page_count: scalar(`
+        SELECT COUNT(*) AS value
+        FROM studio_document_page_links links
+        JOIN pages ON pages.id = links.page_id
+        WHERE pages.is_deleted = 0 AND pages.page_kind = 'note'
+      `),
+      linked_studio_note_count: scalar(`
+        SELECT COUNT(*) AS value
+        FROM studio_document_page_links links
+        JOIN pages ON pages.id = links.page_id
+        WHERE pages.is_deleted = 0 AND pages.page_kind = 'studio_note'
+      `),
+      missing_primary_page_count: missingPrimaryPages,
+      missing_primary_link_count: missingPrimaryLinks,
+      orphan_link_count: orphanLinks,
+      blockers,
+      can_migrate: blockers.length === 0,
+    };
+  }
+
+  backupStudioPageUnificationTables() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS studio_documents_backup_page_unification AS
+        SELECT * FROM studio_documents WHERE 0;
+      CREATE TABLE IF NOT EXISTS studio_projects_backup_page_unification AS
+        SELECT * FROM studio_projects WHERE 0;
+      CREATE TABLE IF NOT EXISTS studio_document_page_links_backup_page_unification AS
+        SELECT * FROM studio_document_page_links WHERE 0;
+    `);
+    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_documents_backup_page_unification").get(), "value") === 0) {
+      this.db.exec("INSERT INTO studio_documents_backup_page_unification SELECT * FROM studio_documents");
+    }
+    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects_backup_page_unification").get(), "value") === 0) {
+      this.db.exec("INSERT INTO studio_projects_backup_page_unification SELECT * FROM studio_projects");
+    }
+    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_document_page_links_backup_page_unification").get(), "value") === 0) {
+      this.db.exec("INSERT INTO studio_document_page_links_backup_page_unification SELECT * FROM studio_document_page_links");
+    }
+  }
+
+  migrateStudioPageUnification({ migratedAt, migrated_at } = {}) {
+    const migrated = migratedAt ?? migrated_at ?? new Date().toISOString();
+    const before = this.previewStudioPageUnification();
+    if (!before.can_migrate) {
+      throw new Error(`cannot migrate Studio pages: ${before.blockers.join(", ")}`);
+    }
+
+    this.withTransaction(() => {
+      this.backupStudioPageUnificationTables();
+
+      const projects = this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`).all();
+      for (const project of projects) {
+        this.mirrorStudioProjectPage(project, migrated);
+      }
+
+      const documents = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY created_at ASC`).all();
+      for (const document of documents) {
+        const parentPageId = document.project_id ? studioProjectPageId(document.project_id) : null;
+        this.db.prepare(`
+          UPDATE pages
+          SET title = ?, parent_id = ?, page_kind = 'note', updated_at = ?
+          WHERE id = ?
+        `).run(document.title, parentPageId, migrated, document.note_page_id);
+      }
+
+      for (const document of documents) {
+        if (document.id === document.note_page_id) continue;
+        const temporaryId = `__page_unification__${document.id}`;
+        this.db.prepare("UPDATE studio_documents SET id = ? WHERE id = ?").run(temporaryId, document.id);
+        this.db.prepare("UPDATE studio_document_page_links SET document_id = ? WHERE document_id = ?").run(temporaryId, document.id);
+      }
+
+      for (const document of documents) {
+        if (document.id === document.note_page_id) continue;
+        const temporaryId = `__page_unification__${document.id}`;
+        this.db.prepare("UPDATE studio_documents SET id = ?, updated_at = ? WHERE id = ?")
+          .run(document.note_page_id, migrated, temporaryId);
+        this.db.prepare("UPDATE studio_document_page_links SET document_id = ?, updated_at = ? WHERE document_id = ?")
+          .run(document.note_page_id, migrated, temporaryId);
+      }
+
+      this.db.prepare(`
+        INSERT INTO app_metadata (key, value)
+        VALUES ('schema_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION);
+    });
+
+    return this.previewStudioPageUnification();
+  }
+
   createStudioProject({ id, name, parentId, parent_id, createdAt, created_at }) {
     const parent = parentId ?? parent_id ?? null;
     const created = createdAt ?? created_at;
@@ -1146,14 +1367,22 @@ class OpenNotionBackend {
     `).get(parent, parent), "value");
     this.db.prepare("INSERT INTO studio_projects (id, name, parent_id, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(id, trimmed, parent, sortOrder, created, created);
+    if (this.isStudioPageUnified()) {
+      this.mirrorStudioProjectPage({ id, name: trimmed, parent_id: parent, sort_order: sortOrder, created_at: created, updated_at: created }, created);
+    }
     return this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE id = ?`).get(id);
   }
 
   renameStudioProject({ id, name, updatedAt, updated_at }) {
     const trimmed = String(name ?? "").trim();
     if (!trimmed) throw new Error("project name cannot be empty");
-    const result = this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, updatedAt ?? updated_at, id);
+    const updated = updatedAt ?? updated_at;
+    const result = this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, updated, id);
     if (result.changes === 0) throw new Error("project not found");
+    if (this.isStudioPageUnified()) {
+      this.db.prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
+        .run(trimmed, updated, studioProjectPageId(id));
+    }
   }
 
   updateStudioProjectParent({ id, parentId, parent_id, updatedAt, updated_at }) {
@@ -1185,6 +1414,10 @@ class OpenNotionBackend {
     const result = this.db.prepare("UPDATE studio_projects SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?")
       .run(parent, sortOrder, updated, id);
     if (result.changes === 0) throw new Error("project not found");
+    if (this.isStudioPageUnified()) {
+      this.db.prepare("UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?")
+        .run(parent ? studioProjectPageId(parent) : null, sortOrder, updated, studioProjectPageId(id));
+    }
   }
 
   deleteStudioProject({ id, updatedAt, updated_at }) {
@@ -1192,7 +1425,20 @@ class OpenNotionBackend {
     let deleted = 0;
     this.withTransaction(() => {
       this.db.prepare("UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?").run(updated, id);
+      if (this.isStudioPageUnified()) {
+        this.db.prepare(`
+          UPDATE pages
+          SET parent_id = NULL, updated_at = ?
+          WHERE id IN (SELECT note_page_id FROM studio_documents WHERE project_id IS NULL)
+        `).run(updated);
+      }
       this.db.prepare("UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?").run(updated, id);
+      if (this.isStudioPageUnified()) {
+        this.db.prepare("UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+          .run(updated, studioProjectPageId(id));
+        this.db.prepare("UPDATE pages SET is_deleted = 1, updated_at = ? WHERE id = ?")
+          .run(updated, studioProjectPageId(id));
+      }
       deleted = this.db.prepare("DELETE FROM studio_projects WHERE id = ?").run(id).changes;
     });
     if (deleted === 0) throw new Error("project not found");
@@ -1204,9 +1450,11 @@ class OpenNotionBackend {
       const projectExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?").get(project), "value");
       if (projectExists === 0) throw new Error("project not found");
     }
+    const updated = updatedAt ?? updated_at;
     const result = this.db.prepare("UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ?")
-      .run(project, updatedAt ?? updated_at, id);
+      .run(project, updated, id);
     if (result.changes === 0) throw new Error("document not found");
+    this.mirrorStudioDocumentPageParent(id, project, updated);
   }
 
   studioDocumentPageLinkFromRow(row) {
@@ -1355,8 +1603,10 @@ class OpenNotionBackend {
   }
 
   async importStudioDocument({ documentId, document_id, notePageId, note_page_id, sourcePath, source_path, importedAt, imported_at }) {
-    const documentIdValue = documentId ?? document_id;
-    const notePageIdValue = notePageId ?? note_page_id;
+    const requestedDocumentId = documentId ?? document_id;
+    const requestedNotePageId = notePageId ?? note_page_id ?? requestedDocumentId;
+    const documentIdValue = this.isStudioPageUnified() ? requestedNotePageId : requestedDocumentId;
+    const notePageIdValue = requestedNotePageId;
     const source = sourcePath ?? source_path;
     const imported = importedAt ?? imported_at;
     validatedPdfFile(source);
@@ -1369,10 +1619,15 @@ class OpenNotionBackend {
 
     try {
       this.withTransaction(() => {
+        const pageTitle = documentIdValue === notePageIdValue ? title : `${title} Notes`;
+        const pageKind = documentIdValue === notePageIdValue ? "note" : "studio_note";
         this.db.prepare(`
           INSERT INTO pages (${PAGE_COLUMNS})
           VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, 'studio_note', ?, ?)
-        `).run(notePageIdValue, `${title} Notes`, imported, imported);
+        `).run(notePageIdValue, pageTitle, imported, imported);
+        if (pageKind === "note") {
+          this.db.prepare("UPDATE pages SET page_kind = 'note' WHERE id = ?").run(notePageIdValue);
+        }
         this.db.prepare(`
           INSERT INTO studio_documents (id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, 100, 1, 'pdf-left', ?, ?)
@@ -1424,7 +1679,8 @@ class OpenNotionBackend {
     const updated = updatedAt ?? updated_at;
     this.withTransaction(() => {
       this.db.prepare("UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ?").run(trimmed, updated, id);
-      this.db.prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?").run(`${trimmed} Notes`, updated, current.note_page_id);
+      const pageTitle = current.id === current.note_page_id ? trimmed : `${trimmed} Notes`;
+      this.db.prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?").run(pageTitle, updated, current.note_page_id);
     });
   }
 
@@ -1554,7 +1810,7 @@ class OpenNotionBackend {
   getWorkspaceProfile() {
     return {
       name: this.readMetadataValue(PROFILE_METADATA_KEYS.name) || "",
-      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "OpenNotion",
+      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "Shelf",
       avatarPath: this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath),
     };
   }
@@ -1665,7 +1921,7 @@ class OpenNotionBackend {
 }
 
 module.exports = {
-  OpenNotionBackend,
+  ShelfBackend,
   openDatabase,
   runMigrations,
   ensurePrivateDirectory,

@@ -1395,7 +1395,7 @@ function viewModeStorageKey(documentId: string): string {
 }
 
 function pdfDisplayModeStorageKey(documentId: string): string {
-  return `opennotion-studio-pdf-display-mode-${documentId}`;
+  return `shelf-studio-pdf-display-mode-${documentId}`;
 }
 
 function getStoredPanelRatio(documentId: string): number {

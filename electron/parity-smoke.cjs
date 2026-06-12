@@ -6,7 +6,7 @@ const { DatabaseSync } = require("node:sqlite");
 const { _electron: electron } = require("playwright");
 
 const root = path.resolve(__dirname, "..");
-const executablePath = path.join(root, "dist-electron", "mac-arm64", "OpenNotion.app", "Contents", "MacOS", "OpenNotion");
+const executablePath = path.join(root, "dist-electron", "mac-arm64", "Shelf.app", "Contents", "MacOS", "Shelf");
 const tinyPdfFixture = Buffer.from(
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDQgPj4Kc3RhcnR4cmVmCjE4NgolJUVPRgo=",
   "base64"
@@ -24,7 +24,7 @@ async function launchApp(userDataDir) {
     args: ["--lang=en-US"],
     env: {
       ...process.env,
-      OPENNOTION_USER_DATA_DIR: userDataDir,
+      SHELF_USER_DATA_DIR: userDataDir,
       ELECTRON_ENABLE_LOGGING: "1",
     },
   });
@@ -93,11 +93,11 @@ async function main() {
     throw new Error(`Packaged Electron app missing: ${executablePath}`);
   }
 
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-parity-"));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-parity-files-"));
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-parity-"));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-parity-files-"));
   const pageTitle = `Electron Parity ${crypto.randomUUID().slice(0, 8)}`;
   const pageBody = "Electron parity body survives packaged reopen";
-  const backupPath = path.join(workDir, "opennotion-parity-backup.json");
+  const backupPath = path.join(workDir, "shelf-parity-backup.json");
   const pdfPath = path.join(workDir, "parity-doc.pdf");
   fs.writeFileSync(pdfPath, tinyPdfFixture);
 
@@ -147,12 +147,12 @@ async function main() {
     await waitForBodyText(second.window, pageBody);
     await second.window.keyboard.press("Escape");
 
-    await second.window.getByRole("button", { name: "Studio", exact: true }).click();
     await waitForBodyText(second.window, "parity-doc");
+    await second.window.getByText("parity-doc", { exact: true }).click();
     await second.window.locator("canvas[aria-label='parity-doc']").waitFor({ state: "visible", timeout: 15000 });
     const errorBoundaryVisible = await second.window.getByText("Something went wrong.").isVisible().catch(() => false);
     assert(!errorBoundaryVisible, "Studio rendered error boundary");
-    await second.window.screenshot({ path: path.join(os.tmpdir(), "opennotion-electron-parity-smoke.png"), fullPage: true });
+    await second.window.screenshot({ path: path.join(os.tmpdir(), "shelf-electron-parity-smoke.png"), fullPage: true });
   } finally {
     await second.app.close();
   }
@@ -167,7 +167,7 @@ async function main() {
   );
 
   const dbState = readDb(userDataDir);
-  assert(dbState.schemaVersion === "1", "Unexpected schema version");
+  assert(dbState.schemaVersion === "2", "Unexpected schema version");
   assert(dbState.pages.filter((page) => page.title === pageTitle).length >= 2, "Backup import did not duplicate page");
   assert(dbState.pages.some((page) => page.search_text?.includes(pageBody)), "Created page body missing from DB");
   assert(dbState.studioDocuments.some((document) => document.title === "parity-doc"), "Studio PDF import missing from DB");

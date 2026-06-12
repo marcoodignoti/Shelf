@@ -1,4 +1,4 @@
-// Renders docs/assets/opennotion-social-preview.png (1280x640 @2x), the
+// Renders docs/assets/shelf-social-preview.png (1280x640 @2x), the
 // image GitHub shows when the repo link is shared. Uses the freshly captured
 // editor screenshots, so run capture-readme-screenshots.mjs first.
 import { chromium } from "playwright";
@@ -56,7 +56,7 @@ const html = `<!doctype html>
   <div class="left">
     <div class="brand">
       <img src="../assets/app-icon.png" alt="">
-      <h1>OpenNotion</h1>
+      <h1>Shelf</h1>
     </div>
     <div class="tagline">A <b>local-first</b> workspace for notes, PDFs, study, and research.<br>No account. Your data stays on your machine.</div>
     <div class="chips">
@@ -67,7 +67,7 @@ const html = `<!doctype html>
       <span class="chip">PDF Studio</span>
     </div>
   </div>
-  <div class="shot"><img src="../docs/assets/opennotion-dark.png" alt=""></div>
+  <div class="shot"><img src="../docs/assets/shelf-dark.png" alt=""></div>
 </body>
 </html>`;
 
@@ -81,7 +81,7 @@ const page = await browser.newPage({
 });
 await page.goto(`file://${tempPath}`);
 await page.waitForTimeout(400);
-await page.screenshot({ path: "docs/assets/opennotion-social-preview.png" });
+await page.screenshot({ path: "docs/assets/shelf-social-preview.png" });
 await browser.close();
 rmSync(tempPath);
-console.log("captured opennotion-social-preview");
+console.log("captured shelf-social-preview");

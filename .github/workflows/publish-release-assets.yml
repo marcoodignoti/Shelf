@@ -23,23 +23,43 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download CI artifacts
         run: gh run download "${{ inputs.run_id }}" --repo "${{ github.repository }}" --dir artifacts
+
+      - name: Build signed beta update manifest
+        env:
+          SHELF_UPDATE_PRIVATE_KEY_PEM: ${{ secrets.SHELF_UPDATE_PRIVATE_KEY_PEM || secrets.OPENNOTION_UPDATE_PRIVATE_KEY_PEM }}
+          SHELF_UPDATE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SHELF_UPDATE_PRIVATE_KEY_PEM:-}" ]; then
+            echo "SHELF_UPDATE_PRIVATE_KEY_PEM not set; skipping beta-update.json"
+            exit 0
+          fi
+          mkdir -p dist-electron
+          cp artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg dist-electron/
+          cp artifacts/Shelf_win-x64/Shelf_*_win-x64.zip dist-electron/
+          cp artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe dist-electron/
+          node scripts/write-beta-update-manifest.cjs
 
       - name: Upload assets
         run: |
           set -euo pipefail
           tag="${{ inputs.tag }}"
-          # latest.yml and the blockmap ship together with the installer:
-          # electron-updater reads latest.yml to discover the update and the
-          # blockmap to download only the changed blocks (differential update)
-          # instead of the full installer.
-          gh release upload "$tag" \
-            artifacts/OpenNotion_macos-arm64/OpenNotion_*_arm64.dmg \
-            artifacts/OpenNotion_win-x64/OpenNotion_*_win-x64.zip \
-            artifacts/OpenNotion_win-x64_installer/OpenNotion_*_setup_win-x64.exe \
-            artifacts/OpenNotion_win-x64_installer/OpenNotion_*_setup_win-x64.exe.blockmap \
-            artifacts/OpenNotion_win-x64_installer/latest.yml \
+          assets=(
+            artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg \
+            artifacts/Shelf_win-x64/Shelf_*_win-x64.zip \
+            artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe \
+            artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe.blockmap \
+            artifacts/Shelf_win-x64_installer/latest.yml
+          )
+          if [ -f dist-electron/beta-update.json ]; then
+            assets+=(dist-electron/beta-update.json)
+          fi
+          gh release upload "$tag" "${assets[@]}" \
             --repo "${{ github.repository }}" \
             --clobber
 

@@ -5,7 +5,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
 const electronDist = path.join(root, "node_modules", "electron", "dist");
-const outputDir = path.join(root, "dist-electron", "win-x64", "OpenNotion");
+const outputDir = path.join(root, "dist-electron", "win-x64", "Shelf");
 const resourcesDir = path.join(outputDir, "resources");
 const appResourcesDir = path.join(resourcesDir, "app");
 const appIcon = path.join(root, "assets", "app-icon.ico");
@@ -37,8 +37,8 @@ function windowsVersion(version) {
 }
 
 function signWindowsExecutable(executablePath) {
-  const certificatePath = env("OPENNOTION_WINDOWS_PFX_PATH");
-  const certificateSha1 = env("OPENNOTION_WINDOWS_CERTIFICATE_SHA1");
+  const certificatePath = env("SHELF_WINDOWS_PFX_PATH", env("OPENNOTION_WINDOWS_PFX_PATH"));
+  const certificateSha1 = env("SHELF_WINDOWS_CERTIFICATE_SHA1", env("OPENNOTION_WINDOWS_CERTIFICATE_SHA1"));
   if (!certificatePath && !certificateSha1) return;
 
   const args = [
@@ -48,19 +48,19 @@ function signWindowsExecutable(executablePath) {
     "/td",
     "SHA256",
     "/tr",
-    env("OPENNOTION_WINDOWS_TIMESTAMP_URL", "http://timestamp.digicert.com"),
+    env("SHELF_WINDOWS_TIMESTAMP_URL", env("OPENNOTION_WINDOWS_TIMESTAMP_URL", "http://timestamp.digicert.com")),
   ];
 
   if (certificatePath) {
     args.push("/f", path.resolve(root, certificatePath));
-    const password = env("OPENNOTION_WINDOWS_PFX_PASSWORD");
+    const password = env("SHELF_WINDOWS_PFX_PASSWORD", env("OPENNOTION_WINDOWS_PFX_PASSWORD"));
     if (password) args.push("/p", password);
   } else {
     args.push("/sha1", certificateSha1);
   }
 
   args.push(executablePath);
-  run(env("OPENNOTION_SIGNTOOL_PATH", "signtool.exe"), args);
+  run(env("SHELF_SIGNTOOL_PATH", env("OPENNOTION_SIGNTOOL_PATH", "signtool.exe")), args);
 }
 
 async function main() {
@@ -71,22 +71,22 @@ async function main() {
   copyDirectory(electronDist, outputDir);
 
   const electronExe = path.join(outputDir, "electron.exe");
-  const openNotionExe = path.join(outputDir, "OpenNotion.exe");
+  const shelfExe = path.join(outputDir, "Shelf.exe");
   if (!fs.existsSync(electronExe)) {
     throw new Error(`Electron executable missing: ${electronExe}`);
   }
-  fs.renameSync(electronExe, openNotionExe);
+  fs.renameSync(electronExe, shelfExe);
 
-  await rcedit(openNotionExe, {
+  await rcedit(shelfExe, {
     icon: appIcon,
     "file-version": windowsVersion(packageJson.version),
     "product-version": windowsVersion(packageJson.version),
     "version-string": {
       CompanyName: packageJson.author,
-      FileDescription: "OpenNotion",
-      InternalFilename: "OpenNotion.exe",
-      OriginalFilename: "OpenNotion.exe",
-      ProductName: "OpenNotion",
+      FileDescription: "Shelf",
+      InternalFilename: "Shelf.exe",
+      OriginalFilename: "Shelf.exe",
+      ProductName: "Shelf",
     },
   });
 
@@ -99,7 +99,7 @@ async function main() {
     path.join(appResourcesDir, "package.json"),
     JSON.stringify(
       {
-        name: "opennotion",
+        name: "shelf",
         version: packageJson.version,
         description: packageJson.description,
         author: packageJson.author,
@@ -110,7 +110,7 @@ async function main() {
     )
   );
 
-  signWindowsExecutable(openNotionExe);
+  signWindowsExecutable(shelfExe);
   console.log(`Packaged ${outputDir}`);
 }
 

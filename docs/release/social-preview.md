@@ -3,7 +3,7 @@
 Use this image for the repository social preview:
 
 ```text
-docs/assets/opennotion-social-preview.png
+docs/assets/shelf-social-preview.png
 ```
 
 It is generated from committed project assets with:

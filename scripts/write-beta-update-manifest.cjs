@@ -9,10 +9,15 @@ function env(name, fallback = "") {
   return process.env[name] && process.env[name].trim() ? process.env[name].trim() : fallback;
 }
 
-function requiredEnv(name) {
+function requiredEnv(name, fallbackName = "") {
   const value = env(name);
+  if (!value && fallbackName) {
+    const fallbackValue = env(fallbackName);
+    if (fallbackValue) return fallbackValue;
+  }
   if (!value) {
-    throw new Error(`Missing required ${name}. Generate an Ed25519 update key and keep the private key outside git.`);
+    const suffix = fallbackName ? ` or ${fallbackName}` : "";
+    throw new Error(`Missing required ${name}${suffix}. Generate an Ed25519 update key and keep the private key outside git.`);
   }
   return value;
 }
@@ -22,9 +27,9 @@ function normalizePem(value) {
 }
 
 function privateKeyPem() {
-  const keyPath = env("OPENNOTION_UPDATE_PRIVATE_KEY_PATH");
+  const keyPath = env("SHELF_UPDATE_PRIVATE_KEY_PATH", env("OPENNOTION_UPDATE_PRIVATE_KEY_PATH"));
   if (keyPath) return normalizePem(fs.readFileSync(path.resolve(root, keyPath), "utf8"));
-  return normalizePem(requiredEnv("OPENNOTION_UPDATE_PRIVATE_KEY_PEM"));
+  return normalizePem(requiredEnv("SHELF_UPDATE_PRIVATE_KEY_PEM", "OPENNOTION_UPDATE_PRIVATE_KEY_PEM"));
 }
 
 function canonicalJson(value) {
@@ -39,7 +44,7 @@ function canonicalJson(value) {
 }
 
 function changesFromEnv() {
-  const raw = env("OPENNOTION_UPDATE_CHANGES");
+  const raw = env("SHELF_UPDATE_CHANGES", env("OPENNOTION_UPDATE_CHANGES"));
   if (!raw) {
     return [
       "Beta stability improvements.",
@@ -68,7 +73,7 @@ function fileSha256(filePath) {
 
 function optionalDownload(filePath, download) {
   if (!fs.existsSync(filePath)) {
-    if (env("OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS") === "1") {
+    if (env("SHELF_UPDATE_REQUIRE_ALL_ARTIFACTS", env("OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS")) === "1") {
       throw new Error(`Missing release artifact for manifest: ${filePath}`);
     }
     return undefined;
@@ -80,18 +85,18 @@ function optionalDownload(filePath, download) {
   };
 }
 
-const version = env("OPENNOTION_UPDATE_VERSION", packageJson.version);
-const tag = env("OPENNOTION_UPDATE_TAG", `v${version}`);
-const owner = env("OPENNOTION_GITHUB_OWNER", "marcoodignoti");
-const repo = env("OPENNOTION_GITHUB_REPO", "OpenNotion");
+const version = env("SHELF_UPDATE_VERSION", env("OPENNOTION_UPDATE_VERSION", packageJson.version));
+const tag = env("SHELF_UPDATE_TAG", env("OPENNOTION_UPDATE_TAG", `v${version}`));
+const owner = env("SHELF_GITHUB_OWNER", env("OPENNOTION_GITHUB_OWNER", "marcoodignoti"));
+const repo = env("SHELF_GITHUB_REPO", env("OPENNOTION_GITHUB_REPO", "Shelf"));
 const baseUrl = `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(tag)}`;
-const macArtifact = `OpenNotion_${version}_arm64.dmg`;
-const winArtifact = `OpenNotion_${version}_win-x64.zip`;
-const winInstallerArtifact = `OpenNotion_${version}_setup_win-x64.exe`;
+const macArtifact = `Shelf_${version}_arm64.dmg`;
+const winArtifact = `Shelf_${version}_win-x64.zip`;
+const winInstallerArtifact = `Shelf_${version}_setup_win-x64.exe`;
 const macArtifactPath = path.join(root, "dist-electron", macArtifact);
 const winArtifactPath = path.join(root, "dist-electron", winArtifact);
 const winInstallerArtifactPath = path.join(root, "dist-electron", winInstallerArtifact);
-const outputPath = path.resolve(root, env("OPENNOTION_UPDATE_MANIFEST_OUT", "dist-electron/beta-update.json"));
+const outputPath = path.resolve(root, env("SHELF_UPDATE_MANIFEST_OUT", env("OPENNOTION_UPDATE_MANIFEST_OUT", "dist-electron/beta-update.json")));
 
 const downloads = {
   macosArm64: optionalDownload(macArtifactPath, {
@@ -118,10 +123,10 @@ if (Object.keys(downloads).length === 0) {
 
 const manifest = {
   version,
-  channel: env("OPENNOTION_UPDATE_CHANNEL", "stable"),
-  publishedAt: env("OPENNOTION_UPDATE_PUBLISHED_AT", new Date().toISOString()),
-  title: env("OPENNOTION_UPDATE_TITLE", `OpenNotion ${version}`),
-  summary: env("OPENNOTION_UPDATE_SUMMARY", "New OpenNotion build is ready."),
+  channel: env("SHELF_UPDATE_CHANNEL", env("OPENNOTION_UPDATE_CHANNEL", "stable")),
+  publishedAt: env("SHELF_UPDATE_PUBLISHED_AT", env("OPENNOTION_UPDATE_PUBLISHED_AT", new Date().toISOString())),
+  title: env("SHELF_UPDATE_TITLE", env("OPENNOTION_UPDATE_TITLE", `Shelf ${version}`)),
+  summary: env("SHELF_UPDATE_SUMMARY", env("OPENNOTION_UPDATE_SUMMARY", "New Shelf build is ready.")),
   changes: changesFromEnv(),
   downloads,
 };

@@ -296,7 +296,7 @@ async function run() {
   {
     const page = await newAppPage(context);
     await page.getByLabel("Formula preview: i\\hbar \\frac{\\partial}{\\partial t} \\Psi(x, t) = \\hat{H} \\Psi(x, t)").waitFor();
-    await shoot(page, "opennotion-editor");
+    await shoot(page, "shelf-editor");
   }
 
   // 2. Home dashboard.
@@ -304,14 +304,14 @@ async function run() {
     const page = await newAppPage(context, { currentPageId: "__opennotion_home__" });
     await page.getByText("Recent workspace activity.").waitFor();
     await page.getByText("Quantum Mechanics — Week 4").first().waitFor();
-    await shoot(page, "opennotion-home");
+    await shoot(page, "shelf-home");
   }
 
   // 3. Studio split view with the PDF rendered.
   {
     const page = await newAppPage(context, { workspaceMode: "studio", currentPageId: "p-studio-note" });
     await page.locator("[data-pdf-page='1'][data-pdf-rendered='true']").waitFor({ timeout: 30_000 });
-    await shoot(page, "opennotion-studio-pdf");
+    await shoot(page, "shelf-studio-pdf");
   }
 
   // 4. Slash menu open in the editor.
@@ -328,7 +328,7 @@ async function run() {
     await page.keyboard.type("/", { delay: 120 });
     await page.locator(".bn-suggestion-menu").waitFor();
     await page.waitForTimeout(300);
-    await shoot(page, "opennotion-slash-menu");
+    await shoot(page, "shelf-slash-menu");
   }
 
   // 5. Command palette search.
@@ -341,14 +341,14 @@ async function run() {
     await page.waitForTimeout(300);
     await paletteInput.fill("eigen");
     await page.waitForTimeout(700);
-    await shoot(page, "opennotion-search");
+    await shoot(page, "shelf-search");
   }
 
   // 6. Editor in dark mode.
   {
     const page = await newAppPage(context, { theme: "dark" });
     await page.getByLabel("Formula preview: i\\hbar \\frac{\\partial}{\\partial t} \\Psi(x, t) = \\hat{H} \\Psi(x, t)").waitFor();
-    await shoot(page, "opennotion-dark");
+    await shoot(page, "shelf-dark");
   }
 
   await browser.close();

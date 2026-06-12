@@ -28,8 +28,8 @@ describe("preferences parsing", () => {
 
   it("exposes stable storage keys", () => {
     expect(PREFERENCE_STORAGE_KEYS.locale).toBe("opennotion-locale");
-    expect(PREFERENCE_STORAGE_KEYS.editorFont).toBe("opennotion-editor-font");
-    expect(PREFERENCE_STORAGE_KEYS.editorFontSize).toBe("opennotion-editor-font-size");
+    expect(PREFERENCE_STORAGE_KEYS.editorFont).toBe("shelf-editor-font");
+    expect(PREFERENCE_STORAGE_KEYS.editorFontSize).toBe("shelf-editor-font-size");
     expect(PREFERENCE_STORAGE_KEYS.pageWidth).toBe("opennotion-page-width");
     expect(PREFERENCE_STORAGE_KEYS.titleEnter).toBe("opennotion-title-enter");
   });

@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for taking time to improve OpenNotion.
+Thanks for taking time to improve Shelf.
 
-OpenNotion is a local-first desktop app. Contributions should preserve that
+Shelf is a local-first desktop app. Contributions should preserve that
 product direction: private by default, no required cloud account, and no
 unexpected network dependency for core notes or Studio documents.
 

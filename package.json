@@ -1,24 +1,25 @@
 {
-  "name": "opennotion",
+  "name": "shelf",
   "private": true,
   "version": "0.2.3",
-  "description": "Local-first Notion-style workspace.",
+  "description": "Local-first workspace for notes, documents, and study.",
   "author": "Marco Dignoti",
   "license": "MIT",
-  "homepage": "https://github.com/marcoodignoti/OpenNotion#readme",
+  "homepage": "https://github.com/marcoodignoti/Shelf#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marcoodignoti/OpenNotion.git"
+    "url": "git+https://github.com/marcoodignoti/Shelf.git"
   },
   "bugs": {
-    "url": "https://github.com/marcoodignoti/OpenNotion/issues"
+    "url": "https://github.com/marcoodignoti/Shelf/issues"
   },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "test": "vitest run",
+    "build": "cross-env UV_THREADPOOL_SIZE=64 npm run build:app",
+    "build:app": "tsc && vite build",
+    "test": "cross-env UV_THREADPOOL_SIZE=64 vitest run",
     "e2e:install": "playwright install chromium",
     "e2e": "npm run build && playwright test",
     "perf": "npm run perf:frontend",
@@ -51,8 +52,8 @@
     "release:verify:macos": "node scripts/electron-verify-macos.cjs"
   },
   "build": {
-    "appId": "org.opennotion.desktop",
-    "productName": "OpenNotion",
+    "appId": "com.marcodignoti.shelf",
+    "productName": "Shelf",
     "directories": {
       "output": "dist-electron/builder"
     },
@@ -70,7 +71,7 @@
       {
         "provider": "github",
         "owner": "marcoodignoti",
-        "repo": "OpenNotion"
+        "repo": "Shelf"
       }
     ],
     "win": {
@@ -83,7 +84,7 @@
         }
       ],
       "icon": "assets/app-icon.ico",
-      "artifactName": "OpenNotion_${version}_setup_win-${arch}.${ext}"
+      "artifactName": "Shelf_${version}_setup_win-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

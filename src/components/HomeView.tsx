@@ -1,4 +1,5 @@
-import { FileText, Star } from "lucide-react";
+import FileText from "lucide-react/dist/esm/icons/file-text.mjs";
+import Star from "lucide-react/dist/esm/icons/star.mjs";
 import { Page } from "../lib/db";
 import { favoritePages, recentPages } from "../lib/homeSections";
 import { useT } from "../lib/i18n";

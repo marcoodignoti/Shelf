@@ -2,9 +2,9 @@ import packageJson from "../../package.json";
 
 export const CURRENT_APP_VERSION = packageJson.version;
 export const BETA_CHANNEL_MANIFEST_URL =
-  "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json";
+  "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json";
 export const LATEST_RELEASE_MANIFEST_URL =
-  "https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json";
+  "https://github.com/marcoodignoti/Shelf/releases/latest/download/beta-update.json";
 export const DEFAULT_UPDATE_MANIFEST_URLS = [
   LATEST_RELEASE_MANIFEST_URL,
   BETA_CHANNEL_MANIFEST_URL,
@@ -44,11 +44,11 @@ export type BetaUpdateState =
 
 const MAX_CHANGE_ITEMS = 5;
 const DOWNLOAD_URL_PATTERN =
-  /^https:\/\/github\.com\/marcoodignoti\/OpenNotion\/releases\/download\/[^/]+\/OpenNotion_[^/]+\.(dmg|zip|exe)$/i;
+  /^https:\/\/github\.com\/marcoodignoti\/Shelf\/releases\/download\/[^/]+\/Shelf_[^/]+\.(dmg|zip|exe)$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 function manifestUrls(): string[] {
-  const configuredUrl = import.meta.env.VITE_OPENNOTION_UPDATE_MANIFEST_URL;
+  const configuredUrl = import.meta.env.VITE_SHELF_UPDATE_MANIFEST_URL || import.meta.env.VITE_OPENNOTION_UPDATE_MANIFEST_URL;
   if (configuredUrl) return [configuredUrl];
   return DEFAULT_UPDATE_MANIFEST_URLS;
 }
@@ -159,7 +159,7 @@ export function downloadForCurrentPlatform(manifest: BetaUpdateManifest): BetaUp
 
 export async function downloadVerifiedUpdate(download: BetaUpdateDownload): Promise<VerifiedUpdateDownload> {
   if (typeof window === "undefined" || !window.openNotion) {
-    throw new Error("OpenNotion desktop bridge is not available");
+    throw new Error("Shelf desktop bridge is not available");
   }
 
   return await window.openNotion.invoke<VerifiedUpdateDownload>("download_update_artifact", {

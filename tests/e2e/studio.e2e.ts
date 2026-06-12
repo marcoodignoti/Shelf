@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 const tinyPdfFixture = createBlankPdfFixture(1);
 const multiPagePdfFixture = createBlankPdfFixture(8);
@@ -35,34 +35,32 @@ test.beforeEach(async ({ page }) => {
 
   await page.addInitScript(() => {
     const documentsKey = "opennotion-e2e-studio-documents";
-    const projectsKey = "opennotion-e2e-studio-projects";
     const linksKey = "opennotion-e2e-studio-page-links";
     const pagesKey = "opennotion-e2e-pages";
+    const unlinkedPrimaryLinksKey = "opennotion-e2e-unlinked-primary-links";
     const resetKey = "opennotion-e2e-studio-reset";
     const load = <T,>(key: string): T[] => JSON.parse(window.localStorage.getItem(key) ?? "[]");
     const save = <T,>(key: string, value: T[]) => window.localStorage.setItem(key, JSON.stringify(value));
 
-    if (window.localStorage.getItem(resetKey) !== "done") {
+    if (window.sessionStorage.getItem(resetKey) !== "done") {
       window.localStorage.removeItem(documentsKey);
-      window.localStorage.removeItem(projectsKey);
       window.localStorage.removeItem(linksKey);
+      window.localStorage.removeItem(unlinkedPrimaryLinksKey);
       window.localStorage.removeItem(pagesKey);
       window.localStorage.removeItem("opennotion-current-page-id");
-      window.localStorage.removeItem("opennotion-current-studio-document-id");
-      window.localStorage.removeItem("opennotion-workspace-mode");
-      window.localStorage.setItem(resetKey, "done");
+      window.sessionStorage.setItem(resetKey, "done");
     }
 
     window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         if (cmd === "list_pages") return load(pagesKey).filter((item: any) => item.page_kind === "note" || item.page_kind === "studio_note");
         if (cmd === "list_studio_documents") return load(documentsKey);
-        if (cmd === "list_studio_projects") return load(projectsKey);
         if (cmd === "list_studio_document_page_links") {
           const document = load<any>(documentsKey).find((candidate) => candidate.id === args.documentId);
           if (!document) return [];
           const pages = load<any>(pagesKey);
           const storedLinks = load<any>(linksKey).filter((link) => link.document_id === document.id);
+          const unlinkedPrimaryPageIds = new Set(load<string>(unlinkedPrimaryLinksKey));
           const primaryLink = {
             id: `link-${document.id}-${document.note_page_id}`,
             document_id: document.id,
@@ -74,6 +72,7 @@ test.beforeEach(async ({ page }) => {
             updated_at: document.updated_at,
           };
           return [primaryLink, ...storedLinks]
+            .filter((link) => link.page_id !== document.note_page_id || !unlinkedPrimaryPageIds.has(link.page_id))
             .filter((link, index, links) => links.findIndex((candidate) => candidate.page_id === link.page_id) === index)
             .map((link) => ({
               ...link,
@@ -84,6 +83,7 @@ test.beforeEach(async ({ page }) => {
         if (cmd === "list_all_studio_document_page_links") {
           const documents = load<any>(documentsKey);
           const pages = load<any>(pagesKey);
+          const unlinkedPrimaryPageIds = new Set(load<string>(unlinkedPrimaryLinksKey));
           const links = documents.flatMap((document) => {
             const storedLinks = load<any>(linksKey).filter((link) => link.document_id === document.id);
             const primaryLink = {
@@ -97,6 +97,7 @@ test.beforeEach(async ({ page }) => {
               updated_at: document.updated_at,
             };
             return [primaryLink, ...storedLinks]
+              .filter((link) => link.page_id !== document.note_page_id || !unlinkedPrimaryPageIds.has(link.page_id))
               .filter((link, index, documentLinks) => documentLinks.findIndex((candidate) => candidate.page_id === link.page_id) === index)
               .map((link) => ({
                 ...link,
@@ -137,7 +138,7 @@ test.beforeEach(async ({ page }) => {
             database_schema: null,
             properties: null,
             sort_order: 0,
-            page_kind: "studio_note",
+            page_kind: args.documentId === args.notePageId ? "note" : "studio_note",
             created_at: args.importedAt as string,
             updated_at: args.importedAt as string,
           };
@@ -164,47 +165,6 @@ test.beforeEach(async ({ page }) => {
           ));
           return updatedDocument;
         }
-        if (cmd === "create_studio_project") {
-          const project = {
-            id: args.id as string,
-            name: args.name as string,
-            parent_id: (args.parentId as string | null) ?? null,
-            sort_order: load<any>(projectsKey).length,
-            created_at: args.createdAt as string,
-            updated_at: args.createdAt as string,
-          };
-          save(projectsKey, [...load<any>(projectsKey), project]);
-          return project;
-        }
-        if (cmd === "rename_studio_project") {
-          save(projectsKey, load<any>(projectsKey).map((project) =>
-            project.id === args.id ? { ...project, name: args.name, updated_at: args.updatedAt } : project
-          ));
-          return null;
-        }
-        if (cmd === "update_studio_project_parent") {
-          save(projectsKey, load<any>(projectsKey).map((project) =>
-            project.id === args.id ? {
-              ...project,
-              parent_id: (args.parentId as string | null) ?? null,
-              updated_at: args.updatedAt,
-            } : project
-          ));
-          return null;
-        }
-        if (cmd === "delete_studio_project") {
-          save(projectsKey, load<any>(projectsKey).filter((project) => project.id !== args.id));
-          save(documentsKey, load<any>(documentsKey).map((document) =>
-            document.project_id === args.id ? { ...document, project_id: null, updated_at: args.updatedAt } : document
-          ));
-          return null;
-        }
-        if (cmd === "update_studio_document_project") {
-          save(documentsKey, load<any>(documentsKey).map((document) =>
-            document.id === args.id ? { ...document, project_id: args.projectId ?? null, updated_at: args.updatedAt } : document
-          ));
-          return null;
-        }
         if (cmd === "link_studio_document_page") {
           const link = {
             id: args.id as string,
@@ -221,6 +181,17 @@ test.beforeEach(async ({ page }) => {
             ...link,
             page: load<any>(pagesKey).find((item) => item.id === link.page_id),
           };
+        }
+        if (cmd === "unlink_studio_document_page") {
+          const id = args.id as string;
+          const documents = load<any>(documentsKey);
+          const primaryDocument = documents.find((document) => id === `link-${document.id}-${document.note_page_id}`);
+          if (primaryDocument) {
+            save(unlinkedPrimaryLinksKey, [...new Set([...load<string>(unlinkedPrimaryLinksKey), primaryDocument.note_page_id])]);
+            return null;
+          }
+          save(linksKey, load<any>(linksKey).filter((link) => link.id !== id));
+          return null;
         }
         if (cmd === "create_page") {
           const page = {
@@ -276,7 +247,7 @@ test.beforeEach(async ({ page }) => {
           return null;
         }
         if (cmd === "search_pages") return [];
-        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "OpenNotion", avatarPath: null };
+        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "Shelf", avatarPath: null };
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
       open: async () => "/tmp/civil-law.pdf",
@@ -286,35 +257,13 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function submitProjectDialog(page: Page, title: string, name: string) {
-  const dialog = page.getByRole("dialog", { name: title });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Project name").fill(name);
-  await dialog.getByRole("button", { name: "Create" }).click();
-}
-
-test("auto-dismisses Studio success notices", async ({ page }) => {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
-
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Physics");
-
-  const notice = page.locator(".on-notice").filter({ hasText: "Studio project created." });
-  await expect(notice).toBeVisible();
-  await expect(notice).toBeHidden({ timeout: 5_500 });
-});
-
 test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
-  await expect(page.locator(".on-studio-tree-title", { hasText: /^Projects$/ })).toBeVisible();
-  await expect(page.getByText("Inbox")).toBeVisible();
-  await expect(page.getByText("Recent")).toBeHidden();
-  await expect(page.locator(".on-studio-section-subtitle", { hasText: "1 PDF / 0 projects" })).toBeVisible();
+  await expect(page.locator(".on-section-label", { hasText: "Private" })).toBeVisible();
+  await expect(page.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" })).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 
@@ -324,7 +273,6 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
 
 test("uses normal note editor scale inside Studio notes", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const title = page.locator("textarea[placeholder='Untitled']").first();
@@ -337,13 +285,10 @@ test("uses normal note editor scale inside Studio notes", async ({ page }) => {
 
 test("opens Studio notes in a dedicated Notes sidebar section", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  await page.getByRole("button", { name: "Note", exact: true }).click();
   await expect(page.locator(".on-section-label", { hasText: "Studio notes" })).toBeVisible();
   await expect(page.getByText("No private pages yet.")).toBeVisible();
-  await expect(page.locator("[data-studio-note-project-id='studio-inbox']")).toBeVisible();
   await expect(page.locator(".on-studio-note-document-node", { hasText: "civil-law" })).toBeVisible();
 
   const studioNoteRow = page.locator("[data-studio-note-id]", { hasText: "civil-law Notes" });
@@ -352,9 +297,8 @@ test("opens Studio notes in a dedicated Notes sidebar section", async ({ page })
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
 });
 
-test("deletes a primary Studio note without recreating it automatically", async ({ page }) => {
+test("unlinking a primary Studio note preserves the page and does not recreate the link", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const studioNoteId = await page.evaluate(() => {
@@ -365,83 +309,28 @@ test("deletes a primary Studio note without recreating it automatically", async 
     return pages.find((item) => item.title === "civil-law Notes")?.id ?? null;
   });
   expect(studioNoteId).toBeTruthy();
-  await page.evaluate((id) => {
-    window.localStorage.setItem("opennotion-e2e-deleted-studio-note-id", id);
-  }, studioNoteId);
 
   await page.getByLabel("Delete linked note civil-law Notes").click();
-  await page.locator(".on-delete-dialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Remove link" }).click();
 
   await page.waitForFunction(() => {
-    const deletedId = window.localStorage.getItem("opennotion-e2e-deleted-studio-note-id");
-    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ title: string }>;
-    return Boolean(deletedId) && !pages.some((item: any) => item.id === deletedId);
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ id: string; title: string }>;
+    const unlinked = JSON.parse(window.localStorage.getItem("opennotion-e2e-unlinked-primary-links") ?? "[]") as string[];
+    return pages.some((item) => item.id === unlinked[0] && item.title === "civil-law Notes");
   });
   await expect(page.getByText("Linked note missing.")).toBeVisible();
   await page.waitForTimeout(400);
   await expect(page.getByText("Linked note missing.")).toBeVisible();
 
-  await page.getByRole("button", { name: "Note", exact: true }).click();
   await expect(page.locator("[data-studio-note-id]", { hasText: "civil-law Notes" })).toBeHidden();
-});
-
-test("groups Studio notes by nested Studio project folders in Notes", async ({ page }) => {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
-
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Physics");
-  const physicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Physics")?.id;
-  });
-  expect(physicsProjectId).toBeTruthy();
-
-  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
-  await physicsProject.getByLabel("Actions for project Physics").click();
-  await page.getByRole("menuitem", { name: "New subfolder" }).click();
-  await submitProjectDialog(page, "New Studio subfolder", "Mechanics");
-
-  const mechanicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Mechanics")?.id;
-  });
-  expect(mechanicsProjectId).toBeTruthy();
-
-  await page.locator(`[data-studio-project-id='${mechanicsProjectId}']`).getByRole("button", { name: "Select project Mechanics" }).click();
-  await page.getByRole("button", { name: "Import PDF" }).click();
-  await page.getByTitle("New linked note").click();
-  await expect(page.getByRole("button", { name: "civil-law Note", exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "Note", exact: true }).click();
-  const notesPhysicsProject = page.locator(`[data-studio-note-project-id='${physicsProjectId}']`);
-  const notesMechanicsProject = page.locator(`[data-studio-note-project-id='${mechanicsProjectId}']`);
-
-  await expect(notesPhysicsProject).toBeVisible();
-  await expect(notesMechanicsProject).toBeVisible();
-  await expect(notesMechanicsProject).toHaveAttribute("data-studio-note-project-parent-id", physicsProjectId!);
-  await expect(notesMechanicsProject).toHaveAttribute("data-studio-note-project-depth", "1");
-  await expect(notesMechanicsProject.locator(".on-studio-note-document-node", { hasText: "civil-law" })).toBeVisible();
-  await expect(notesMechanicsProject.getByRole("button", { name: "civil-law Notes", exact: true })).toBeVisible();
-  await expect(notesMechanicsProject.getByRole("button", { name: "civil-law Note", exact: true })).toBeVisible();
-
-  await notesPhysicsProject.getByRole("button", { name: /Physics/ }).click();
-  await expect(notesMechanicsProject).toBeHidden();
 });
 
 test("creates multiple linked notes and PDF bookmarks for a Studio document", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await page.getByTitle("New linked note").click();
-  await expect(page.getByRole("button", { name: "civil-law Note", exact: true })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-chip[title='civil-law Note']")).toBeVisible();
 
   await page.getByTitle("Bookmark current PDF page").click();
   await expect(page.locator(".on-studio-linked-page-chip", { hasText: /civil-law p\. 1/ })).toBeVisible();
@@ -449,12 +338,13 @@ test("creates multiple linked notes and PDF bookmarks for a Studio document", as
 
   await page.waitForFunction(() => {
     const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
+      title: string;
       page_kind: string;
     }>;
     const links = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-page-links") ?? "[]") as Array<{
       pdf_page: number | null;
     }>;
-    return pages.filter((item) => item.page_kind === "studio_note").length >= 3 &&
+    return pages.filter((item) => item.title.startsWith("civil-law")).length >= 3 &&
       links.some((link) => link.pdf_page === 1);
   });
 });
@@ -506,8 +396,6 @@ test("links existing pages and PDF-page bookmarks to a Studio document", async (
     window.localStorage.setItem("opennotion-e2e-pages", JSON.stringify(pages));
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await page.getByTitle("Link existing page").click();
@@ -522,186 +410,164 @@ test("links existing pages and PDF-page bookmarks to a Studio document", async (
   await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 1" })).toBeVisible();
 });
 
-test("organizes Studio documents into projects with inline rename and drag drop", async ({ page }) => {
+test("shows PDF documents inside the unified page tree folder hierarchy", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = "2026-06-01T08:00:00.000Z";
+    window.localStorage.setItem("opennotion-current-page-id", "research-folder");
+    window.localStorage.setItem("opennotion-e2e-studio-documents", JSON.stringify([{
+      id: "civil-doc",
+      title: "Civil Law",
+      original_filename: "civil-law.pdf",
+      stored_file_path: "/tmp/civil-law.pdf",
+      note_page_id: "civil-doc",
+      project_id: null,
+      last_opened_at: now,
+      viewer_zoom: 100,
+      viewer_page: 1,
+      panel_layout: "pdf-left",
+      created_at: now,
+      updated_at: now,
+    }]));
+    window.localStorage.setItem("opennotion-e2e-pages", JSON.stringify([
+      {
+        id: "research-folder",
+        title: "Research",
+        parent_id: null,
+        content: null,
+        search_text: null,
+        icon: null,
+        cover_url: null,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: null,
+        properties: null,
+        sort_order: 0,
+        page_kind: "note",
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: "civil-doc",
+        title: "Civil Law",
+        parent_id: "research-folder",
+        content: null,
+        search_text: null,
+        icon: null,
+        cover_url: null,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: null,
+        properties: null,
+        sort_order: 0,
+        page_kind: "note",
+        created_at: now,
+        updated_at: now,
+      },
+    ]));
+  });
+
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
 
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Physics");
+  const folder = page.locator("[data-page-id='research-folder']");
+  const documentPage = page.locator("[data-page-id='civil-doc']");
+  await expect(folder).toBeVisible();
+  await expect(documentPage).toBeVisible();
+  await expect(documentPage.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" })).toBeVisible();
 
-  const physicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Physics")?.id;
-  });
-  expect(physicsProjectId).toBeTruthy();
-
-  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
-  await expect(physicsProject).toBeVisible();
-  await expect(physicsProject.getByText("Drop PDFs here")).toBeVisible();
-
-  await physicsProject.getByLabel("Actions for project Physics").click();
-  await page.getByRole("menuitem", { name: "Rename project" }).click();
-  await physicsProject.getByLabel("Project name").fill("Mechanics");
-  await physicsProject.getByLabel("Project name").press("Enter");
-
-  const mechanicsProject = page.locator("[data-studio-project-id]").filter({ hasText: "Mechanics" });
-  await expect(mechanicsProject).toBeVisible();
-
-  await page.getByRole("button", { name: "Import PDF" }).click();
-  await page
-    .locator("[data-studio-project-id='studio-inbox'] [data-studio-document-id]")
-    .filter({ hasText: "civil-law" })
-    .dragTo(mechanicsProject);
-
-  await expect(
-    page.locator("[data-studio-project-id]").filter({ hasText: "Mechanics" }).locator("[role='button'][title='civil-law.pdf']")
-  ).toBeVisible();
-  await page.waitForFunction(() => {
-    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
-      title: string;
-      project_id: string | null;
-    }>;
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    const project = projects.find((item) => item.name === "Mechanics");
-    return Boolean(project && documents.some((document) => document.title === "civil-law" && document.project_id === project.id));
-  });
+  await documentPage.click();
+  await expect(page.locator("canvas[aria-label='Civil Law']")).toBeVisible();
+  await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("Civil Law");
 });
 
-test("creates nested Studio project folders and moves projects into folders", async ({ page }) => {
+test("shows linked normal notes with a PDF badge that opens the Studio document", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = "2026-06-01T08:00:00.000Z";
+    window.localStorage.setItem("opennotion-current-page-id", "reference-note");
+    window.localStorage.setItem("opennotion-e2e-studio-documents", JSON.stringify([{
+      id: "civil-doc",
+      title: "Civil Law",
+      original_filename: "civil-law.pdf",
+      stored_file_path: "/tmp/civil-law.pdf",
+      note_page_id: "civil-doc",
+      project_id: null,
+      last_opened_at: now,
+      viewer_zoom: 100,
+      viewer_page: 1,
+      panel_layout: "pdf-left",
+      created_at: now,
+      updated_at: now,
+    }]));
+    window.localStorage.setItem("opennotion-e2e-studio-page-links", JSON.stringify([{
+      id: "link-civil-doc-reference-note",
+      document_id: "civil-doc",
+      page_id: "reference-note",
+      pdf_page: 3,
+      label: "Reference",
+      sort_order: 1,
+      created_at: now,
+      updated_at: now,
+    }]));
+    window.localStorage.setItem("opennotion-e2e-pages", JSON.stringify([
+      {
+        id: "civil-doc",
+        title: "Civil Law",
+        parent_id: null,
+        content: null,
+        search_text: null,
+        icon: null,
+        cover_url: null,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: null,
+        properties: null,
+        sort_order: 0,
+        page_kind: "note",
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: "reference-note",
+        title: "Reference Note",
+        parent_id: null,
+        content: null,
+        search_text: null,
+        icon: null,
+        cover_url: null,
+        is_deleted: 0,
+        is_favorite: 0,
+        is_template: 0,
+        is_database: 0,
+        database_schema: null,
+        properties: null,
+        sort_order: 1,
+        page_kind: "note",
+        created_at: now,
+        updated_at: now,
+      },
+    ]));
+  });
+
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
 
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Physics");
-  const physicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Physics")?.id;
-  });
-  expect(physicsProjectId).toBeTruthy();
-  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
+  const linkedNote = page.locator("[data-page-id='reference-note']");
+  await expect(linkedNote).toBeVisible();
+  const badge = linkedNote.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" });
+  await expect(badge).toBeVisible();
+  await badge.click();
 
-  await physicsProject.getByLabel("Actions for project Physics").click();
-  await page.getByRole("menuitem", { name: "New subfolder" }).click();
-  await submitProjectDialog(page, "New Studio subfolder", "Mechanics");
-
-  const mechanicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Mechanics")?.id;
-  });
-  expect(mechanicsProjectId).toBeTruthy();
-  let mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
-  await expect(mechanicsProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
-  await expect(mechanicsProject).toHaveAttribute("data-studio-project-depth", "1");
-  await physicsProject.getByRole("button", { name: "Toggle project Physics" }).click();
-  await expect(mechanicsProject).toBeHidden();
-  await physicsProject.getByRole("button", { name: "Toggle project Physics" }).click();
-  await expect(mechanicsProject).toBeVisible();
-
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Chemistry");
-  const chemistryProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Chemistry")?.id;
-  });
-  expect(chemistryProjectId).toBeTruthy();
-  const chemistryProject = page.locator(`[data-studio-project-id='${chemistryProjectId}']`);
-  await chemistryProject.locator("[data-studio-project-drag-handle]").dragTo(physicsProject);
-  mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
-  await expect(chemistryProject).toHaveAttribute("data-studio-project-parent-id", physicsProjectId!);
-  await expect(chemistryProject).toHaveAttribute("data-studio-project-depth", "1");
-
-  await physicsProject.getByRole("button", { name: "Select project Physics" }).click();
-  await page.getByRole("button", { name: "Import PDF" }).click();
-  await page
-    .locator(`[data-studio-project-id='${physicsProjectId}'] [data-studio-document-id]`)
-    .filter({ hasText: "civil-law" })
-    .dragTo(mechanicsProject);
-
-  await expect(mechanicsProject.locator("[role='button'][title='civil-law.pdf']")).toBeVisible();
-  await page.waitForFunction((targetProjectId) => {
-    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
-      title: string;
-      project_id: string | null;
-    }>;
-    return documents.some((document) => document.title === "civil-law" && document.project_id === targetProjectId);
-  }, mechanicsProjectId);
-});
-
-test("navigates Studio folders and creates content in the current folder", async ({ page }) => {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
-
-  await page.getByRole("button", { name: "New Studio project" }).click();
-  await submitProjectDialog(page, "New Studio project", "Physics");
-  const physicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Physics")?.id;
-  });
-  expect(physicsProjectId).toBeTruthy();
-  const physicsProject = page.locator(`[data-studio-project-id='${physicsProjectId}']`);
-
-  await physicsProject.getByLabel("Actions for project Physics").click();
-  await page.getByRole("menuitem", { name: "New subfolder" }).click();
-  await submitProjectDialog(page, "New Studio subfolder", "Mechanics");
-  const mechanicsProjectId = await page.evaluate(() => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      id: string;
-      name: string;
-    }>;
-    return projects.find((item) => item.name === "Mechanics")?.id;
-  });
-  expect(mechanicsProjectId).toBeTruthy();
-
-  await physicsProject.getByRole("button", { name: "Select project Physics" }).click();
-  await expect(page.locator(`[data-studio-current-project-id='${physicsProjectId}']`)).toBeVisible();
-  await expect(page.getByRole("button", { name: "New Studio subfolder" })).toBeVisible();
-
-  await page.getByRole("button", { name: "New Studio subfolder" }).click();
-  await submitProjectDialog(page, "New Studio subfolder", "Thermodynamics");
-
-  await page.waitForFunction((parentProjectId) => {
-    const projects = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-projects") ?? "[]") as Array<{
-      name: string;
-      parent_id: string | null;
-    }>;
-    return projects.some((project) => project.name === "Thermodynamics" && project.parent_id === parentProjectId);
-  }, physicsProjectId);
-
-  const mechanicsProject = page.locator(`[data-studio-project-id='${mechanicsProjectId}']`);
-  await mechanicsProject.getByRole("button", { name: "Select project Mechanics" }).click();
-  await expect(page.locator(`[data-studio-current-project-id='${mechanicsProjectId}']`)).toBeVisible();
-
-  await page.getByRole("button", { name: "Import PDF" }).click();
-  await page.waitForFunction((targetProjectId) => {
-    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{
-      title: string;
-      project_id: string | null;
-    }>;
-    return documents.some((document) => document.title === "civil-law" && document.project_id === targetProjectId);
-  }, mechanicsProjectId);
+  await expect(page.locator("canvas[aria-label='Civil Law']")).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-chip", { hasText: "Reference Note" })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 3" })).toBeVisible();
 });
 
 test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await page.getByTitle("PDF view options").click();
@@ -730,7 +596,6 @@ test("updates continuous PDF page indicator without persisting scroll as a page 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
   await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
@@ -765,7 +630,6 @@ test("keeps continuous PDF visible when changing page from toolbar arrows", asyn
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-page-total", { hasText: "8" })).toBeVisible({ timeout: 60_000 });
   await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
@@ -804,7 +668,6 @@ test("blocks continuous PDF overscroll above the first page", async ({ page }) =
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-page-input")).toHaveValue("1");
   await expect(page.locator("[data-pdf-page='1']")).toBeVisible();
@@ -825,7 +688,6 @@ test("creates a missing Studio note only from the notes panel fallback action", 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await expect(page.getByText("Linked note missing.")).toBeVisible();
@@ -846,14 +708,13 @@ test("creates a missing Studio note only from the notes panel fallback action", 
 test("reimports a Studio PDF when the stored copy is missing", async ({ page }) => {
   await page.addInitScript(() => {
     const now = "2026-05-29T08:00:00.000Z";
-    window.localStorage.setItem("opennotion-workspace-mode", "studio");
-    window.localStorage.setItem("opennotion-current-studio-document-id", "missing-doc");
+    window.localStorage.setItem("opennotion-current-page-id", "missing-doc");
     window.localStorage.setItem("opennotion-e2e-studio-documents", JSON.stringify([{
       id: "missing-doc",
       title: "Missing Source",
       original_filename: "missing.pdf",
       stored_file_path: "/tmp/missing.pdf",
-      note_page_id: "missing-note",
+      note_page_id: "missing-doc",
       project_id: null,
       last_opened_at: now,
       viewer_zoom: 100,
@@ -863,7 +724,7 @@ test("reimports a Studio PDF when the stored copy is missing", async ({ page }) 
       updated_at: now,
     }]));
     window.localStorage.setItem("opennotion-e2e-pages", JSON.stringify([{
-      id: "missing-note",
+      id: "missing-doc",
       title: "Missing Source Notes",
       parent_id: null,
       content: null,
@@ -877,7 +738,7 @@ test("reimports a Studio PDF when the stored copy is missing", async ({ page }) 
       database_schema: null,
       properties: null,
       sort_order: 0,
-      page_kind: "studio_note",
+      page_kind: "note",
       created_at: now,
       updated_at: now,
     }]));
@@ -909,7 +770,6 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
     window.localStorage.setItem("opennotion-theme", "dark");
   });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const pageTotal = page.locator(".on-studio-page-total");
@@ -943,8 +803,6 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
 
   expect(styles).not.toBeNull();
   expect(styles!.controlsClass).toContain("on-studio-toolbar-controls-note-surface");
-  expect(styles!.pageGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
-  expect(styles!.zoomGroupBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles!.pageTotalBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.zoomBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.pageTotalColor).toBe(styles!.zoomColor);
@@ -953,7 +811,6 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
 test("keeps Studio toolbar in flow above PDF and notes", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 720 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" })).toBeVisible({ timeout: 60_000 });
 
@@ -985,7 +842,6 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await page.getByRole("textbox").last().click();
@@ -1002,11 +858,12 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
   await page.waitForFunction(() => {
     const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
       page_kind: string;
+      title: string;
       content: string | null;
       search_text: string | null;
     }>;
     return pages.some((item) =>
-      item.page_kind === "studio_note" &&
+      item.title === "civil-law Notes" &&
       (item.content ?? "").includes('"type":"formula"') &&
       (item.search_text ?? "").includes("\\int_0^1 x^2 dx")
     );
@@ -1016,7 +873,6 @@ test("creates editable formula blocks in Studio notes", async ({ page }) => {
 
 test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" })).toBeVisible({ timeout: 60_000 });
 
@@ -1033,7 +889,6 @@ test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", 
 test("stacks Studio panels when resized below usable split width", async ({ page }) => {
   await page.setViewportSize({ width: 760, height: 720 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const pdfBox = await page.getByLabel("PDF panel").boundingBox();
@@ -1047,7 +902,6 @@ test("stacks Studio panels when resized below usable split width", async ({ page
 test("keeps Studio panels side by side at ordinary desktop widths", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   const pdfBox = await page.getByLabel("PDF panel").boundingBox();
@@ -1062,7 +916,6 @@ test("keeps Studio panels side by side at ordinary desktop widths", async ({ pag
 test("does not show a window-level horizontal scrollbar in Studio split view", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Studio" }).click();
   await page.getByRole("button", { name: "Import PDF" }).click();
   await expect(page.locator(".on-studio-split")).toBeVisible();
 

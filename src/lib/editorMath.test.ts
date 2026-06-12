@@ -361,6 +361,20 @@ describe("renderFormulaHtml", () => {
     expect(html).not.toContain("color:#cc0000");
   });
 
+  it("renders pasted notes with mixed delimiters, prose, and loose resistor notation", () => {
+    const html = renderFormulaHtml(
+      "\\Delta V{AB} = VA - V_B = R_1 i, \\qquad \\Delta V{BC} = VB - V_C = R_2 i $$\\Rightarrow\\\n" +
+        "\\Delta V{AC} = VA - V_C = R{eq}\\, i = \\Delta V{AB} + \\Delta V{BC} = (R1 + R_2)i, 📌 $$R {eq}\n" +
+        "= R 1 + R_2 \\qquad\\text{per resistori in serie: } R {eq} = \\sum i R_i > R_i",
+      true,
+    );
+
+    expect(html).not.toContain("color:#cc0000");
+    expect(html).not.toContain("📌");
+    expect(html).not.toContain("$$");
+    expect(html).not.toContain("R{eq}");
+  });
+
   it("renders common boxed vector mechanics formulas without raw latex errors", () => {
     for (const formula of [
       "\\boxed{ \\ddot{\\theta} + \\omega^2\\theta = 0 }",

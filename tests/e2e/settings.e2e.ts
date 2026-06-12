@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    const profile = { name: "", workspaceName: "OpenNotion", avatarPath: null as string | null };
+    const profile = { name: "", workspaceName: "Shelf", avatarPath: null as string | null };
 
     window.openNotion = {
       invoke: async (cmd: string, args?: Record<string, unknown>) => {
@@ -43,8 +43,8 @@ test("appearance preferences persist to localStorage", async ({ page }) => {
   await page.getByRole("button", { name: "Appearance" }).click();
   await page.getByLabel("Font").selectOption("serif");
   await page.getByLabel("Text size").selectOption("large");
-  expect(await page.evaluate(() => localStorage.getItem("opennotion-editor-font"))).toBe("serif");
-  expect(await page.evaluate(() => localStorage.getItem("opennotion-editor-font-size"))).toBe("large");
+  expect(await page.evaluate(() => localStorage.getItem("shelf-editor-font"))).toBe("serif");
+  expect(await page.evaluate(() => localStorage.getItem("shelf-editor-font-size"))).toBe("large");
 });
 
 test("switching language to Italian translates the modal instantly", async ({ page }) => {

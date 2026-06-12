@@ -6,7 +6,7 @@ const { DatabaseSync } = require("node:sqlite");
 const { _electron: electron } = require("playwright");
 
 const root = path.resolve(__dirname, "..");
-const executablePath = path.join(root, "dist-electron", "mac-arm64", "OpenNotion.app", "Contents", "MacOS", "OpenNotion");
+const executablePath = path.join(root, "dist-electron", "mac-arm64", "Shelf.app", "Contents", "MacOS", "Shelf");
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axL6wAAAABJRU5ErkJggg==",
   "base64"
@@ -34,8 +34,8 @@ async function main() {
     throw new Error(`Packaged Electron app missing: ${executablePath}`);
   }
 
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-stability-"));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-stability-files-"));
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-stability-"));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-stability-files-"));
   const pngPath = path.join(workDir, "cover.png");
   const badPngPath = path.join(workDir, "bad.png");
   const pdfPath = path.join(workDir, "cleanup.pdf");
@@ -52,7 +52,7 @@ async function main() {
     args: ["--lang=en-US"],
     env: {
       ...process.env,
-      OPENNOTION_USER_DATA_DIR: userDataDir,
+      SHELF_USER_DATA_DIR: userDataDir,
       ELECTRON_ENABLE_LOGGING: "1",
     },
   });

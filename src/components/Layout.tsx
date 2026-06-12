@@ -44,7 +44,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [isSidebarOpen, isSidebarShellOpen, shouldRenderSidebar]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans">
+    <div className="on-app-shell flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
       {shouldRenderSidebar && (
         <div
           className={`on-sidebar-shell ${isSidebarShellOpen ? "on-sidebar-shell-open" : "on-sidebar-shell-closed"}`}
@@ -71,7 +71,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <PanelLeft className="h-3.5 w-3.5" />
         </button>
       </div>
-      <main className="flex-1 overflow-hidden relative transition-all duration-300 flex flex-col">
+      <main className={`on-main-surface ${isSidebarShellOpen ? "on-main-surface-with-sidebar" : ""} flex-1 overflow-hidden relative transition-all duration-300 flex flex-col bg-background`}>
         {children}
       </main>
     </div>

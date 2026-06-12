@@ -47,7 +47,7 @@ export interface ImportedFile {
   content: string;
 }
 
-interface OpenNotionDesktopBridge {
+interface ShelfDesktopBridge {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
   save(options?: SaveDialogOptions): Promise<string | null>;
@@ -62,13 +62,13 @@ interface OpenNotionDesktopBridge {
 
 declare global {
   interface Window {
-    openNotion?: OpenNotionDesktopBridge;
+    openNotion?: ShelfDesktopBridge;
   }
 }
 
-function bridge(): OpenNotionDesktopBridge {
+function bridge(): ShelfDesktopBridge {
   if (!window.openNotion) {
-    throw new Error("OpenNotion desktop bridge is not available");
+    throw new Error("Shelf desktop bridge is not available");
   }
   return window.openNotion;
 }

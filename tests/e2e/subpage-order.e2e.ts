@@ -58,7 +58,6 @@ test.beforeEach(async ({ page }) => {
       makePage("gamma", "Gamma", "parent", 2),
     ]);
     window.localStorage.setItem("opennotion-current-page-id", "parent");
-    window.localStorage.removeItem("opennotion-workspace-mode");
 
     window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
@@ -85,7 +84,7 @@ test.beforeEach(async ({ page }) => {
         }
         if (cmd === "show_character_palette") return null;
         if (cmd === "search_pages") return [];
-        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "OpenNotion", avatarPath: null };
+        if (cmd === "get_workspace_profile") return { name: "", workspaceName: "Shelf", avatarPath: null };
 
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },

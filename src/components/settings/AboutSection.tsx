@@ -4,9 +4,9 @@ import { CURRENT_APP_VERSION } from '../../lib/betaUpdates';
 import { useT } from '../../lib/i18n';
 import { Copy, ExternalLink } from 'lucide-react';
 
-const REPOSITORY_URL = 'https://github.com/marcoodignoti/OpenNotion';
-const LICENSE_URL = 'https://github.com/marcoodignoti/OpenNotion/blob/main/LICENSE';
-const REPORT_ISSUE_URL = 'https://github.com/marcoodignoti/OpenNotion/issues/new/choose';
+const REPOSITORY_URL = 'https://github.com/marcoodignoti/Shelf';
+const LICENSE_URL = 'https://github.com/marcoodignoti/Shelf/blob/main/LICENSE';
+const REPORT_ISSUE_URL = 'https://github.com/marcoodignoti/Shelf/issues/new/choose';
 const DATABASE_PATH = '~/Library/Application Support/org.opennotion.desktop/opennotion.db';
 
 export function AboutSection() {

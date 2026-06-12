@@ -1,4 +1,17 @@
-import { ArrowUpDown, ChevronDown, Columns3, Copy, ExternalLink, GripVertical, ListFilter, Pencil, Plus, PlusCircle, Star, Table2, Trash2, X } from "lucide-react";
+import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.mjs";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.mjs";
+import Columns3 from "lucide-react/dist/esm/icons/columns-3.mjs";
+import Copy from "lucide-react/dist/esm/icons/copy.mjs";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link.mjs";
+import GripVertical from "lucide-react/dist/esm/icons/grip-vertical.mjs";
+import ListFilter from "lucide-react/dist/esm/icons/list-filter.mjs";
+import Pencil from "lucide-react/dist/esm/icons/pencil.mjs";
+import Plus from "lucide-react/dist/esm/icons/plus.mjs";
+import PlusCircle from "lucide-react/dist/esm/icons/circle-plus.mjs";
+import Star from "lucide-react/dist/esm/icons/star.mjs";
+import Table2 from "lucide-react/dist/esm/icons/table-2.mjs";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
+import X from "lucide-react/dist/esm/icons/x.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDatabaseProperty,

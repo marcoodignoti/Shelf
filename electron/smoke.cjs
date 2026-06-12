@@ -3,12 +3,12 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { OpenNotionBackend } = require("./backend.cjs");
+const { ShelfBackend } = require("./backend.cjs");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-"));
 const updateSigningKey = crypto.generateKeyPairSync("ed25519");
 const updateManifestPublicKey = updateSigningKey.publicKey.export({ format: "pem", type: "spki" });
-const backend = new OpenNotionBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
+const backend = new ShelfBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axL6wAAAABJRU5ErkJggg==",
   "base64"
@@ -44,6 +44,11 @@ function signedUpdateManifest(payload) {
 
 async function run() {
   const createdAt = "2026-06-03T00:00:00.000Z";
+  const initialMigrationPreview = await backend.invoke("preview_studio_page_unification");
+  if (initialMigrationPreview.schema_version !== "2") {
+    throw new Error("new databases should start page-unified");
+  }
+
   const page = await backend.invoke("create_page", {
     id: "page-1",
     title: "Smoke",
@@ -67,7 +72,7 @@ async function run() {
   }
 
   const emptyProfile = await backend.invoke("get_workspace_profile");
-  assert.deepStrictEqual(emptyProfile, { name: "", workspaceName: "OpenNotion", avatarPath: null });
+  assert.deepStrictEqual(emptyProfile, { name: "", workspaceName: "Shelf", avatarPath: null });
 
   await backend.invoke("update_workspace_profile", { name: "Marco", workspaceName: "Studio Marco" });
   const updatedProfile = await backend.invoke("get_workspace_profile");
@@ -109,8 +114,8 @@ async function run() {
   assert.strictEqual(backupJson.profile.workspaceName, "Studio Marco");
 
   // Reset to defaults so the restore path in import_backup is exercised.
-  await backend.invoke("update_workspace_profile", { name: "", workspaceName: "OpenNotion" });
-  assert.strictEqual((await backend.invoke("get_workspace_profile")).workspaceName, "OpenNotion");
+  await backend.invoke("update_workspace_profile", { name: "", workspaceName: "Shelf" });
+  assert.strictEqual((await backend.invoke("get_workspace_profile")).workspaceName, "Shelf");
 
   await backend.invoke("delete_page", { id: "page-1" });
   const imported = await backend.invoke("import_backup", { path: backupPath, importedAt: createdAt });
@@ -155,20 +160,31 @@ async function run() {
   const pdfPath = path.join(tempRoot, "source.pdf");
   fs.writeFileSync(pdfPath, tinyPdfFixture);
   await backend.invoke("import_studio_document", {
-    documentId: "doc-1",
+    documentId: "studio-note-1",
     notePageId: "studio-note-1",
     sourcePath: pdfPath,
     importedAt: createdAt,
   });
+  await backend.invoke("create_studio_project", {
+    id: "project-1",
+    name: "Cases",
+    parentId: null,
+    createdAt,
+  });
+  await backend.invoke("update_studio_document_project", {
+    id: "studio-note-1",
+    projectId: "project-1",
+    updatedAt: createdAt,
+  });
 
-  const primaryLinks = await backend.invoke("list_studio_document_page_links", { documentId: "doc-1" });
+  const primaryLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
   if (primaryLinks.length !== 1 || primaryLinks[0].page_id !== "studio-note-1") {
     throw new Error("studio primary page link failed");
   }
 
   const linked = await backend.invoke("link_studio_document_page", {
     id: "doc-link-1",
-    documentId: "doc-1",
+    documentId: "studio-note-1",
     pageId: "linked-page",
     pdfPage: 3,
     label: "p. 3",
@@ -178,23 +194,78 @@ async function run() {
     throw new Error("link_studio_document_page failed");
   }
 
-  const studioLinks = await backend.invoke("list_studio_document_page_links", { documentId: "doc-1" });
+  const studioLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
   if (studioLinks.length !== 2 || !studioLinks.some((link) => link.page_id === "linked-page" && link.pdf_page === 3)) {
     throw new Error("list_studio_document_page_links failed");
   }
 
   const allStudioLinks = await backend.invoke("list_all_studio_document_page_links");
-  if (allStudioLinks.length !== 2 || !allStudioLinks.some((link) => link.document_id === "doc-1" && link.page_id === "linked-page")) {
+  if (allStudioLinks.length !== 2 || !allStudioLinks.some((link) => link.document_id === "studio-note-1" && link.page_id === "linked-page")) {
     throw new Error("list_all_studio_document_page_links failed");
   }
 
+  const migrationPreview = await backend.invoke("preview_studio_page_unification");
+  if (
+    !migrationPreview.can_migrate ||
+    migrationPreview.project_count !== 1 ||
+    migrationPreview.document_count !== 1 ||
+    migrationPreview.link_count !== 2 ||
+    migrationPreview.linked_regular_page_count !== 2 ||
+    migrationPreview.linked_studio_note_count !== 0 ||
+    migrationPreview.blockers.length !== 0
+  ) {
+    throw new Error("preview_studio_page_unification failed");
+  }
+
+  const migratedPreview = await backend.invoke("migrate_studio_page_unification", { migratedAt: createdAt });
+  if (!migratedPreview.can_migrate || migratedPreview.schema_version !== "2") {
+    throw new Error("migrate_studio_page_unification failed");
+  }
+  const migratedDocuments = await backend.invoke("list_studio_documents");
+  if (migratedDocuments.length !== 1 || migratedDocuments[0].id !== "studio-note-1" || migratedDocuments[0].note_page_id !== "studio-note-1") {
+    throw new Error("migrate_studio_page_unification did not promote primary note id");
+  }
+  const migratedPrimaryPage = await backend.invoke("get_page", { id: "studio-note-1" });
+  if (!migratedPrimaryPage || migratedPrimaryPage.page_kind !== "note" || migratedPrimaryPage.title !== "source" || migratedPrimaryPage.parent_id !== "studio-project:project-1") {
+    throw new Error("migrate_studio_page_unification did not promote primary note page");
+  }
+  const migratedProjectPage = await backend.invoke("get_page", { id: "studio-project:project-1" });
+  if (!migratedProjectPage || migratedProjectPage.title !== "Cases") {
+    throw new Error("migrate_studio_page_unification did not mirror Studio project");
+  }
+  const migratedLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
+  if (migratedLinks.length !== 2 || !migratedLinks.some((link) => link.page_id === "linked-page")) {
+    throw new Error("migrate_studio_page_unification did not rewrite document links");
+  }
+  const reopenedBackend = new ShelfBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
+  try {
+    const reopenedPreview = await reopenedBackend.invoke("preview_studio_page_unification");
+    if (reopenedPreview.schema_version !== "2") {
+      throw new Error("runMigrations downgraded page unification schema");
+    }
+  } finally {
+    reopenedBackend.close();
+  }
+
   await backend.invoke("unlink_studio_document_page", { id: "doc-link-1" });
-  const remainingStudioLinks = await backend.invoke("list_studio_document_page_links", { documentId: "doc-1" });
+  const remainingStudioLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
   if (remainingStudioLinks.some((link) => link.id === "doc-link-1")) {
     throw new Error("unlink_studio_document_page failed");
   }
+  const linkedPageAfterUnlink = await backend.invoke("get_page", { id: "linked-page" });
+  if (!linkedPageAfterUnlink) {
+    throw new Error("unlink_studio_document_page deleted the linked page");
+  }
+  try {
+    await backend.invoke("delete_page", { id: "studio-note-1" });
+    throw new Error("delete_page accepted a Studio primary note");
+  } catch (error) {
+    if (!String(error?.message || error).includes("Studio document")) {
+      throw error;
+    }
+  }
 
-  await backend.invoke("open_external_url", { url: "https://github.com/marcoodignoti/OpenNotion" });
+  await backend.invoke("open_external_url", { url: "https://github.com/marcoodignoti/Shelf" });
   try {
     await backend.invoke("open_external_url", { url: "http://example.com" });
     throw new Error("open_external_url accepted non-HTTPS URL");
@@ -225,12 +296,12 @@ async function run() {
     throw new Error("app asset protocol token did not resolve to the managed file");
   }
 
-  const updateManifestUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json";
+  const updateManifestUrl = "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json";
   const manifestPayload = {
     version: "99.0.0",
     channel: "beta",
     publishedAt: "2026-06-05T00:00:00.000Z",
-    title: "OpenNotion 99.0.0",
+    title: "Shelf 99.0.0",
     summary: "Signed update manifest.",
     changes: ["Signed manifest"],
     downloads: {},
@@ -268,8 +339,8 @@ async function run() {
 
   const updateBytes = Buffer.from("verified update artifact");
   const updateSha256 = crypto.createHash("sha256").update(updateBytes).digest("hex");
-  const updateUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_arm64.dmg";
-  const installerUpdateUrl = "https://github.com/marcoodignoti/OpenNotion/releases/download/v99.0.0/OpenNotion_99.0.0_setup_win-x64.exe";
+  const updateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_arm64.dmg";
+  const installerUpdateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_setup_win-x64.exe";
   const originalFetch = global.fetch;
   let openedUpdatePath = null;
   global.fetch = async () => new Response(updateBytes, {
@@ -341,7 +412,7 @@ async function verifyVersionChangeBackups() {
       throw new Error("app_version was not updated after migration");
     }
     const backupName = fs.readdirSync(backupsDir).find((name) => name.endsWith(".db"));
-    if (!backupName.startsWith("opennotion-v1.0.0-")) {
+    if (!backupName.startsWith("shelf-v1.0.0-")) {
       throw new Error(`backup name does not record the previous version: ${backupName}`);
     }
 

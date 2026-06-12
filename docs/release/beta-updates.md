@@ -1,6 +1,6 @@
 # Beta Updates
 
-OpenNotion uses signed assisted beta updates for testers.
+Shelf uses signed assisted beta updates for testers.
 
 Current macOS builds are ad-hoc signed and Windows builds are unsigned. macOS
 and portable Windows builds check a small GitHub Release manifest, verify its
@@ -16,7 +16,7 @@ installer updates in background and install them on app quit.
    unavailable. Only the repository allowlisted GitHub Release URLs are
    accepted.
 2. If the manifest version is newer than the installed `package.json` version,
-   OpenNotion shows a beta update notice.
+   Shelf shows a beta update notice.
 3. Tester reads the short changelog and downloads the matching build.
    The app rejects unsigned manifests, bad signatures, wrong hosts, and
    artifacts whose SHA-256 does not match the manifest.
@@ -41,12 +41,12 @@ a local secret manager or GitHub Actions secret, never in git.
 After packaging the beta artifacts, generate:
 
 ```sh
-OPENNOTION_UPDATE_PRIVATE_KEY_PATH=.secrets/opennotion-update-private.pem \
-OPENNOTION_UPDATE_VERSION=0.1.1 \
-OPENNOTION_UPDATE_TAG=v0.1.1 \
-OPENNOTION_UPDATE_TITLE="OpenNotion 0.1.1" \
-OPENNOTION_UPDATE_SUMMARY="Studio links, bookmarks, shared search, and beta updates." \
-OPENNOTION_UPDATE_CHANGES="PDFs can link multiple notes;Inline page links show previews;Studio notes appear in Notes search;Slash command search is more accurate;Beta updates now include changelog" \
+SHELF_UPDATE_PRIVATE_KEY_PATH=.secrets/shelf-update-private.pem \
+SHELF_UPDATE_VERSION=0.1.1 \
+SHELF_UPDATE_TAG=v0.1.1 \
+SHELF_UPDATE_TITLE="Shelf 0.1.1" \
+SHELF_UPDATE_SUMMARY="Studio links, bookmarks, shared search, and beta updates." \
+SHELF_UPDATE_CHANGES="PDFs can link multiple notes;Inline page links show previews;Studio notes appear in Notes search;Slash command search is more accurate;Beta updates now include changelog" \
 npm run release:update-manifest
 ```
 
@@ -59,7 +59,7 @@ dist-electron/beta-update.json
 For a full release that must include both macOS and Windows artifacts, add:
 
 ```sh
-OPENNOTION_UPDATE_REQUIRE_ALL_ARTIFACTS=1
+SHELF_UPDATE_REQUIRE_ALL_ARTIFACTS=1
 ```
 
 Without that flag, the manifest includes the artifacts currently present under
@@ -70,9 +70,9 @@ Upload the DMG, ZIP, installer, `latest.yml`, and release-local manifest to the
 versioned GitHub Release:
 
 ```text
-OpenNotion_0.1.4_arm64.dmg
-OpenNotion_0.1.4_win-x64.zip
-OpenNotion_0.1.4_setup_win-x64.exe
+Shelf_0.1.4_arm64.dmg
+Shelf_0.1.4_win-x64.zip
+Shelf_0.1.4_setup_win-x64.exe
 latest.yml
 beta-update.json
 ```
@@ -95,14 +95,14 @@ URL.
 The app checks the signed latest-release URL first:
 
 ```text
-https://github.com/marcoodignoti/OpenNotion/releases/latest/download/beta-update.json
+https://github.com/marcoodignoti/Shelf/releases/latest/download/beta-update.json
 ```
 
 The deterministic beta channel URL remains a fallback for GitHub latest-release
 edge cases:
 
 ```text
-https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.json
+https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json
 ```
 
 ## Manifest Format
@@ -114,7 +114,7 @@ https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.j
     "version": "0.1.1",
     "channel": "beta",
     "publishedAt": "2026-06-04T00:00:00.000Z",
-    "title": "OpenNotion 0.1.1",
+    "title": "Shelf 0.1.1",
     "summary": "Studio links, bookmarks, shared search, and beta updates.",
     "changes": [
       "PDFs can link multiple notes",
@@ -123,17 +123,17 @@ https://github.com/marcoodignoti/OpenNotion/releases/download/beta/beta-update.j
     ],
     "downloads": {
       "macosArm64": {
-        "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_arm64.dmg",
+        "url": "https://github.com/marcoodignoti/Shelf/releases/download/v0.1.1/Shelf_0.1.1_arm64.dmg",
         "label": "macOS Apple Silicon",
         "sha256": "..."
       },
       "windowsX64": {
-        "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_win-x64.zip",
+        "url": "https://github.com/marcoodignoti/Shelf/releases/download/v0.1.1/Shelf_0.1.1_win-x64.zip",
         "label": "Windows x64 portable zip",
         "sha256": "..."
       },
       "windowsInstallerX64": {
-        "url": "https://github.com/marcoodignoti/OpenNotion/releases/download/v0.1.1/OpenNotion_0.1.1_setup_win-x64.exe",
+        "url": "https://github.com/marcoodignoti/Shelf/releases/download/v0.1.1/Shelf_0.1.1_setup_win-x64.exe",
         "label": "Windows x64 installer",
         "sha256": "..."
       }

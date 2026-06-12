@@ -10,6 +10,7 @@ import { HOME_PAGE_ID } from "./lib/navigation";
 import { resolveLocale, useT } from "./lib/i18n";
 import { HomeView } from "./components/HomeView";
 import type { DesktopUpdateInfo } from "./lib/desktop";
+import { isStudioPageUnified } from "./lib/studioDocuments";
 
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
 const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
@@ -33,7 +34,6 @@ export default function App() {
   const addPage = useAppStore((state) => state.addPage);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
   const openCommandPalette = useAppStore((state) => state.openCommandPalette);
-  const workspaceMode = useAppStore((state) => state.workspaceMode);
   const studioDocuments = useAppStore((state) => state.studioDocuments);
   const currentStudioDocumentId = useAppStore((state) => state.currentStudioDocumentId);
   const updateStudioViewerAction = useAppStore((state) => state.updateStudioViewerAction);
@@ -125,11 +125,20 @@ export default function App() {
     () => studioDocuments.find((document) => document.id === currentStudioDocumentId),
     [currentStudioDocumentId, studioDocuments]
   );
+  const isUnifiedStudio = useMemo(
+    () => isStudioPageUnified(studioDocuments),
+    [studioDocuments]
+  );
+  const currentPageStudioDocument = useMemo(
+    () => studioDocuments.find((document) => document.id === currentPageId && document.note_page_id === currentPageId) ?? null,
+    [currentPageId, studioDocuments]
+  );
+  const activeStudioDocument = currentPageStudioDocument ?? (!isUnifiedStudio ? currentStudioDocument : null);
   const currentStudioNote = useMemo(
-    () => currentStudioDocument
-      ? pages.find((page) => page.id === currentStudioDocument.note_page_id) ?? null
+    () => activeStudioDocument
+      ? pages.find((page) => page.id === activeStudioDocument.note_page_id) ?? null
       : null,
-    [currentStudioDocument, pages]
+    [activeStudioDocument, pages]
   );
   const handleUpdateStudioViewer = useCallback((id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }) => {
     void updateStudioViewerAction(id, updates);
@@ -145,12 +154,11 @@ export default function App() {
     <Layout>
       {isLoading ? (
         <WorkspaceLoadingFallback />
-      ) : workspaceMode === 'studio' ? (
-        currentStudioDocument ? (
-          <ErrorBoundary key={currentStudioDocument.id}>
+      ) : activeStudioDocument ? (
+          <ErrorBoundary key={activeStudioDocument.id}>
             <Suspense fallback={<WorkspaceLoadingFallback />}>
               <StudioWorkspace
-                document={currentStudioDocument}
+                document={activeStudioDocument}
                 note={currentStudioNote}
                 pages={pages}
                 onSelectPage={setCurrentPageId}
@@ -160,11 +168,6 @@ export default function App() {
               />
             </Suspense>
           </ErrorBoundary>
-        ) : (
-          <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
-            Import a PDF from the Studio sidebar to start.
-          </div>
-        )
       ) : currentPageId === HOME_PAGE_ID ? (
         <HomeView
           pages={pages}

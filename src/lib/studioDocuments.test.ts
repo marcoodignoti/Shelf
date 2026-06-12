@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allStudioDocuments,
   groupStudioDocumentsByProject,
+  isStudioPageUnified,
   normalizePanelLayout,
   ProjectableStudioDocument,
   recentStudioDocuments,
@@ -77,6 +78,13 @@ describe("studio document helpers", () => {
     const newest = doc("newest", "2026-05-27T10:00:00.000Z");
 
     expect(remainingStudioDocuments([old, newest, newer], [newest, newer]).map((item) => item.id)).toEqual(["old"]);
+  });
+
+  it("detects page-unified Studio documents", () => {
+    expect(isStudioPageUnified([doc("a", "2026-05-27T08:00:00.000Z")])).toBe(false);
+    const unified = doc("unified", "2026-05-27T08:00:00.000Z");
+    expect(isStudioPageUnified([{ ...unified, note_page_id: unified.id }])).toBe(true);
+    expect(isStudioPageUnified([])).toBe(true);
   });
 
   it("formats document metadata from filename and last opened date (en)", () => {
