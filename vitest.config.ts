@@ -8,7 +8,7 @@ export default defineConfig({
     environment: "node",
     exclude: [...configDefaults.exclude, "dist-electron/**", ".secrets/**"],
     include: ["src/**/*.test.{ts,tsx}"],
-    pool: "vmForks",
+    pool: process.platform === "win32" ? "threads" : "vmForks",
     deps: {
       optimizer: {
         client: { enabled: false },
