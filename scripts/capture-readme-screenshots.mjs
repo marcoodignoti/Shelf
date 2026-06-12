@@ -93,13 +93,13 @@ const PAGES = [
   makePage({
     id: "p-reading", title: "Reading Notes", icon: "📖",
     blocks: [
-      heading("Feynman — Lectures, Vol. III"),
-      paragraph("The two-slit experiment chapter is the cleanest intro to amplitudes I have found. Notes below follow his numbering."),
+      heading("Quantum Notes — Lecture Series"),
+      paragraph("The two-slit experiment chapter is the cleanest intro to amplitudes I have found. Notes below follow the lecture numbering."),
       bullet("Probability amplitudes add, probabilities do not"),
       bullet("Indistinguishability is what creates interference"),
     ],
     updated_at: iso(45), sort_order: 2,
-    search_text: "feynman lectures amplitudes interference two-slit",
+    search_text: "lecture notes amplitudes interference two-slit",
   }),
   makePage({
     id: "p-ideas", title: "Ideas Inbox", icon: "💡",
@@ -114,7 +114,7 @@ const PAGES = [
   makePage({
     id: "p-studio-note", title: "Eigenvalues — Lecture 12", icon: "🎯", page_kind: "studio_note",
     blocks: [
-      paragraph("Notes while reading chapter 6. Strang keeps tying determinants back to volume — useful picture for the proof sketch below."),
+      paragraph("Notes while reading chapter 6. The lecture keeps tying determinants back to volume — useful picture for the proof sketch below."),
       heading("Key results"),
       formula("A\\vec{x} = \\lambda \\vec{x}"),
       bullet("Trace equals the sum of eigenvalues"),
@@ -123,15 +123,15 @@ const PAGES = [
       check("Check the symmetric case: real eigenvalues, orthogonal eigenvectors", false),
     ],
     updated_at: iso(8), sort_order: 4,
-    search_text: "eigenvalues eigenvectors trace determinant strang",
+    search_text: "eigenvalues eigenvectors trace determinant lecture notes",
   }),
 ];
 
 const STUDIO_DOCUMENT = {
-  id: "doc-strang",
-  title: "Linear Algebra — Strang",
-  original_filename: "strang-linear-algebra.pdf",
-  stored_file_path: "/showcase/strang-linear-algebra.pdf",
+  id: "doc-linear-algebra",
+  title: "Linear Algebra — Lecture Notes",
+  original_filename: "linear-algebra-lecture-notes.pdf",
+  stored_file_path: "/showcase/linear-algebra-lecture-notes.pdf",
   note_page_id: "p-studio-note",
   project_id: null,
   last_opened_at: iso(8),
@@ -263,7 +263,7 @@ async function newAppPage(context, { theme = "light", currentPageId = "p-quantum
   }, { pages: PAGES, studioDocument: STUDIO_DOCUMENT, theme, currentPageId, workspaceMode });
 
   const pdf = createTextPdf(6);
-  await page.route("**/strang-linear-algebra.pdf*", (route) =>
+  await page.route("**/linear-algebra-lecture-notes.pdf*", (route) =>
     route.fulfill({ body: pdf, contentType: "application/pdf" })
   );
   await page.goto(BASE_URL + "/", { waitUntil: "domcontentloaded" });

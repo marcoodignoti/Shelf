@@ -45,6 +45,8 @@ account.
   side, with viewer position, zoom, and layout remembered per document.
 - **Your data stays portable**: export any page or page tree as Markdown or
   JSON, and the database is backed up automatically before every app update.
+- **Private beta updates**: signed manifests and SHA-256 checks keep assisted
+  update downloads tied to official Shelf releases.
 
 ## Product Tour
 
@@ -77,6 +79,8 @@ Recents and favorites on the Home dashboard; pages, subpages, Studio projects
 and folders in the sidebar, all reorderable by drag and drop.
 
 ![Shelf home dashboard](docs/assets/shelf-home.png)
+
+![Shelf page tree with nested pages](docs/assets/shelf-page-subpages.png)
 
 ### Dark mode included
 
@@ -140,6 +144,9 @@ Default macOS data path:
 ~/Library/Application Support/org.opennotion.desktop/
 ```
 
+Shelf keeps this legacy beta folder intentionally so existing local workspaces
+keep opening after the product rename.
+
 Important local files:
 
 ```text
@@ -168,6 +175,12 @@ npm run perf           # performance suite (see perf/README.md)
 
 Release notes live in [`docs/release/notes`](docs/release/notes), performance
 baselines in [`docs/perf`](docs/perf).
+
+Regenerate README screenshots from a built preview:
+
+```sh
+npm run screenshots:readme
+```
 
 ## License
 
