@@ -1,7 +1,7 @@
 {
   "name": "shelf",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Local-first workspace for notes, documents, and study.",
   "author": "Marco Dignoti",
   "license": "MIT",
