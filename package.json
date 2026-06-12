@@ -22,6 +22,7 @@
     "test": "cross-env UV_THREADPOOL_SIZE=64 vitest run",
     "e2e:install": "playwright install chromium",
     "e2e": "npm run build && playwright test",
+    "screenshots:readme": "npm run build && node scripts/capture-readme-screenshots.mjs",
     "perf": "npm run perf:frontend",
     "perf:frontend": "playwright test --config playwright.perf.config.ts --reporter=list",
     "perf:native": "bash perf/profile-macos.sh",
