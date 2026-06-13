@@ -80,8 +80,6 @@ and folders in the sidebar, all reorderable by drag and drop.
 
 ![Shelf home dashboard](docs/assets/shelf-home.png)
 
-![Shelf page tree with nested pages](docs/assets/shelf-page-subpages.png)
-
 ### Dark mode included
 
 The whole workspace — editor, Studio, search — follows your system theme or
