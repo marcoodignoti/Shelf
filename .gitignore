@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 .npm-cache
 .opennotion-dev/
+.shelf-dev/
 dist
 dist-electron
 dist-ssr

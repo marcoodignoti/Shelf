@@ -143,7 +143,8 @@
   }
 
   .dark .on-sidebar-shell {
-    background: hsl(var(--background) / 0.36);
+    background: hsl(var(--background) / 0.94);
+    box-shadow: inset -1px 0 0 hsl(var(--border) / 0.26);
   }
 
   .dark .on-icon-button {
@@ -337,10 +338,10 @@
   .dark .on-sidebar-settings-fade {
     background: linear-gradient(
       to top,
-      hsl(var(--secondary) / 0.48) 0%,
-      hsl(var(--secondary) / 0.32) 30%,
-      hsl(var(--secondary) / 0.14) 62%,
-      hsl(var(--secondary) / 0.05) 82%,
+      hsl(var(--background) / 0.96) 0%,
+      hsl(var(--background) / 0.74) 30%,
+      hsl(var(--background) / 0.34) 62%,
+      hsl(var(--background) / 0.12) 82%,
       transparent 100%
     );
   }
@@ -375,7 +376,8 @@
   }
 
   .dark .on-sidebar-settings-button {
-    background: hsl(var(--secondary) / 0.72);
+    background: hsl(var(--secondary) / 0.92);
+    color: hsl(var(--foreground) / 0.78);
     box-shadow: 0 8px 22px hsl(0 0% 0% / 0.18);
   }
 

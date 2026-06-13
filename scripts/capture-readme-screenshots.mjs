@@ -128,7 +128,7 @@ const PAGES = [
 ];
 
 const STUDIO_DOCUMENT = {
-  id: "doc-linear-algebra",
+  id: "p-studio-note",
   title: "Linear Algebra — Lecture Notes",
   original_filename: "linear-algebra-lecture-notes.pdf",
   stored_file_path: "/showcase/linear-algebra-lecture-notes.pdf",
