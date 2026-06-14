@@ -3,6 +3,10 @@ import type { TouchEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
+import jbig2WasmUrl from "pdfjs-dist/wasm/jbig2.wasm?url";
+import jbig2FallbackUrl from "pdfjs-dist/wasm/jbig2_nowasm_fallback.js?url";
+import openJpegWasmUrl from "pdfjs-dist/wasm/openjpeg.wasm?url";
+import qcmsWasmUrl from "pdfjs-dist/wasm/qcms_bg.wasm?url";
 import { createPage, Page } from "../lib/db";
 import { useT } from "../lib/i18n";
 import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
@@ -28,6 +32,32 @@ import { FloatingPopover } from "./FloatingPopover";
 import { Editor } from "./PageEditor";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+const PDFJS_BINARY_ASSETS: Record<string, string> = {
+  "jbig2.wasm": jbig2WasmUrl,
+  "jbig2_nowasm_fallback.js": jbig2FallbackUrl,
+  "openjpeg.wasm": openJpegWasmUrl,
+  "qcms_bg.wasm": qcmsWasmUrl,
+};
+
+class StudioPdfBinaryDataFactory {
+  async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
+    if (kind !== "wasmUrl") {
+      throw new Error(`Unsupported PDF binary asset kind: ${kind}`);
+    }
+
+    const assetUrl = PDFJS_BINARY_ASSETS[filename];
+    if (!assetUrl) {
+      throw new Error(`Unsupported PDF wasm asset: ${filename}`);
+    }
+
+    const response = await fetch(assetUrl);
+    if (!response.ok) {
+      throw new Error(`Unable to load PDF wasm asset: ${filename}`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+}
 
 type StudioViewMode = "split" | "pdf" | "note";
 type StudioPdfDisplayMode = "continuous" | "single" | "two-page";
@@ -1055,7 +1085,10 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     setPageCount(null);
 
     const loadTask = (async () => {
-      loadingTask = pdfjsLib.getDocument(src);
+      loadingTask = pdfjsLib.getDocument({
+        url: src,
+        BinaryDataFactory: StudioPdfBinaryDataFactory,
+      });
       const pdf = await loadingTask.promise;
       pdfDocument = pdf;
       if (!isStudioPdfPageCountAllowed(pdf.numPages)) {

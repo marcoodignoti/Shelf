@@ -2,7 +2,12 @@ export const GlobalWorkerOptions: {
   workerSrc: string;
 };
 
-export function getDocument(src: string): PDFDocumentLoadingTask;
+export function getDocument(src: string | {
+  url: string;
+  BinaryDataFactory?: new (options: unknown) => {
+    fetch(options: { kind: string; filename: string }): Promise<Uint8Array>;
+  };
+}): PDFDocumentLoadingTask;
 
 export interface PDFDocumentLoadingTask {
   promise: Promise<PDFDocumentProxy>;
