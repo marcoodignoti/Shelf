@@ -336,7 +336,8 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
   await page.setViewportSize({ width: 900, height: 280 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Scrollable Menu Smoke");
@@ -368,7 +369,8 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
 test("keeps custom icon input focused and selected when opening the native picker", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.getByRole("button", { name: "Add icon" }).click();
@@ -391,7 +393,8 @@ test("keeps custom icon input focused and selected when opening the native picke
 test("supports markdown shortcuts in the page editor", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Markdown Smoke");
@@ -451,7 +454,8 @@ test("keeps note scrolling stable with hover heading rail and hidden native scro
   await page.setViewportSize({ width: 1400, height: 820 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Heading Rail Smoke");
@@ -522,7 +526,8 @@ test("keeps note scrolling stable with hover heading rail and hidden native scro
 test("supports multiline page titles with alt enter and enter moves to body", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   const titleInput = page.locator("textarea[placeholder='Untitled']");
   await expect(titleInput).toBeVisible();
 
@@ -763,7 +768,8 @@ test("refreshes inline page link previews when linked page metadata changes", as
 test("selects all editor blocks with command a", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Select All Smoke");
@@ -790,7 +796,8 @@ test("selects all editor blocks with command a", async ({ page }) => {
 test("renders inline math typed with dollar delimiters", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Math Smoke");
@@ -833,7 +840,8 @@ test("shows a clear media import error notice", async ({ page }) => {
 test("centers a block that contains inline math from the formatting toolbar", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Inline Math Alignment");
@@ -856,7 +864,8 @@ test("centers a block that contains inline math from the formatting toolbar", as
 test("turns bracketed latex lines into editable formula blocks", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Formula Block Smoke");
@@ -880,7 +889,8 @@ test("turns bracketed latex lines into editable formula blocks", async ({ page }
 test("turns pasted display math fences into one formula block", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Display Math Paste Smoke");
@@ -909,7 +919,8 @@ test("turns pasted display math fences into one formula block", async ({ page })
 test("turns one-line display math paste into a formula block", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("One Line Display Math Smoke");
@@ -926,7 +937,8 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
 test("preserves ChatGPT-style markdown while normalizing pasted formulas", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("ChatGPT Paste Smoke");
@@ -984,7 +996,8 @@ test("structures long plain-text lesson paste into editor blocks", async ({ page
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Loading workspace...")).toBeHidden();
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Lesson Paste Smoke");
@@ -1029,7 +1042,8 @@ test("structures long plain-text lesson paste into editor blocks", async ({ page
 test("renders compact ChatGPT physics formulas pasted from display math fences", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Physics Formula Paste Smoke");
@@ -1200,7 +1214,8 @@ test("repairs pre-existing display math fences attached to formula lines", async
 test("can convert a selected paragraph into a formula block from the block type menu", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Formula Menu Smoke");
@@ -1221,7 +1236,8 @@ test("can convert a selected paragraph into a formula block from the block type 
 test("keeps scroll position when converting a block into a formula", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
 
   await page.locator("textarea[placeholder='Untitled']").fill("Formula Scroll Smoke");

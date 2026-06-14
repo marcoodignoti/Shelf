@@ -103,7 +103,8 @@ async function main() {
 
   let first = await launchApp(userDataDir);
   try {
-    await first.window.getByText("Create first page").click();
+    await first.window.getByText("New page").click();
+    await first.window.getByText("Blank page").click();
     await first.window.locator("textarea[placeholder='Untitled']").fill(pageTitle);
     await first.window.locator('[contenteditable="true"]').first().click();
     await first.window.keyboard.type(pageBody);

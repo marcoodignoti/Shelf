@@ -108,7 +108,7 @@ test("startup to first interactive render is within budget", async ({
   await installDesktopMock(page);
   const start = Date.now();
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByText("Create first page").waitFor({ state: "visible" });
+  await page.getByText("New page").waitFor({ state: "visible" });
   const elapsed = Date.now() - start;
   console.log(`PERF startup: ${elapsed} ms`);
   expect(elapsed).toBeLessThanOrEqual(STARTUP_BUDGET_MS);
@@ -120,7 +120,8 @@ test("editing churn does not leak JS heap", async ({ page }) => {
   await client.send("Performance.enable");
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByText("Create first page").click();
+  await page.getByText("New page").click();
+  await page.getByText("Blank page").click();
   const titleInput = page.locator("textarea[placeholder='Untitled']");
   await expect(titleInput).toBeVisible();
   await titleInput.fill("Heap churn");

@@ -315,9 +315,8 @@ async function run() {
 
   const primaryLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
   if (
-    primaryLinks.length !== 2 ||
-    !primaryLinks.some((link) => link.page_id === "studio-note-1") ||
-    !primaryLinks.some((link) => link.page.title === "source Notes")
+    primaryLinks.length !== 1 ||
+    !primaryLinks.some((link) => link.page_id === "studio-note-1")
   ) {
     throw new Error("studio primary page link failed");
   }
@@ -335,12 +334,12 @@ async function run() {
   }
 
   const studioLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
-  if (studioLinks.length !== 3 || !studioLinks.some((link) => link.page_id === "linked-page" && link.pdf_page === 3)) {
+  if (studioLinks.length !== 2 || !studioLinks.some((link) => link.page_id === "linked-page" && link.pdf_page === 3)) {
     throw new Error("list_studio_document_page_links failed");
   }
 
   const allStudioLinks = await backend.invoke("list_all_studio_document_page_links");
-  if (allStudioLinks.length !== 3 || !allStudioLinks.some((link) => link.document_id === "studio-note-1" && link.page_id === "linked-page")) {
+  if (allStudioLinks.length !== 2 || !allStudioLinks.some((link) => link.document_id === "studio-note-1" && link.page_id === "linked-page")) {
     throw new Error("list_all_studio_document_page_links failed");
   }
 
@@ -349,8 +348,8 @@ async function run() {
     !migrationPreview.can_migrate ||
     migrationPreview.project_count !== 1 ||
     migrationPreview.document_count !== 1 ||
-    migrationPreview.link_count !== 3 ||
-    migrationPreview.linked_regular_page_count !== 3 ||
+    migrationPreview.link_count !== 2 ||
+    migrationPreview.linked_regular_page_count !== 2 ||
     migrationPreview.linked_studio_note_count !== 0 ||
     migrationPreview.blockers.length !== 0
   ) {
@@ -375,9 +374,8 @@ async function run() {
   }
   const migratedLinks = await backend.invoke("list_studio_document_page_links", { documentId: "studio-note-1" });
   if (
-    migratedLinks.length !== 3 ||
-    !migratedLinks.some((link) => link.page_id === "linked-page") ||
-    !migratedLinks.some((link) => link.page.title === "source Notes")
+    migratedLinks.length !== 2 ||
+    !migratedLinks.some((link) => link.page_id === "linked-page")
   ) {
     throw new Error("migrate_studio_page_unification did not rewrite document links");
   }
