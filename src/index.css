@@ -314,6 +314,30 @@
     color: hsl(var(--muted-foreground));
   }
 
+  .on-sidebar-resize-handle {
+    position: absolute;
+    inset-block: 0;
+    right: -0.5rem;
+    z-index: 30;
+    width: 0.5rem;
+    cursor: col-resize;
+    background: transparent;
+  }
+
+  .on-sidebar-resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    width: 1px;
+    background: transparent;
+    transition: background-color 120ms ease;
+  }
+
+  .on-sidebar-resize-handle:hover::after {
+    background: hsl(var(--border) / 0.72);
+  }
+
   .on-sidebar-settings-fade {
     position: absolute;
     inset-inline: 0;
@@ -346,23 +370,85 @@
     );
   }
 
-  .on-sidebar-settings-button {
-    position: absolute;
-    left: 1.1rem;
-    bottom: 1.05rem;
-    z-index: 45;
+  .on-sidebar-section {
+    margin-top: 1.35rem;
+  }
+
+  .on-sidebar-section .on-section-label {
+    padding: 0 0.45rem 0.2rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.88rem;
+    font-weight: 560;
+    color: hsl(var(--muted-foreground) / 0.82);
+  }
+
+  .on-sidebar-section:first-child {
+    margin-top: 0.75rem;
+  }
+
+  .on-sidebar-empty {
+    padding: 0.45rem 0.45rem 0.35rem;
+    font-size: 0.82rem;
+    color: hsl(var(--muted-foreground) / 0.62);
+  }
+
+  .on-sidebar-page-row .on-sidebar-row-disclosure {
     display: inline-flex;
-    height: 2.3rem;
-    width: 2.3rem;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease;
+  }
+
+  .on-sidebar-page-row:hover .on-sidebar-row-disclosure,
+  .on-sidebar-page-row:focus-within .on-sidebar-row-disclosure {
+    opacity: 1;
+  }
+
+  .on-sidebar-row-disclosure:hover {
+    color: hsl(var(--foreground));
+  }
+
+  .on-sidebar-pin-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    transition: color 120ms ease;
+  }
+
+  .on-sidebar-pin-button:hover {
+    color: hsl(var(--foreground));
+  }
+
+  .on-sidebar-footer {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.25rem 0.2rem;
+  }
+
+  .on-sidebar-settings-button {
+    position: static;
+    z-index: 45;
+    display: inline-flex;
+    min-height: 2.35rem;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    border-radius: 0.7rem;
     border: 0;
-    background: hsl(var(--background) / 0.62);
+    padding: 0 0.45rem;
+    background: transparent;
     color: hsl(var(--muted-foreground));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    box-shadow: 0 6px 18px hsl(222 28% 12% / 0.07);
+    box-shadow: none;
+    font-size: 0.86rem;
+    font-weight: 540;
     transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
   }
 
@@ -376,13 +462,15 @@
   }
 
   .dark .on-sidebar-settings-button {
-    background: hsl(var(--secondary) / 0.92);
+    background: transparent;
     color: hsl(var(--foreground) / 0.78);
-    box-shadow: 0 8px 22px hsl(0 0% 0% / 0.18);
+    box-shadow: none;
   }
 
   .on-shell-row {
-    @apply flex min-h-9 w-full items-center rounded-2xl px-2.5 py-1 text-[13.5px] text-foreground/82 transition-colors hover:bg-accent/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-secondary;
+    @apply flex min-h-9 w-full items-center rounded-xl py-1 text-[13.5px] text-foreground/82 transition-colors hover:bg-accent/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-secondary;
+    padding-left: 0.45rem;
+    padding-right: 0.45rem;
   }
 
   .on-page-breadcrumb-sticky {
@@ -681,8 +769,8 @@
   }
 
   .on-sidebar-linked-pdf-badge {
-    @apply inline-flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
-    background: hsl(var(--secondary) / 0.64);
+    @apply inline-flex h-5 shrink-0 items-center gap-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+    background: transparent;
   }
 
   .on-studio-linked-pages-actions {

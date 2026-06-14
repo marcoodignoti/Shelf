@@ -8,7 +8,8 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.mjs';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.mjs';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
-import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.mjs';
+import FilePenLine from 'lucide-react/dist/esm/icons/file-pen-line.mjs';
+import FileUp from 'lucide-react/dist/esm/icons/file-up.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
 import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.mjs';
@@ -30,6 +31,7 @@ import { dropPositionFromOffset, reorderedSiblingIds, reorderedWithMovedPageId }
 import type { DropPosition } from '../lib/pageOrder';
 import { buildPageStudioContexts } from '../lib/studioPageContexts';
 import type { PageStudioContext } from '../lib/studioPageContexts';
+import { useT } from '../lib/i18n';
 
 type PendingDelete = {
   page: Page;
@@ -119,6 +121,7 @@ function PageItem({
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void
 }) {
   const { currentPageId, setCurrentPageId, setCurrentStudioDocumentId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction } = useAppStore();
+  const t = useT();
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState('');
@@ -135,8 +138,8 @@ function PageItem({
   const studioContexts = studioContextsByPageId.get(page.id) ?? [];
   const primaryStudioContext = studioContexts[0] ?? null;
   const studioBadgeTitle = studioContexts.length === 1
-    ? `Open linked PDF: ${primaryStudioContext?.document.title ?? 'Untitled'}`
-    : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || 'Untitled').join(', ')}`;
+    ? `Open linked PDF: ${primaryStudioContext?.document.title ?? t("sidebar.untitled")}`
+    : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || t("sidebar.untitled")).join(', ')}`;
   const moveTargets = moveTargetPages(allPages, page.id).filter(target =>
     (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
   );
@@ -340,24 +343,18 @@ function PageItem({
     <div>
       <div
         data-page-id={page.id}
-        className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
-        style={{ paddingLeft: `${(depth * 12) + 12}px`, paddingRight: '8px' }}
+        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
+        style={{ paddingLeft: `${(depth * 12) + 6}px`, paddingRight: '8px' }}
         onClick={() => setCurrentPageId(page.id)}
         onDoubleClick={startRename}
         onContextMenu={handleContextMenu}
         onPointerDown={(event) => onPointerDownPage(event, page)}
       >
-        <div className="flex items-center truncate">
-          <button
-            className={`on-icon-button mr-1 h-6 w-6 rounded-md ${hasChildren ? '' : 'invisible'}`}
-            onClick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
-          >
-            {isExpanded ? <ChevronDown className="w-[14px] h-[14px] opacity-40" /> : <ChevronRight className="w-[14px] h-[14px] opacity-40" />}
-          </button>
-          {page.icon ? (
-            <span className="w-[18px] h-[18px] mr-1.5 flex items-center justify-center text-[13px]">{page.icon}</span>
-          ) : (
-            <FileText className="w-4 h-4 mr-2 opacity-50 flex-shrink-0" />
+        <div className="flex min-w-0 flex-1 items-center truncate">
+          {page.icon && (
+            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13px]">
+              {page.icon}
+            </span>
           )}
           {isRenaming ? (
             <input
@@ -380,10 +377,19 @@ function PageItem({
               }}
             />
           ) : (
-            <span className="truncate">{page.title || 'Untitled'}</span>
+            <span className="truncate">{page.title || t("sidebar.untitled")}</span>
+          )}
+          {hasChildren && (
+            <button
+              className={`on-sidebar-row-disclosure ml-1 h-6 w-6 flex-shrink-0 ${isRenaming ? 'hidden' : ''}`}
+              onClick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
+              aria-label={isExpanded ? "Collapse page" : "Expand page"}
+            >
+              {isExpanded ? <ChevronDown className="w-[14px] h-[14px] opacity-40" /> : <ChevronRight className="w-[14px] h-[14px] opacity-40" />}
+            </button>
           )}
         </div>
-        <div className={`flex items-center gap-1 transition-opacity flex-shrink-0 ${isRenaming ? 'hidden' : ''}`}>
+        <div className={`flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${isRenaming ? 'hidden' : ''}`}>
           {primaryStudioContext && (
             <button
               type="button"
@@ -397,8 +403,9 @@ function PageItem({
             </button>
           )}
           <button
-            className="on-icon-button mr-0.5 h-6 w-6 rounded-md opacity-0 group-hover:opacity-100"
-            title={page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
+            className="on-sidebar-pin-button mr-0.5 h-6 w-6"
+            title={page.is_favorite === 1 ? t("sidebar.removeFromFavorites") : t("sidebar.addToFavorites")}
+            aria-label={page.is_favorite === 1 ? t("sidebar.removeFromFavorites") : t("sidebar.addToFavorites")}
             onClick={(event) => void handleToggleFavorite(event)}
           >
             <Pin
@@ -418,7 +425,7 @@ function PageItem({
           <div className="on-popover-search">
             <input
               className="w-full rounded-full bg-background/60 px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
-              placeholder="Move to..."
+              placeholder={t("sidebar.moveTo")}
               value={moveQuery}
               onChange={(event) => setMoveQuery(event.target.value)}
               autoFocus
@@ -429,7 +436,7 @@ function PageItem({
               className="on-menu-item justify-between"
               onClick={() => void handleMovePage(null)}
             >
-              <span>Root</span>
+              <span>{t("sidebar.moveRoot")}</span>
               {page.parent_id === null && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
             </button>
             {moveTargets.map(target => (
@@ -438,12 +445,12 @@ function PageItem({
                 className="on-menu-item justify-between"
                 onClick={() => void handleMovePage(target.id)}
               >
-                <span className="truncate">{target.title || 'Untitled'}</span>
+                <span className="truncate">{target.title || t("sidebar.untitled")}</span>
                 {page.parent_id === target.id && <Check className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
               </button>
             ))}
             {moveTargets.length === 0 && moveQuery.trim() && (
-              <div className="px-2 py-2 text-xs text-muted-foreground">No pages found.</div>
+              <div className="px-2 py-2 text-xs text-muted-foreground">{t("sidebar.noPagesFound")}</div>
             )}
           </div>
         </div>,
@@ -464,14 +471,14 @@ function PageItem({
             }}
           >
             <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            Rename
+            {t("sidebar.contextRename")}
           </button>
           <button
             className="on-menu-item"
             onClick={(event) => void handleDuplicatePage(event)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-            Duplicate
+            {t("sidebar.contextDuplicate")}
           </button>
           <div className="on-menu-separator" />
           <button
@@ -479,14 +486,14 @@ function PageItem({
             onClick={(event) => void handleToggleFavorite(event)}
           >
             <Pin className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? 'fill-current' : ''}`} />
-            {page.is_favorite === 1 ? 'Remove from Favorites' : 'Add to Favorites'}
+            {page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
           </button>
           <button
             className="on-menu-item"
             onClick={(event) => void handleToggleTemplate(event)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-            {page.is_template === 1 ? 'Remove from Templates' : 'Use as Template'}
+            {page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
           </button>
           <button
             className="on-menu-item"
@@ -496,7 +503,7 @@ function PageItem({
             }}
           >
             <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-            New subpage
+            {t("sidebar.contextNewSubpage")}
           </button>
           <button
             className="on-menu-item"
@@ -506,7 +513,7 @@ function PageItem({
             }}
           >
             <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
-            Move
+            {t("sidebar.contextMove")}
           </button>
           <div className="on-menu-separator" />
           <button
@@ -517,7 +524,7 @@ function PageItem({
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
+            {t("sidebar.contextDelete")}
           </button>
         </div>,
         document.body
@@ -613,6 +620,7 @@ function StudioNotesTree({
   onSelectPage: (id: string) => void;
   onSelectDocument: (id: string) => void;
 }) {
+  const t = useT();
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
   const knownDocumentIdsRef = useRef<Set<string>>(new Set());
 
@@ -657,7 +665,7 @@ function StudioNotesTree({
       data-studio-note-id={entry.page.id}
       data-studio-note-document-id={document.id}
       className={`group on-studio-note-tree-row ${currentPageId === entry.page.id ? 'on-shell-row-active' : ''}`}
-      style={{ paddingLeft: 18 + depth * 18 }}
+      style={{ paddingLeft: 12 + depth * 18 }}
       onClick={() => {
         onSelectDocument(document.id);
         onSelectPage(entry.page.id);
@@ -665,15 +673,13 @@ function StudioNotesTree({
       title="Open Studio note in Notes"
     >
       <div className="flex min-w-0 items-center gap-2">
-        {entry.page.icon ? (
+        {entry.page.icon && (
           <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{entry.page.icon}</span>
-        ) : (
-          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         )}
-        <span className="truncate">{entry.page.title || 'Untitled'}</span>
+        <span className="truncate">{entry.page.title || t("sidebar.untitled")}</span>
       </div>
       {entry.link?.pdf_page ? (
-        <span className="on-studio-note-page-badge">p. {entry.link.pdf_page}</span>
+        <span className="on-studio-note-page-badge opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">p. {entry.link.pdf_page}</span>
       ) : null}
     </button>
   );
@@ -686,16 +692,15 @@ function StudioNotesTree({
       <div key={`studio-note-doc-${document.id}`} className="on-studio-note-document-node" data-studio-note-document-id={document.id}>
         <button
           type="button"
-          className={`on-studio-note-document-row ${active ? 'on-shell-row-active' : ''}`}
-          style={{ paddingLeft: 10 + depth * 18 }}
+          className={`group on-studio-note-document-row ${active ? 'on-shell-row-active' : ''}`}
+          style={{ paddingLeft: 6 + depth * 18 }}
           aria-expanded={isExpanded}
           onClick={() => toggleDocument(document.id)}
           title={document.original_filename}
         >
           {isExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
-          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-left">{document.title}</span>
-          <span className="on-studio-note-count">{document.noteEntries.length}</span>
+          <span className="on-studio-note-count opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{document.noteEntries.length}</span>
         </button>
         {isExpanded && document.noteEntries.map((entry) => renderNoteRow(entry, document, depth + 1))}
       </div>
@@ -706,6 +711,7 @@ function StudioNotesTree({
 }
 
 export function Sidebar() {
+  const t = useT();
   const {
     pages,
     fetchPages,
@@ -714,7 +720,6 @@ export function Sidebar() {
     removePage,
     movePageAction,
     reorderPagesAction,
-    toggleFavoriteAction,
     currentPageId,
     setCurrentPageId,
     isLoading,
@@ -765,7 +770,8 @@ export function Sidebar() {
   );
   const ungroupedStudioNotes = studioNotePages.filter((page) => !groupedStudioNoteIds.has(page.id));
   const sortedPages = sortPages(regularNotePages);
-  const rootPages = sortedPages.filter(p => p.parent_id === null);
+  const unpinnedPages = sortedPages.filter(p => p.is_favorite !== 1);
+  const rootPages = unpinnedPages.filter(p => p.parent_id === null);
   const templatePages = sortedPages.filter(p => p.is_template === 1);
   const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
   const pendingDeleteStudioDocument = pendingDelete
@@ -1063,10 +1069,11 @@ export function Sidebar() {
     event.stopPropagation();
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-      setSidebarWidth(moveEvent.clientX - sidebarLeft);
+      setSidebarWidth(startWidth + moveEvent.clientX - startX);
     };
 
     const handlePointerUp = () => {
@@ -1082,12 +1089,13 @@ export function Sidebar() {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
-  const deleteTitle = pendingDelete?.page.title || 'Untitled';
+  const hasPageContent = rootPages.length > 0 || studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
+  const deleteTitle = pendingDelete?.page.title || t("sidebar.untitled");
   const deleteMessage = pendingDeleteStudioDocument
     ? `Delete "${deleteTitle}" and its PDF permanently? This cannot be undone.`
     : pendingDelete?.hasChildren
-    ? `Delete "${deleteTitle}" and its subpages permanently? This cannot be undone.`
-    : `Delete "${deleteTitle}" permanently? This cannot be undone.`;
+    ? t("sidebar.deleteDialogBodyWithChildren", { title: deleteTitle })
+    : t("sidebar.deleteDialogBody", { title: deleteTitle });
   const deleteDialog = pendingDelete ? createPortal(
     <div className="on-modal-overlay z-[180] items-center justify-center p-4" onMouseDown={() => setPendingDelete(null)}>
       <div className="on-modal-panel on-delete-dialog w-[420px] max-w-[calc(100vw-2rem)]" onMouseDown={(event) => event.stopPropagation()}>
@@ -1105,13 +1113,13 @@ export function Sidebar() {
             className="on-button-secondary"
             onClick={() => setPendingDelete(null)}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="on-button-danger"
             onClick={handleConfirmDelete}
           >
-            Delete
+            {t("sidebar.contextDelete")}
           </button>
         </div>
       </div>
@@ -1123,29 +1131,20 @@ export function Sidebar() {
     <div
       ref={sidebarRef}
       tabIndex={0}
-      className="on-glass-sidebar relative m-2 flex h-[calc(100vh-1rem)] flex-col overflow-hidden text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+      className="on-glass-sidebar relative m-2 flex h-[calc(100vh-1rem)] flex-col overflow-visible text-secondary-foreground outline-none ring-0 focus:outline-none focus:ring-0"
       style={{ width: sidebarWidth }}
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
       <div
-        className="absolute inset-y-0 right-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-border/70"
+        className="on-sidebar-resize-handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize sidebar"
+        aria-label={t("sidebar.resizeSidebar")}
         onPointerDown={handleResizePointerDown}
       />
       <div className="on-sidebar-header-spacer flex-shrink-0" />
-
-      <>
-      <div className="on-sidebar-nav px-1">
-        <button
-          className={`on-shell-row ${currentPageId === HOME_PAGE_ID ? 'on-shell-row-active' : ''}`}
-          onClick={() => setCurrentPageId(HOME_PAGE_ID)}
-        >
-          <Home className="on-sidebar-nav-icon" strokeWidth={1.9} />
-          <span>Home</span>
-        </button>
+      <div className="on-sidebar-nav px-0.5">
         <button
           ref={newPageButtonRef}
           className="on-shell-row"
@@ -1154,8 +1153,8 @@ export function Sidebar() {
             toggleNewPageMenu();
           }}
         >
-          <PlusCircle className="on-sidebar-nav-icon" strokeWidth={1.9} />
-          <span>New page</span>
+          <FilePenLine className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <span>{t("sidebar.newPage")}</span>
         </button>
         {newPageMenuPosition && createPortal(
           <div
@@ -1168,7 +1167,7 @@ export function Sidebar() {
               onClick={() => void handleAddPage()}
             >
               <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-              Blank page
+              {t("sidebar.blankPage")}
             </button>
             {templatePages.length > 0 && <div className="my-1 h-px bg-border" />}
             {templatePages.map(template => (
@@ -1182,7 +1181,7 @@ export function Sidebar() {
                 ) : (
                   <Copy className="h-3.5 w-3.5 text-muted-foreground" />
                 )}
-                <span className="truncate">{template.title || 'Untitled'}</span>
+                <span className="truncate">{template.title || t("sidebar.untitled")}</span>
               </button>
             ))}
           </div>,
@@ -1193,89 +1192,33 @@ export function Sidebar() {
           onClick={openCommandPalette}
         >
           <Search className="on-sidebar-nav-icon" strokeWidth={1.9} />
-          <span>Search</span>
+          <span>{t("sidebar.search")}</span>
         </button>
         <button
           className="on-shell-row"
           onClick={() => void importStudioPdfAction(null)}
         >
-          <FileText className="on-sidebar-nav-icon" strokeWidth={1.9} />
-          <span>Import PDF</span>
+          <FileUp className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <span>{t("sidebar.importPdf")}</span>
+        </button>
+        <button
+          className={`on-shell-row ${currentPageId === HOME_PAGE_ID ? 'on-shell-row-active' : ''}`}
+          onClick={() => setCurrentPageId(HOME_PAGE_ID)}
+        >
+          <Home className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <span>{t("sidebar.home")}</span>
         </button>
       </div>
       <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto pt-3">
         {isLoading && (
-          <div className="px-5 py-4 text-xs text-muted-foreground">Loading pages...</div>
+          <div className="px-5 py-4 text-xs text-muted-foreground">{t("sidebar.loadingPages")}</div>
         )}
-        {templatePages.length > 0 && (
-          <div className="px-2 mb-4">
-            <div className="on-section-label mb-1 mt-4">Templates</div>
-            {templatePages.map(page => (
-              <div
-                key={`tpl-${page.id}`}
-                className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
-                onClick={() => setCurrentPageId(page.id)}
-              >
-                <div className="flex items-center truncate">
-                  {page.icon ? (
-                    <span className="w-[18px] h-[18px] mr-1.5 flex-shrink-0 flex items-center justify-center text-[13px]">{page.icon}</span>
-                  ) : (
-                    <Copy className="w-4 h-4 mr-2 opacity-50 flex-shrink-0" />
-                  )}
-                  <span className="truncate">{page.title || 'Untitled'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {favoritePages.length > 0 && (
-          <div className="px-2 mb-4">
-            <div className="on-section-label mb-1 mt-4">Favorites</div>
+        <div className="px-1 pb-6">
+          <section className="on-sidebar-section">
+            <div className="on-section-label">{t("sidebar.sectionPinned")}</div>
             {favoritePages.map(page => (
-              <div
-                key={`fav-${page.id}`}
-                className={`group on-shell-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
-                onClick={() => setCurrentPageId(page.id)}
-              >
-                <div className="flex items-center truncate">
-                  {page.icon ? (
-                    <span className="w-[18px] h-[18px] mr-1.5 flex-shrink-0 flex items-center justify-center text-[13px]">{page.icon}</span>
-                  ) : (
-                    <FileText className="w-4 h-4 mr-2 opacity-50 flex-shrink-0" />
-                  )}
-                  <span className="truncate">{page.title || 'Untitled'}</span>
-                </div>
-                <button
-                  className="on-icon-button ml-1 h-6 w-6 rounded-md opacity-0 group-hover:opacity-100"
-                  title="Remove from Favorites"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void toggleFavoriteAction(page.id, false);
-                  }}
-                >
-                  <Pin className="h-3.5 w-3.5 fill-current text-muted-foreground" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="px-2 pb-24 min-h-[100px]">
-          <div className="on-section-label mb-1 mt-4">Private</div>
-          {!isLoading && rootPages.length === 0 && (
-            <div className="mx-3 mt-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-              No private pages yet.
-              <button
-                className="mt-2 block text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => void addPage()}
-              >
-                Create first page
-              </button>
-            </div>
-          )}
-          {rootPages.map(page => (
               <PageItem
-                key={page.id}
+                key={`pinned-${page.id}`}
                 page={page}
                 allPages={sortedPages}
                 studioContextsByPageId={studioContextsByPageId}
@@ -1289,9 +1232,39 @@ export function Sidebar() {
                 onPointerDownPage={handlePointerDownPage}
               />
             ))}
-          {(studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0) && (
-            <div className="mt-5">
-              <div className="on-section-label mb-1">Studio notes</div>
+            {!isLoading && favoritePages.length === 0 && (
+              <div className="on-sidebar-empty">{t("sidebar.noPinnedPages")}</div>
+            )}
+          </section>
+
+          <section className="on-sidebar-section">
+            <div className="on-section-label">{t("sidebar.sectionProjects")}</div>
+            <div className="on-sidebar-empty">{t("sidebar.noProjects")}</div>
+          </section>
+
+          <section className="on-sidebar-section">
+            <div className="on-section-label">{t("sidebar.sectionPages")}</div>
+            {!isLoading && !hasPageContent && (
+              <div className="on-sidebar-empty">{t("sidebar.noPages")}</div>
+            )}
+            {rootPages.map(page => (
+              <PageItem
+                key={page.id}
+                page={page}
+                allPages={unpinnedPages}
+                studioContextsByPageId={studioContextsByPageId}
+                onRequestDelete={setPendingDelete}
+                draggedPageId={draggedPageId}
+                dropTarget={dropTarget}
+                forcedExpandedPageId={forcedExpandedPageId}
+                forcedCollapsedPageId={forcedCollapsedPageId}
+                renameRequestedPageId={renameRequestedPageId}
+                onRenameHandled={() => setRenameRequestedPageId(null)}
+                onPointerDownPage={handlePointerDownPage}
+              />
+            ))}
+            {(studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0) && (
+            <div className="mt-1">
               {studioNoteDocuments.length > 0 && (
                 <StudioNotesTree
                   documents={studioNoteDocuments}
@@ -1302,47 +1275,47 @@ export function Sidebar() {
               )}
               {ungroupedStudioNotes.length > 0 && (
                 <div className="mt-2">
-                  <div className="on-studio-note-orphan-label">Unlinked</div>
                   {ungroupedStudioNotes.map((page) => (
                     <button
                       key={`studio-note-orphan-${page.id}`}
                       type="button"
                       data-studio-note-id={page.id}
                       className={`group on-studio-note-tree-row ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
-                      style={{ paddingLeft: 18 }}
+                      style={{ paddingLeft: 12 }}
                       onClick={() => setCurrentPageId(page.id)}
                       title="Open Studio note in Notes"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        {page.icon ? (
+                        {page.icon && (
                           <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{page.icon}</span>
-                        ) : (
-                          <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                         )}
-                        <span className="truncate">{page.title || 'Untitled'}</span>
+                        <span className="truncate">{page.title || t("sidebar.untitled")}</span>
                       </div>
                     </button>
                   ))}
                 </div>
               )}
             </div>
-          )}
+            )}
+          </section>
         </div>
       </div>
-      </>
       {deleteDialog}
-      <button
-        type="button"
-        className="on-sidebar-settings-button"
-        aria-label="Settings"
-        title="Settings"
-        onClick={() => {
-          closeOpenOverlays();
-          setIsSettingsOpen(true);
-        }}
-      >
-        <Settings className="h-4 w-4" strokeWidth={1.9} />
-      </button>
+      <div className="on-sidebar-footer">
+        <button
+          type="button"
+          className="on-sidebar-settings-button"
+          aria-label={t("sidebar.settings")}
+          title={t("sidebar.settings")}
+          onClick={() => {
+            closeOpenOverlays();
+            setIsSettingsOpen(true);
+          }}
+        >
+          <Settings className="h-4 w-4" strokeWidth={1.9} />
+          <span>{t("sidebar.settings")}</span>
+        </button>
+      </div>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
