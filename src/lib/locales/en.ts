@@ -168,6 +168,7 @@ export const en = {
   "sidebar.addToFavorites": "Add to Favorites",
   "sidebar.removeFromFavorites": "Remove from Favorites",
   "sidebar.contextRename": "Rename",
+  "sidebar.contextMenu": "Menu",
   "sidebar.contextDuplicate": "Duplicate",
   "sidebar.contextAddToFavorites": "Add to Favorites",
   "sidebar.contextRemoveFromFavorites": "Remove from Favorites",

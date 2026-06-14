@@ -170,6 +170,7 @@ export const it: Record<keyof typeof en, string> = {
   "sidebar.addToFavorites": "Aggiungi ai preferiti",
   "sidebar.removeFromFavorites": "Rimuovi dai preferiti",
   "sidebar.contextRename": "Rinomina",
+  "sidebar.contextMenu": "Menu",
   "sidebar.contextDuplicate": "Duplica",
   "sidebar.contextAddToFavorites": "Aggiungi ai preferiti",
   "sidebar.contextRemoveFromFavorites": "Rimuovi dai preferiti",
