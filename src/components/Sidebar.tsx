@@ -9,6 +9,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.mjs';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
 import FilePenLine from 'lucide-react/dist/esm/icons/file-pen-line.mjs';
+import FilePlus from 'lucide-react/dist/esm/icons/file-plus.mjs';
 import FileUp from 'lucide-react/dist/esm/icons/file-up.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
 import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
@@ -835,6 +836,10 @@ function ProjectItem({
           <button className="on-menu-item" onClick={(event) => startRename(event)}>
             <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
             {t("sidebar.contextRename")}
+          </button>
+          <button className="on-menu-item" onClick={(event) => void handleAddPage(event)}>
+            <FilePlus className="h-3.5 w-3.5 text-muted-foreground" />
+            {t("sidebar.contextNewPage")}
           </button>
           <button className="on-menu-item" onClick={(event) => void handleImportPdf(event)}>
             <FileUp className="h-3.5 w-3.5 text-muted-foreground" />

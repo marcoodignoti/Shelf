@@ -327,7 +327,7 @@ test("imports PDF and opens Studio split view", async ({ page }) => {
   await page.getByRole("button", { name: "Import PDF" }).click();
 
   await expect(page.getByText("civil-law").first()).toBeVisible();
-  await expect(page.locator(".on-section-label", { hasText: "Private" })).toBeVisible();
+  await expect(page.locator(".on-section-label", { hasText: "Pages" })).toBeVisible();
   await expect(page.locator(".on-sidebar-linked-pdf-badge", { hasText: "PDF" }).first()).toBeVisible();
   await expect(page.locator("canvas[aria-label='civil-law']")).toBeVisible();
   await expect(page.locator("textarea[placeholder='Untitled']")).toHaveValue("civil-law Notes");
@@ -352,8 +352,8 @@ test("opens imported PDFs in the unified private page tree", async ({ page }) =>
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Import PDF" }).click();
 
-  await expect(page.locator(".on-section-label", { hasText: "Private" })).toBeVisible();
-  await expect(page.getByText("No private pages yet.")).toBeHidden();
+  await expect(page.locator(".on-section-label", { hasText: "Pages" })).toBeVisible();
+  await expect(page.getByText("No pages")).toBeHidden();
   await expect(page.locator(".on-section-label", { hasText: "Studio notes" })).toBeHidden();
 
   const importedPdfRow = page.locator("[data-page-id]", { hasText: "civil-law" }).first();
