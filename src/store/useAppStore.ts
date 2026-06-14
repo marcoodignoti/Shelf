@@ -104,7 +104,7 @@ interface AppState {
 
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
-const SIDEBAR_DEFAULT_WIDTH = 240;
+const SIDEBAR_DEFAULT_WIDTH = 340;
 
 function pageTreeIds(pages: Page[], rootId: string): Set<string> {
   const ids = new Set<string>([rootId]);
