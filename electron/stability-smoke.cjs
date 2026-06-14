@@ -68,13 +68,12 @@ async function main() {
         const pageId = crypto.randomUUID();
         await invoke("create_page", { id: pageId, title: "Stability Smoke", parentId: null, createdAt: now });
 
-        const coverPath = await invoke("import_cover_image", { sourcePath: pngPath, pageId });
-        let badCoverError = "";
-        try {
-          await invoke("import_cover_image", { sourcePath: badPngPath, pageId });
-        } catch (error) {
-          badCoverError = String(error?.message || error);
-        }
+	        let coverPathError = "";
+	        try {
+	          await invoke("import_cover_image", { sourcePath: pngPath, pageId });
+	        } catch (error) {
+	          coverPathError = String(error?.message || error);
+	        }
 
         const editorPath = await invoke("import_editor_image", {
           pageId,
@@ -87,40 +86,43 @@ async function main() {
           bytes: mp4Bytes,
         });
 
-        let invalidBackupError = "";
-        try {
+	        let invalidBackupError = "";
+	        try {
           await invoke("import_backup", { path: invalidBackupPath, importedAt: now });
         } catch (error) {
           invalidBackupError = String(error?.message || error);
         }
 
-        let unknownCommandError = "";
+	        let unknownCommandError = "";
         try {
           await invoke("definitely_missing_command", {});
         } catch (error) {
           unknownCommandError = String(error?.message || error);
         }
 
-        const document = await invoke("import_studio_document", {
-          documentId: crypto.randomUUID(),
-          notePageId: crypto.randomUUID(),
-          sourcePath: pdfPath,
-          importedAt: now,
-        });
-        await invoke("delete_studio_document", { id: document.id });
+	        let studioImportPathError = "";
+	        try {
+	          await invoke("import_studio_document", {
+	            documentId: crypto.randomUUID(),
+	            notePageId: crypto.randomUUID(),
+	            sourcePath: pdfPath,
+	            importedAt: now,
+	          });
+	        } catch (error) {
+	          studioImportPathError = String(error?.message || error);
+	        }
 
-        return { coverPath, badCoverError, editorPath, editorVideoPath, invalidBackupError, unknownCommandError, storedPdfPath: document.stored_file_path };
+	        return { coverPathError, editorPath, editorVideoPath, invalidBackupError, unknownCommandError, studioImportPathError };
       },
       { pngPath, badPngPath, pdfPath, invalidBackupPath, pngBytes: Array.from(onePixelPng), mp4Bytes: Array.from(tinyMp4Header) }
     );
 
-    assert(fs.existsSync(result.coverPath), "Cover image was not copied");
-    assert(result.badCoverError.includes("supported image"), `Bad cover was not rejected: ${result.badCoverError}`);
-    assert(fs.existsSync(result.editorPath), "Editor image was not written");
-    assert(fs.existsSync(result.editorVideoPath), "Editor video was not written");
-    assert(result.invalidBackupError.includes("not valid JSON"), `Invalid backup was not rejected: ${result.invalidBackupError}`);
-    assert(result.unknownCommandError.includes("unknown command"), `Unknown command was not rejected: ${result.unknownCommandError}`);
-    assert(!fs.existsSync(result.storedPdfPath), "Studio delete did not remove copied PDF");
+	    assert(result.coverPathError.includes("trusted file dialog"), `Raw cover path was not rejected: ${result.coverPathError}`);
+	    assert(fs.existsSync(result.editorPath), "Editor image was not written");
+	    assert(fs.existsSync(result.editorVideoPath), "Editor video was not written");
+	    assert(result.invalidBackupError.includes("trusted file dialog"), `Raw backup path was not rejected: ${result.invalidBackupError}`);
+	    assert(result.unknownCommandError.includes("unknown command"), `Unknown command was not rejected: ${result.unknownCommandError}`);
+	    assert(result.studioImportPathError.includes("trusted file dialog"), `Raw Studio path was not rejected: ${result.studioImportPathError}`);
 
     const db = new DatabaseSync(path.join(userDataDir, "opennotion.db"));
     try {

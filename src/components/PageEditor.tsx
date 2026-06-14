@@ -28,10 +28,10 @@ import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableVi
 import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
-import { exportFilesWithDialog, invoke, openDialog } from "../lib/desktop";
+import { exportFilesWithDialog, invoke } from "../lib/desktop";
 import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
-import { coverImageSrc, importCoverImage, importEditorImage, importEditorImagePath, importEditorMedia, importEditorVideo, importEditorVideoPath, updatePage, Page } from "../lib/db";
+import { coverImageSrc, importCoverImageFromDialog, importEditorImage, importEditorImageFilesFromDialog, importEditorMedia, importEditorVideo, importEditorVideoFilesFromDialog, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
 import { useLocale, useT, type TranslationKey, type TranslationParams } from "../lib/i18n";
 import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
@@ -441,23 +441,6 @@ function ShelfDragHandleButton() {
 
 const urlEmbedMenuTitles = new Set(["audio", "embed", "file", "image", "video"]);
 
-function mediaDialogFilters(kind: "image" | "video") {
-  if (kind === "video") {
-    return [{ name: "Videos", extensions: ["mp4", "m4v", "mov", "webm"] }];
-  }
-  return [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }];
-}
-
-async function pickEditorMediaPaths(kind: "image" | "video"): Promise<string[]> {
-  const selected = await openDialog({
-    multiple: true,
-    filters: mediaDialogFilters(kind),
-  });
-
-  if (!selected) return [];
-  return Array.isArray(selected) ? selected : [selected];
-}
-
 function dataTransferFiles(dataTransfer: DataTransfer): File[] {
   const files = Array.from(dataTransfer.files ?? []);
   if (files.length > 0) return files;
@@ -499,24 +482,18 @@ function editorMediaSlashMenuItem(
     title: isVideo ? t("editor.slashVideo") : t("editor.slashImage"),
     subtext: t("editor.slashFromDevice"),
     group: t("editor.slashMediaGroup"),
-    icon: isVideo ? <Video size={18} /> : <Image size={18} />,
-    onItemClick: async () => {
-      const paths = await pickEditorMediaPaths(kind);
-      if (paths.length === 0) return;
-
-      try {
-        const media = await Promise.all(
-          paths.map(async (sourcePath) => {
-            const importedPath = isVideo
-              ? await importEditorVideoPath(sourcePath, pageId)
-              : await importEditorImagePath(sourcePath, pageId);
-            return editorMediaBlockProps(
-              kind,
-              fileNameFromPath(sourcePath, isVideo ? "Video" : "Image"),
-              coverImageSrc(importedPath)
-            );
-          })
-        );
+	    icon: isVideo ? <Video size={18} /> : <Image size={18} />,
+	    onItemClick: async () => {
+	      try {
+	        const imports = isVideo
+	          ? await importEditorVideoFilesFromDialog(pageId)
+	          : await importEditorImageFilesFromDialog(pageId);
+	        if (imports.length === 0) return;
+	        const media = imports.map((imported) => editorMediaBlockProps(
+	          kind,
+	          fileNameFromPath(imported.sourceName, isVideo ? "Video" : "Image"),
+	          coverImageSrc(imported.path)
+	        ));
 
         insertEditorMediaBlocks(editor, media);
         const count = String(media.length);
@@ -1617,17 +1594,11 @@ export function Editor({
     queueSave({ cover_url: null });
   };
 
-  const handlePickCoverImage = async () => {
-    try {
-      const path = await openDialog({
-        multiple: false,
-        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
-      });
-
-      if (!path || Array.isArray(path)) return;
-
-      const importedPath = await importCoverImage(path, page.id);
-      setCoverUrl(importedPath);
+	  const handlePickCoverImage = async () => {
+	    try {
+	      const importedPath = await importCoverImageFromDialog(page.id);
+	      if (!importedPath) return;
+	      setCoverUrl(importedPath);
       setIsCoverInputOpen(false);
       queueSave({ cover_url: importedPath });
     } catch (error: unknown) {

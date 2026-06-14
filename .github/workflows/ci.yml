@@ -124,7 +124,6 @@ jobs:
           path: |
             dist-electron/builder/Shelf_*_setup_win-x64.exe
             dist-electron/builder/Shelf_*_setup_win-x64.exe.blockmap
-            dist-electron/builder/latest.yml
           if-no-files-found: error
 
   macos-package:

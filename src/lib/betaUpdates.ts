@@ -15,6 +15,7 @@ export type BetaUpdateDownload = {
   label: string;
   sha256: string;
   size?: string;
+  downloadToken?: string;
 };
 
 export type VerifiedUpdateDownload = {
@@ -99,12 +100,13 @@ function parseDownload(value: unknown): BetaUpdateDownload | undefined {
   if (!isString(record.label)) return undefined;
   if (!isString(record.sha256) || !SHA256_PATTERN.test(record.sha256)) return undefined;
 
-  return {
-    url: record.url,
-    label: record.label,
-    sha256: record.sha256.toLowerCase(),
-    ...(isString(record.size) ? { size: record.size } : {}),
-  };
+	  return {
+	    url: record.url,
+	    label: record.label,
+	    sha256: record.sha256.toLowerCase(),
+	    ...(isString(record.size) ? { size: record.size } : {}),
+	    ...(isString(record.downloadToken) ? { downloadToken: record.downloadToken } : {}),
+	  };
 }
 
 export function parseBetaUpdateManifest(value: unknown): BetaUpdateManifest {
@@ -161,11 +163,15 @@ export async function downloadVerifiedUpdate(download: BetaUpdateDownload): Prom
   if (typeof window === "undefined" || !window.openNotion) {
     throw new Error("Shelf desktop bridge is not available");
   }
+  if (!download.downloadToken) {
+    throw new Error("Update download is not linked to a verified manifest");
+  }
 
   return await window.openNotion.invoke<VerifiedUpdateDownload>("download_update_artifact", {
-    url: download.url,
-    sha256: download.sha256,
-  });
+	    url: download.url,
+	    sha256: download.sha256,
+	    downloadToken: download.downloadToken,
+	  });
 }
 
 export async function checkForBetaUpdate(): Promise<BetaUpdateState> {

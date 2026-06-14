@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { openDialog } from '../../lib/desktop';
 import { useT } from '../../lib/i18n';
 import { Trash2, Upload } from 'lucide-react';
 
@@ -40,13 +39,7 @@ export function ProfileSection() {
   };
 
   const handleUploadAvatar = async () => {
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: t('settings.profile.imagesFilter'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
-    });
-
-    if (typeof path !== 'string') return;
-    await importProfileAvatarAction(path);
+    await importProfileAvatarAction();
   };
 
   return (

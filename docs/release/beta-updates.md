@@ -2,12 +2,11 @@
 
 Shelf uses signed assisted beta updates for testers.
 
-Current macOS builds are ad-hoc signed and Windows builds are unsigned. macOS
-and portable Windows builds check a small GitHub Release manifest, verify its
-Ed25519 signature, show a brief changelog, download the matching DMG or ZIP, and
-verify the artifact SHA-256 before opening it. Windows installer builds also use
-`electron-updater` with the GitHub Release `latest.yml` file to download
-installer updates in background and install them on app quit.
+Current macOS builds are ad-hoc signed and Windows builds are unsigned. All
+desktop builds check a small GitHub Release manifest, verify its Ed25519
+signature, show a brief changelog, download the matching DMG, ZIP, or installer,
+and verify the artifact SHA-256 before opening it. Windows installer builds do
+not use background installer metadata for update discovery.
 
 ## Tester Flow
 
@@ -24,8 +23,7 @@ installer updates in background and install them on app quit.
 
 On macOS, testers can alternatively use the Homebrew beta cask documented in
 [`homebrew.md`](homebrew.md). Windows portable testers use the guided ZIP
-download. Windows installer testers get background downloads and install-on-quit
-updates.
+download. Windows installer testers use the guided installer download.
 
 ## Create Manifest
 
@@ -66,14 +64,13 @@ Without that flag, the manifest includes the artifacts currently present under
 `dist-electron/`. This supports macOS-only local dry-runs before the Windows ZIP
 is produced by GitHub Actions.
 
-Upload the DMG, ZIP, installer, `latest.yml`, and release-local manifest to the
-versioned GitHub Release:
+Upload the DMG, ZIP, installer, and release-local manifest to the versioned
+GitHub Release:
 
 ```text
 Shelf_0.1.4_arm64.dmg
 Shelf_0.1.4_win-x64.zip
 Shelf_0.1.4_setup_win-x64.exe
-latest.yml
 beta-update.json
 ```
 

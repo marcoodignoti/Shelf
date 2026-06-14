@@ -95,10 +95,10 @@ async function main() {
 
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-parity-"));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-electron-parity-files-"));
-  const pageTitle = `Electron Parity ${crypto.randomUUID().slice(0, 8)}`;
-  const pageBody = "Electron parity body survives packaged reopen";
-  const backupPath = path.join(workDir, "shelf-parity-backup.json");
-  const pdfPath = path.join(workDir, "parity-doc.pdf");
+	  const pageTitle = `Electron Parity ${crypto.randomUUID().slice(0, 8)}`;
+	  const pageBody = "Electron parity body survives packaged reopen";
+	  const backupPath = path.join(workDir, "shelf-parity-backup.json");
+	  const pdfPath = path.join(workDir, "parity-doc.pdf");
   fs.writeFileSync(pdfPath, tinyPdfFixture);
 
   let first = await launchApp(userDataDir);
@@ -115,27 +115,33 @@ async function main() {
     await first.window.waitForSelector(".on-modal-panel", { timeout: 10000 });
     await waitForBodyText(first.window, pageTitle);
 
-    await invoke(first.window, "export_backup", { path: backupPath, exportedAt: new Date().toISOString() });
-    assert(fs.existsSync(backupPath), "Backup export file missing");
-    const backup = JSON.parse(fs.readFileSync(backupPath, "utf8"));
-    assert(
-      backup.pages.some((page) => page.title === pageTitle && (page.search_text ?? "").includes(pageBody)),
-      `Backup missing created page: ${backup.pages.map((page) => `${page.title}:${page.search_text ?? ""}`).join(" | ")}`
-    );
+	    await first.window.evaluate(async ({ backupPath, pdfPath }) => {
+	      async function expectTrustedDialogError(command, args) {
+	        try {
+	          await window.openNotion.invoke(command, args);
+	          throw new Error(`${command} unexpectedly succeeded`);
+	        } catch (error) {
+	          if (!String(error?.message || error).includes("trusted file dialog")) {
+	            throw error;
+	          }
+	        }
+	      }
+	      await expectTrustedDialogError("export_backup", { path: backupPath, exportedAt: new Date().toISOString() });
+	      await expectTrustedDialogError("import_backup", { path: backupPath, importedAt: new Date().toISOString() });
+	      await expectTrustedDialogError("import_studio_document", {
+	        documentId: crypto.randomUUID(),
+	        notePageId: crypto.randomUUID(),
+	        sourcePath: pdfPath,
+	        importedAt: new Date().toISOString(),
+	      });
+	    }, { backupPath, pdfPath });
 
-    await invoke(first.window, "import_backup", { path: backupPath, importedAt: new Date().toISOString() });
-    await invoke(first.window, "create_studio_project", {
-      id: crypto.randomUUID(),
-      name: "Parity Project",
-      createdAt: new Date().toISOString(),
-    });
-    await invoke(first.window, "import_studio_document", {
-      documentId: crypto.randomUUID(),
-      notePageId: crypto.randomUUID(),
-      sourcePath: pdfPath,
-      importedAt: new Date().toISOString(),
-    });
-  } finally {
+	    await invoke(first.window, "create_studio_project", {
+	      id: crypto.randomUUID(),
+	      name: "Parity Project",
+	      createdAt: new Date().toISOString(),
+	    });
+	  } finally {
     await first.app.close();
   }
 
@@ -147,11 +153,8 @@ async function main() {
     await waitForBodyText(second.window, pageBody);
     await second.window.keyboard.press("Escape");
 
-    await waitForBodyText(second.window, "parity-doc");
-    await second.window.getByText("parity-doc", { exact: true }).click();
-    await second.window.locator("canvas[aria-label='parity-doc']").waitFor({ state: "visible", timeout: 15000 });
-    const errorBoundaryVisible = await second.window.getByText("Something went wrong.").isVisible().catch(() => false);
-    assert(!errorBoundaryVisible, "Studio rendered error boundary");
+	    const errorBoundaryVisible = await second.window.getByText("Something went wrong.").isVisible().catch(() => false);
+	    assert(!errorBoundaryVisible, "App rendered error boundary");
     await second.window.screenshot({ path: path.join(os.tmpdir(), "shelf-electron-parity-smoke.png"), fullPage: true });
   } finally {
     await second.app.close();
@@ -168,9 +171,9 @@ async function main() {
 
   const dbState = readDb(userDataDir);
   assert(dbState.schemaVersion === "2", "Unexpected schema version");
-  assert(dbState.pages.filter((page) => page.title === pageTitle).length >= 2, "Backup import did not duplicate page");
-  assert(dbState.pages.some((page) => page.search_text?.includes(pageBody)), "Created page body missing from DB");
-  assert(dbState.studioDocuments.some((document) => document.title === "parity-doc"), "Studio PDF import missing from DB");
+	  assert(dbState.pages.filter((page) => page.title === pageTitle).length >= 1, "Created page missing from DB");
+	  assert(dbState.pages.some((page) => page.search_text?.includes(pageBody)), "Created page body missing from DB");
+	  assert(dbState.studioDocuments.length === 0, "Raw Studio import should not create document rows");
 
   console.log(`Electron parity smoke passed: ${userDataDir}`);
 }

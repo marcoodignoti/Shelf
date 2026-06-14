@@ -11,13 +11,26 @@ const APP_ASSET_HOST = "asset";
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
 const MAX_DIALOG_FILTERS = 10;
 const MAX_DIALOG_EXTENSIONS = 20;
+const IMAGE_DIALOG_FILTER = { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] };
+const PDF_DIALOG_FILTER = { name: "PDF", extensions: ["pdf"] };
+const BACKUP_DIALOG_FILTER = { name: "Shelf Backup", extensions: ["json"] };
+const EDITOR_MEDIA_DIALOG_FILTERS = {
+  image: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+  video: [{ name: "Videos", extensions: ["mp4", "m4v", "mov", "webm"] }],
+};
+const RENDERER_PATH_COMMANDS = new Set([
+  "export_backup",
+  "import_backup",
+  "import_studio_document",
+  "replace_studio_document_file",
+  "import_cover_image",
+  "import_profile_avatar",
+]);
+const RENDERER_SOURCE_PATH_COMMANDS = new Set(["import_editor_image", "import_editor_video"]);
 let mainWindow = null;
 let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
-let autoUpdater = null;
-let autoUpdaterActive = false;
-let updateReadyToInstall = false;
 
 protocol.registerSchemesAsPrivileged([{
   scheme: APP_PROTOCOL,
@@ -462,64 +475,10 @@ function createMainWindow() {
   });
 }
 
-function notifyRenderer(channel, payload = null) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send(channel, payload);
-}
-
 function configureWindowsAutoUpdater() {
-  if (process.platform !== "win32" || !app.isPackaged) return;
-
-  try {
-    ({ autoUpdater } = require("electron-updater"));
-  } catch (error) {
-    console.warn("[updater] electron-updater unavailable", error);
-    return;
-  }
-
-  autoUpdaterActive = true;
-  autoUpdater.allowPrerelease = true;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on("checking-for-update", () => {
-    notifyRenderer("desktop-update-checking");
-  });
-  autoUpdater.on("update-available", (info) => {
-    notifyRenderer("desktop-update-available", {
-      version: info.version,
-      releaseName: info.releaseName,
-      releaseDate: info.releaseDate,
-    });
-  });
-  autoUpdater.on("update-not-available", () => {
-    notifyRenderer("desktop-update-not-available");
-  });
-  autoUpdater.on("download-progress", (progress) => {
-    notifyRenderer("desktop-update-download-progress", {
-      percent: progress.percent,
-      transferred: progress.transferred,
-      total: progress.total,
-    });
-  });
-  autoUpdater.on("update-downloaded", (info) => {
-    updateReadyToInstall = true;
-    notifyRenderer("desktop-update-downloaded", {
-      version: info.version,
-      releaseName: info.releaseName,
-      releaseDate: info.releaseDate,
-    });
-  });
-  autoUpdater.on("error", (error) => {
-    console.warn("[updater] Windows auto update failed", error);
-    notifyRenderer("desktop-update-error", error instanceof Error ? error.message : "Windows auto update failed");
-  });
-
-  setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify().catch((error) => {
-      console.warn("[updater] Windows update check failed", error);
-    });
-  }, 5000);
+  // Windows uses the same signed manifest + SHA-256 assisted update flow as
+  // macOS. Keep this hook as an explicit no-op so packaged builds never trust
+  // electron-builder update metadata as an updater source.
 }
 
 function isRecord(value) {
@@ -568,6 +527,26 @@ function normalizeSaveDialogOptions(options = {}) {
   };
 }
 
+function hasRendererSourcePath(args) {
+  return isRecord(args) && (
+    typeof args.sourcePath === "string" ||
+    typeof args.source_path === "string"
+  );
+}
+
+function assertRendererInvokeAllowed(command, args) {
+  if (RENDERER_PATH_COMMANDS.has(command)) {
+    throw new Error(`${command} requires a trusted file dialog`);
+  }
+  if (RENDERER_SOURCE_PATH_COMMANDS.has(command) && hasRendererSourcePath(args)) {
+    throw new Error(`${command} sourcePath requires a trusted file dialog`);
+  }
+}
+
+function parentWindowForEvent(event) {
+  return BrowserWindow.fromWebContents(event.sender) || mainWindow;
+}
+
 function registerIpc() {
   ipcMain.on("opennotion:studio-pdf-src", (event, documentId) => {
     try {
@@ -599,33 +578,139 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle("opennotion:invoke", async (event, payload = {}) => {
-    requireTrustedSender(event);
-    if (!isRecord(payload) || typeof payload.command !== "string") {
-      throw new Error("invalid invoke payload");
-    }
+    ipcMain.handle("opennotion:invoke", async (event, payload = {}) => {
+      requireTrustedSender(event);
+      if (!isRecord(payload) || typeof payload.command !== "string") {
+        throw new Error("invalid invoke payload");
+      }
     if (payload.command === "show_character_palette") {
-      if (typeof app.showEmojiPanel === "function") app.showEmojiPanel();
-      return null;
-    }
-    return await createBackend().invoke(payload.command, isRecord(payload.args) ? payload.args : {});
-  });
+        if (typeof app.showEmojiPanel === "function") app.showEmojiPanel();
+        return null;
+      }
+      const args = isRecord(payload.args) ? payload.args : {};
+      assertRendererInvokeAllowed(payload.command, args);
+      return await createBackend().invoke(payload.command, args);
+    });
 
-  ipcMain.handle("opennotion:dialog-open", async (event, options = {}) => {
-    requireTrustedSender(event);
-    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-    const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
-    if (result.canceled) return null;
-    return isRecord(options) && options.multiple === true ? result.filePaths : result.filePaths[0] || null;
-  });
+    ipcMain.handle("opennotion:dialog-open", async (event, options = {}) => {
+      requireTrustedSender(event);
+      const parent = parentWindowForEvent(event);
+      const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
+      if (result.canceled) return null;
+      return isRecord(options) && options.multiple === true ? result.filePaths : result.filePaths[0] || null;
+    });
 
-  ipcMain.handle("opennotion:dialog-save", async (event, options = {}) => {
-    requireTrustedSender(event);
-    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-    const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
-    if (result.canceled) return null;
-    return result.filePath || null;
-  });
+    ipcMain.handle("opennotion:dialog-save", async (event, options = {}) => {
+      requireTrustedSender(event);
+      const parent = parentWindowForEvent(event);
+      const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
+      if (result.canceled) return null;
+      return result.filePath || null;
+    });
+
+    ipcMain.handle("opennotion:backup-export", async (event, options = {}) => {
+      requireTrustedSender(event);
+      const safeOptions = isRecord(options) ? options : {};
+      const result = await dialog.showSaveDialog(parentWindowForEvent(event), normalizeSaveDialogOptions({
+        defaultPath: typeof safeOptions.defaultPath === "string" ? safeOptions.defaultPath : undefined,
+        filters: [BACKUP_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePath) return null;
+      return createBackend().exportBackup({
+        path: result.filePath,
+        exportedAt: typeof safeOptions.exportedAt === "string" ? safeOptions.exportedAt : new Date().toISOString(),
+      });
+    });
+
+    ipcMain.handle("opennotion:backup-import", async (event, options = {}) => {
+      requireTrustedSender(event);
+      const safeOptions = isRecord(options) ? options : {};
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: false,
+        filters: [BACKUP_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePaths[0]) return null;
+      return createBackend().importBackup({
+        path: result.filePaths[0],
+        importedAt: typeof safeOptions.importedAt === "string" ? safeOptions.importedAt : new Date().toISOString(),
+      });
+    });
+
+    ipcMain.handle("opennotion:studio-document-import", async (event, options = {}) => {
+      requireTrustedSender(event);
+      const safeOptions = isRecord(options) ? options : {};
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: false,
+        filters: [PDF_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePaths[0]) return null;
+      return await createBackend().importStudioDocument({
+        documentId: safeOptions.documentId,
+        notePageId: safeOptions.notePageId,
+        sourcePath: result.filePaths[0],
+        importedAt: typeof safeOptions.importedAt === "string" ? safeOptions.importedAt : new Date().toISOString(),
+      });
+    });
+
+    ipcMain.handle("opennotion:studio-document-replace-file", async (event, options = {}) => {
+      requireTrustedSender(event);
+      if (!isRecord(options) || typeof options.id !== "string" || options.id.trim() === "") {
+        throw new Error("document id is required");
+      }
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: false,
+        filters: [PDF_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePaths[0]) return null;
+      return await createBackend().replaceStudioDocumentFile({
+        id: options.id,
+        sourcePath: result.filePaths[0],
+        updatedAt: typeof options.updatedAt === "string" ? options.updatedAt : new Date().toISOString(),
+      });
+    });
+
+    ipcMain.handle("opennotion:cover-image-import", async (event, options = {}) => {
+      requireTrustedSender(event);
+      if (!isRecord(options) || typeof options.pageId !== "string" || options.pageId.trim() === "") {
+        throw new Error("page id is required");
+      }
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: false,
+        filters: [IMAGE_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePaths[0]) return null;
+      return createBackend().importCoverImage({ pageId: options.pageId, sourcePath: result.filePaths[0] });
+    });
+
+    ipcMain.handle("opennotion:profile-avatar-import", async (event) => {
+      requireTrustedSender(event);
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: false,
+        filters: [IMAGE_DIALOG_FILTER],
+      }));
+      if (result.canceled || !result.filePaths[0]) return null;
+      return createBackend().importProfileAvatar({ sourcePath: result.filePaths[0] });
+    });
+
+    ipcMain.handle("opennotion:editor-media-files-import", async (event, options = {}) => {
+      requireTrustedSender(event);
+      if (!isRecord(options) || typeof options.pageId !== "string" || options.pageId.trim() === "") {
+        throw new Error("page id is required");
+      }
+      const kind = options.kind === "video" ? "video" : "image";
+      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+        multiple: true,
+        filters: EDITOR_MEDIA_DIALOG_FILTERS[kind],
+      }));
+      if (result.canceled || result.filePaths.length === 0) return [];
+      const backend = createBackend();
+      return result.filePaths.map((sourcePath) => {
+        const importedPath = kind === "video"
+          ? backend.importEditorVideo({ pageId: options.pageId, sourcePath })
+          : backend.importEditorImage({ pageId: options.pageId, sourcePath });
+        return { sourceName: path.basename(sourcePath), path: importedPath };
+      });
+    });
 
   // Export/import run dialog + file IO in one round trip so the renderer
   // never passes filesystem paths over IPC: the only paths that reach fs are
@@ -635,7 +720,7 @@ function registerIpc() {
     if (!isRecord(options) || !Array.isArray(options.files)) {
       throw new Error("invalid export payload");
     }
-    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const parent = parentWindowForEvent(event);
     const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
     if (result.canceled || !result.filePath) return null;
     return createBackend().writeExportFiles({ targetPath: result.filePath, files: options.files });
@@ -643,7 +728,7 @@ function registerIpc() {
 
   ipcMain.handle("opennotion:import-page-file", async (event, options = {}) => {
     requireTrustedSender(event);
-    const parent = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const parent = parentWindowForEvent(event);
     const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
     if (result.canceled || !result.filePaths[0]) return null;
     return createBackend().readImportFile({ path: result.filePaths[0] });
@@ -652,7 +737,7 @@ function registerIpc() {
   ipcMain.on("opennotion:auto-update-active", (event) => {
     try {
       requireTrustedSender(event);
-      event.returnValue = { ok: true, value: autoUpdaterActive };
+      event.returnValue = { ok: true, value: false };
     } catch (error) {
       event.returnValue = { ok: false, error: error instanceof Error ? error.message : "untrusted renderer origin" };
     }
@@ -660,14 +745,7 @@ function registerIpc() {
 
   ipcMain.handle("opennotion:install-update-now", (event) => {
     requireTrustedSender(event);
-    if (!autoUpdater || !updateReadyToInstall) {
-      throw new Error("no downloaded update is ready to install");
-    }
-    // Defer so the invoke reply reaches the renderer before the app quits.
-    setImmediate(() => {
-      autoUpdater.quitAndInstall();
-    });
-    return null;
+    throw new Error("desktop auto update is disabled; use the signed manifest update flow");
   });
 }
 

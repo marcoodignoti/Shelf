@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { exportWorkspaceBackup, importWorkspaceBackup } from '../../lib/backup';
-import { openDialog, saveDialog } from '../../lib/desktop';
+import { exportWorkspaceBackupWithDialog, importWorkspaceBackupWithDialog } from '../../lib/backup';
 import { useT } from '../../lib/i18n';
 import { Download, Upload } from 'lucide-react';
 
@@ -12,14 +11,8 @@ export function DataSection() {
 
   const handleExport = async () => {
     try {
-      const path = await saveDialog({
-        defaultPath: `shelf-backup-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: t('settings.data.backupFilterName'), extensions: ['json'] }],
-      });
-
-      if (!path) return;
-
-      const exportedCount = await exportWorkspaceBackup(path);
+      const exportedCount = await exportWorkspaceBackupWithDialog(`shelf-backup-${new Date().toISOString().slice(0, 10)}.json`);
+      if (exportedCount === null) return;
       const message = t('settings.data.exported', { count: String(exportedCount) });
       setBackupStatus(message);
       showSuccess('settings.data.exported', { count: String(exportedCount) });
@@ -30,15 +23,9 @@ export function DataSection() {
   };
 
   const handleImport = async () => {
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: t('settings.data.backupFilterName'), extensions: ['json'] }],
-    });
-
-    if (!path || Array.isArray(path)) return;
-
     try {
-      const importedCount = await importWorkspaceBackup(path);
+      const importedCount = await importWorkspaceBackupWithDialog();
+      if (importedCount === null) return;
       await fetchPages();
       const message = t('settings.data.imported', { count: String(importedCount) });
       setBackupStatus(message);

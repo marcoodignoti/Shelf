@@ -20,6 +20,7 @@ const EDITOR_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
 const UPDATE_ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
 const UPDATE_SIGNATURE_ALGORITHM = "ed25519";
+const UPDATE_DOWNLOAD_TOKEN_BYTES = 32;
 const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
 const EXPORT_MAX_FILES = 2000;
 const EXPORT_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
@@ -53,6 +54,15 @@ const UPDATE_DOWNLOAD_URL_PATTERN =
   /^https:\/\/github\.com\/marcoodignoti\/Shelf\/releases\/download\/[^/]+\/Shelf_[^/]+\.(dmg|zip|exe)$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const DEFAULT_UPDATE_PUBLIC_KEY_PATH = path.join(__dirname, "update-public-key.pem");
+const INVOKE_PATH_COMMANDS = new Set([
+  "export_backup",
+  "import_backup",
+  "import_studio_document",
+  "replace_studio_document_file",
+  "import_cover_image",
+  "import_profile_avatar",
+]);
+const INVOKE_SOURCE_PATH_COMMANDS = new Set(["import_editor_image", "import_editor_video"]);
 
 const PAGE_COLUMNS =
   "id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at";
@@ -434,6 +444,10 @@ function validateImportedPage(page) {
 function readImportedBackup(filePath) {
   validateBackupImportSource(filePath);
   const raw = fs.readFileSync(filePath, "utf8");
+  return parseImportedBackup(raw);
+}
+
+function parseImportedBackup(raw) {
   if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES) {
     throw new Error("Backup file is too large");
   }
@@ -696,6 +710,29 @@ function updateArtifactFileName(parsedUrl) {
   return fileName;
 }
 
+function trustedUpdateDownload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const url = String(value.url ?? "");
+  const sha256 = String(value.sha256 ?? "").trim().toLowerCase();
+  if (!UPDATE_DOWNLOAD_URL_PATTERN.test(url) || !SHA256_PATTERN.test(sha256)) return null;
+  return { url, sha256 };
+}
+
+function assertSafeInvokeArgs(command, args) {
+  if (INVOKE_PATH_COMMANDS.has(command)) {
+    throw new Error(`${command} requires a trusted file dialog`);
+  }
+  if (
+    INVOKE_SOURCE_PATH_COMMANDS.has(command) &&
+    args &&
+    typeof args === "object" &&
+    !Array.isArray(args) &&
+    (typeof args.sourcePath === "string" || typeof args.source_path === "string")
+  ) {
+    throw new Error(`${command} sourcePath requires a trusted file dialog`);
+  }
+}
+
 function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
   if (!fs.existsSync(storedFilePath)) return;
   const storedPath = validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot);
@@ -708,6 +745,7 @@ class ShelfBackend {
     this.appConfigDir = appConfigDir;
     this.downloadsDir = downloadsDir || path.join(appConfigDir, "downloads");
     this.updateManifestPublicKey = updateManifestPublicKey(publicKey);
+    this.verifiedUpdateDownloads = new Map();
     this.db = openDatabase(appConfigDir);
     this.openPath = openPath || (() => Promise.resolve(""));
     this.revealPath = revealPath || (() => {});
@@ -717,6 +755,7 @@ class ShelfBackend {
       list_all_pages: () => this.listAllPages(),
       export_backup: (args) => this.exportBackup(args),
       import_backup: (args) => this.importBackup(args),
+      import_backup_content: (args) => this.importBackupContent(args),
       search_pages: (args) => this.searchPages(args),
       get_page: (args) => this.getPage(args),
       create_page: (args) => this.createPage(args),
@@ -767,6 +806,7 @@ class ShelfBackend {
   async invoke(command, args = {}) {
     const handler = this.commands[command];
     if (!handler) throw new Error(`unknown command: ${command}`);
+    assertSafeInvokeArgs(command, args);
     return await handler(args || {});
   }
 
@@ -933,12 +973,42 @@ class ShelfBackend {
     } catch {
       throw new Error("Invalid signed update manifest");
     }
-    return signedManifestPayload(signedManifest, this.updateManifestPublicKey);
+    return this.rememberVerifiedUpdateDownloads(signedManifestPayload(signedManifest, this.updateManifestPublicKey));
   }
 
-  async downloadUpdateArtifact({ url, sha256 }) {
+  rememberVerifiedUpdateDownloads(payload) {
+    const manifest = structuredClone(payload);
+    const downloads = manifest && typeof manifest === "object" && !Array.isArray(manifest) && manifest.downloads && typeof manifest.downloads === "object" && !Array.isArray(manifest.downloads)
+      ? manifest.downloads
+      : {};
+    this.verifiedUpdateDownloads.clear();
+    for (const key of Object.keys(downloads)) {
+      const download = trustedUpdateDownload(downloads[key]);
+      if (!download) continue;
+      const downloadToken = crypto.randomBytes(UPDATE_DOWNLOAD_TOKEN_BYTES).toString("base64url");
+      this.verifiedUpdateDownloads.set(downloadToken, download);
+      downloads[key] = { ...downloads[key], downloadToken };
+    }
+    return manifest;
+  }
+
+  verifiedUpdateDownload({ downloadToken, url, sha256 }) {
+    const token = String(downloadToken ?? "").trim();
+    const verified = this.verifiedUpdateDownloads.get(token);
+    if (!verified) throw new Error("update download is not linked to a verified manifest");
+    const requestedUrl = String(url ?? "");
+    const requestedSha256 = String(sha256 ?? "").trim().toLowerCase();
+    if (requestedUrl !== verified.url || requestedSha256 !== verified.sha256) {
+      throw new Error("update download does not match verified manifest");
+    }
+    this.verifiedUpdateDownloads.delete(token);
+    return verified;
+  }
+
+  async downloadUpdateArtifact({ url, sha256, downloadToken, download_token }) {
+    const verifiedDownload = this.verifiedUpdateDownload({ downloadToken: downloadToken ?? download_token, url, sha256 });
     const parsed = new URL(String(url ?? ""));
-    const expectedSha256 = String(sha256 ?? "").trim().toLowerCase();
+    const expectedSha256 = verifiedDownload.sha256;
     if (!UPDATE_DOWNLOAD_URL_PATTERN.test(parsed.toString())) {
       throw new Error("update download URL is not trusted");
     }
@@ -1217,11 +1287,21 @@ class ShelfBackend {
   importBackup({ path: filePath, importedAt, imported_at }) {
     const imported = importedAt ?? imported_at;
     const backup = readImportedBackup(filePath);
+    return this.importBackupData(backup, imported);
+  }
+
+  importBackupContent({ content, importedAt, imported_at }) {
+    const imported = importedAt ?? imported_at;
+    if (typeof content !== "string") throw new Error("backup content is required");
+    return this.importBackupData(parseImportedBackup(content), imported);
+  }
+
+  importBackupData(backup, imported) {
     const importedCount = this.importPageRecords(prepareImportedBackupPages(backup.pages, imported));
-    if (backup.profile && typeof backup.profile === "object") {
-      const current = this.getWorkspaceProfile();
-      if (current.name === "" && current.workspaceName === "Shelf") {
-        const { name, workspaceName } = backup.profile;
+	    if (backup.profile && typeof backup.profile === "object") {
+	      const current = this.getWorkspaceProfile();
+	      if (current.name === "" && current.workspaceName === "Shelf") {
+	        const { name, workspaceName } = backup.profile;
         if (name !== undefined) {
           if (typeof name !== "string" || name.length > PROFILE_TEXT_MAX_LENGTH) {
             throw new Error("backup profile name too long or invalid");
@@ -1232,14 +1312,14 @@ class ShelfBackend {
           if (typeof workspaceName !== "string" || workspaceName.length > PROFILE_TEXT_MAX_LENGTH) {
             throw new Error("backup workspace name too long or invalid");
           }
-          this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, workspaceName);
-        }
-      }
-    }
-    return importedCount;
-  }
+	          this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, workspaceName);
+	        }
+	      }
+	    }
+	    return importedCount;
+	  }
 
-  listStudioDocuments() {
+	  listStudioDocuments() {
     return this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY last_opened_at DESC, created_at DESC`).all();
   }
 
