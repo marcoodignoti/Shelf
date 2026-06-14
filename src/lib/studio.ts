@@ -1,4 +1,4 @@
-import { invoke, studioDocumentPdfSrc } from "./desktop";
+import { importStudioDocumentWithDialog, invoke, replaceStudioDocumentFileWithDialog, studioDocumentPdfSrc } from "./desktop";
 import type { Page } from "./db";
 
 export type StudioPanelLayout = "pdf-left" | "note-left";
@@ -173,20 +173,18 @@ export async function unlinkStudioDocumentPage(id: string): Promise<void> {
   await invoke("unlink_studio_document_page", { id });
 }
 
-export async function importStudioDocument(sourcePath: string): Promise<StudioDocument> {
+export async function importStudioDocumentFromDialog(): Promise<StudioDocument | null> {
   const id = crypto.randomUUID();
-  return await invoke<StudioDocument>("import_studio_document", {
+  return await importStudioDocumentWithDialog<StudioDocument>({
     documentId: id,
     notePageId: id,
-    sourcePath,
     importedAt: new Date().toISOString(),
   });
 }
 
-export async function replaceStudioDocumentFile(id: string, sourcePath: string): Promise<StudioDocument> {
-  return await invoke<StudioDocument>("replace_studio_document_file", {
+export async function replaceStudioDocumentFileFromDialog(id: string): Promise<StudioDocument | null> {
+  return await replaceStudioDocumentFileWithDialog<StudioDocument>({
     id,
-    sourcePath,
     updatedAt: new Date().toISOString(),
   });
 }

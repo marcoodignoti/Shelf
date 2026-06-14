@@ -171,19 +171,23 @@ async function run() {
     /too long|invalid/,
   );
 
-  const avatarSource = path.join(tempRoot, "avatar-source.png");
-  fs.writeFileSync(avatarSource, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
-  const avatarPath = await backend.invoke("import_profile_avatar", { sourcePath: avatarSource });
+	  const avatarSource = path.join(tempRoot, "avatar-source.png");
+	  fs.writeFileSync(avatarSource, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+	  await assert.rejects(
+	    backend.invoke("import_profile_avatar", { sourcePath: avatarSource }),
+	    /trusted file dialog/,
+	  );
+	  const avatarPath = backend.importProfileAvatar({ sourcePath: avatarSource });
   assert.ok(avatarPath.includes("avatars"));
   assert.ok(fs.existsSync(avatarPath));
   assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, avatarPath);
 
   // Importing a second avatar must delete the first one (finding 1: orphan cleanup).
   // Sleep 2ms so the Date.now() timestamp in the destination filename differs from the first.
-  await new Promise((resolve) => setTimeout(resolve, 2));
-  const avatarSource2 = path.join(tempRoot, "avatar-source2.png");
-  fs.writeFileSync(avatarSource2, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
-  const avatarPath2 = await backend.invoke("import_profile_avatar", { sourcePath: avatarSource2 });
+	  await new Promise((resolve) => setTimeout(resolve, 2));
+	  const avatarSource2 = path.join(tempRoot, "avatar-source2.png");
+	  fs.writeFileSync(avatarSource2, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+	  const avatarPath2 = backend.importProfileAvatar({ sourcePath: avatarSource2 });
   assert.ok(fs.existsSync(avatarPath2), "second avatar must exist on disk");
   assert.ok(!fs.existsSync(avatarPath), "first avatar must be deleted after replacement");
 
@@ -191,8 +195,12 @@ async function run() {
   assert.strictEqual((await backend.invoke("get_workspace_profile")).avatarPath, null);
   assert.ok(!fs.existsSync(avatarPath2), "avatar file must be deleted when cleared via update_workspace_profile");
 
-  const backupPath = path.join(tempRoot, "backup.json");
-  const exported = await backend.invoke("export_backup", { path: backupPath, exportedAt: createdAt });
+	  const backupPath = path.join(tempRoot, "backup.json");
+	  await assert.rejects(
+	    backend.invoke("export_backup", { path: backupPath, exportedAt: createdAt }),
+	    /trusted file dialog/,
+	  );
+	  const exported = backend.exportBackup({ path: backupPath, exportedAt: createdAt });
   if (exported !== 1 || !fs.existsSync(backupPath)) {
     throw new Error("export_backup failed");
   }
@@ -204,8 +212,12 @@ async function run() {
   await backend.invoke("update_workspace_profile", { name: "", workspaceName: "Shelf" });
   assert.strictEqual((await backend.invoke("get_workspace_profile")).workspaceName, "Shelf");
 
-  await backend.invoke("delete_page", { id: "page-1" });
-  const imported = await backend.invoke("import_backup", { path: backupPath, importedAt: createdAt });
+	  await backend.invoke("delete_page", { id: "page-1" });
+	  await assert.rejects(
+	    backend.invoke("import_backup", { path: backupPath, importedAt: createdAt }),
+	    /trusted file dialog/,
+	  );
+	  const imported = backend.importBackup({ path: backupPath, importedAt: createdAt });
   if (imported !== 1) {
     throw new Error("import_backup failed");
   }
@@ -219,14 +231,18 @@ async function run() {
     throw new Error("list_pages after import failed");
   }
 
-  const editorImagePath = await backend.invoke("import_editor_image", {
+	  const editorImagePath = await backend.invoke("import_editor_image", {
     pageId: "page-1",
     fileName: "inline.png",
     bytes: Array.from(onePixelPng),
   });
-  if (!fs.existsSync(editorImagePath)) {
-    throw new Error("import_editor_image did not write file");
-  }
+	  if (!fs.existsSync(editorImagePath)) {
+	    throw new Error("import_editor_image did not write file");
+	  }
+	  await assert.rejects(
+	    backend.invoke("import_editor_image", { pageId: "page-1", sourcePath: avatarSource }),
+	    /trusted file dialog/,
+	  );
 
   const editorVideoPath = await backend.invoke("import_editor_video", {
     pageId: "page-1",
@@ -244,12 +260,21 @@ async function run() {
     createdAt,
   });
 
-  const pdfPath = path.join(tempRoot, "source.pdf");
-  fs.writeFileSync(pdfPath, tinyPdfFixture);
-  await backend.invoke("import_studio_document", {
-    documentId: "studio-note-1",
-    notePageId: "studio-note-1",
-    sourcePath: pdfPath,
+	  const pdfPath = path.join(tempRoot, "source.pdf");
+	  fs.writeFileSync(pdfPath, tinyPdfFixture);
+	  await assert.rejects(
+	    backend.invoke("import_studio_document", {
+	      documentId: "studio-note-1",
+	      notePageId: "studio-note-1",
+	      sourcePath: pdfPath,
+	      importedAt: createdAt,
+	    }),
+	    /trusted file dialog/,
+	  );
+	  await backend.importStudioDocument({
+	    documentId: "studio-note-1",
+	    notePageId: "studio-note-1",
+	    sourcePath: pdfPath,
     importedAt: createdAt,
   });
   await backend.invoke("create_studio_project", {
@@ -391,26 +416,39 @@ async function run() {
     throw new Error("app asset protocol token did not resolve to the managed file");
   }
 
-  const updateManifestUrl = "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json";
-  const manifestPayload = {
-    version: "99.0.0",
-    channel: "beta",
+	  const updateBytes = Buffer.from("verified update artifact");
+	  const updateSha256 = crypto.createHash("sha256").update(updateBytes).digest("hex");
+	  const updateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_arm64.dmg";
+	  const portableUpdateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_win-x64.zip";
+	  const installerUpdateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_setup_win-x64.exe";
+	  const updateManifestUrl = "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json";
+	  const manifestPayload = {
+	    version: "99.0.0",
+	    channel: "beta",
     publishedAt: "2026-06-05T00:00:00.000Z",
     title: "Shelf 99.0.0",
     summary: "Signed update manifest.",
-    changes: ["Signed manifest"],
-    downloads: {},
-  };
-  const originalManifestFetch = global.fetch;
-  try {
-    global.fetch = async () => new Response(JSON.stringify(signedUpdateManifest(manifestPayload)), {
-      status: 200,
-      headers: { "content-length": "512" },
-    });
-    const verifiedManifest = await backend.invoke("fetch_update_manifest", { url: updateManifestUrl });
-    if (verifiedManifest.version !== manifestPayload.version) {
-      throw new Error("fetch_update_manifest did not return verified payload");
-    }
+	    changes: ["Signed manifest"],
+	    downloads: {
+	      macosArm64: { url: updateUrl, label: "macOS Apple Silicon", sha256: updateSha256 },
+	      windowsX64: { url: portableUpdateUrl, label: "Windows x64", sha256: updateSha256 },
+	      windowsInstallerX64: { url: installerUpdateUrl, label: "Windows x64 installer", sha256: updateSha256 },
+	    },
+	  };
+	  let verifiedManifest;
+	  const originalManifestFetch = global.fetch;
+	  try {
+	    global.fetch = async () => new Response(JSON.stringify(signedUpdateManifest(manifestPayload)), {
+	      status: 200,
+	      headers: { "content-length": "512" },
+	    });
+	    verifiedManifest = await backend.invoke("fetch_update_manifest", { url: updateManifestUrl });
+	    if (verifiedManifest.version !== manifestPayload.version) {
+	      throw new Error("fetch_update_manifest did not return verified payload");
+	    }
+	    if (!verifiedManifest.downloads.macosArm64.downloadToken || !verifiedManifest.downloads.windowsInstallerX64.downloadToken) {
+	      throw new Error("fetch_update_manifest did not issue download tokens");
+	    }
 
     let rejectedBadSignature = false;
     try {
@@ -428,16 +466,12 @@ async function run() {
       rejectedBadSignature = true;
     }
     if (!rejectedBadSignature) throw new Error("fetch_update_manifest accepted bad signature");
-  } finally {
-    global.fetch = originalManifestFetch;
-  }
+	  } finally {
+	    global.fetch = originalManifestFetch;
+	  }
 
-  const updateBytes = Buffer.from("verified update artifact");
-  const updateSha256 = crypto.createHash("sha256").update(updateBytes).digest("hex");
-  const updateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_arm64.dmg";
-  const installerUpdateUrl = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_setup_win-x64.exe";
-  const originalFetch = global.fetch;
-  let openedUpdatePath = null;
+	  const originalFetch = global.fetch;
+	  let openedUpdatePath = null;
   global.fetch = async () => new Response(updateBytes, {
     status: 200,
     headers: { "content-length": String(updateBytes.length) },
@@ -447,35 +481,54 @@ async function run() {
     return "";
   };
 
-  const verifiedUpdate = await backend.invoke("download_update_artifact", {
-    url: updateUrl,
-    sha256: updateSha256,
-  });
+	  const verifiedUpdate = await backend.invoke("download_update_artifact", {
+	    url: updateUrl,
+	    sha256: updateSha256,
+	    downloadToken: verifiedManifest.downloads.macosArm64.downloadToken,
+	  });
   if (verifiedUpdate.sha256 !== updateSha256 || !fs.existsSync(verifiedUpdate.path) || openedUpdatePath !== verifiedUpdate.path) {
     throw new Error("download_update_artifact failed verified download");
   }
 
-  const verifiedInstallerUpdate = await backend.invoke("download_update_artifact", {
-    url: installerUpdateUrl,
-    sha256: updateSha256,
-  });
+	  const verifiedInstallerUpdate = await backend.invoke("download_update_artifact", {
+	    url: installerUpdateUrl,
+	    sha256: updateSha256,
+	    downloadToken: verifiedManifest.downloads.windowsInstallerX64.downloadToken,
+	  });
   if (!verifiedInstallerUpdate.path.endsWith(".exe")) {
     throw new Error("download_update_artifact rejected Windows installer");
   }
 
-  try {
-    await backend.invoke("download_update_artifact", {
-      url: updateUrl,
-      sha256: "0".repeat(64),
-    });
-    throw new Error("download_update_artifact accepted bad checksum");
-  } catch (error) {
-    if (!String(error?.message || error).includes("checksum mismatch")) {
-      throw error;
-    }
-  } finally {
-    global.fetch = originalFetch;
-  }
+	  try {
+	    await backend.invoke("download_update_artifact", {
+	      url: updateUrl,
+	      sha256: updateSha256,
+	    });
+	    throw new Error("download_update_artifact accepted missing token");
+	  } catch (error) {
+	    if (!String(error?.message || error).includes("verified manifest")) {
+	      throw error;
+	    }
+	  }
+
+	  global.fetch = async () => new Response(Buffer.from("tampered update artifact"), {
+	    status: 200,
+	    headers: { "content-length": "24" },
+	  });
+	  try {
+	    await backend.invoke("download_update_artifact", {
+	      url: portableUpdateUrl,
+	      sha256: updateSha256,
+	      downloadToken: verifiedManifest.downloads.windowsX64.downloadToken,
+	    });
+	    throw new Error("download_update_artifact accepted bad checksum");
+	  } catch (error) {
+	    if (!String(error?.message || error).includes("checksum mismatch")) {
+	      throw error;
+	    }
+	  } finally {
+	    global.fetch = originalFetch;
+	  }
 
   await verifyVersionChangeBackups();
 }

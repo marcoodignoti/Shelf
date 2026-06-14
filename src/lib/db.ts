@@ -1,4 +1,4 @@
-import { fileSrc, invoke } from './desktop';
+import { fileSrc, importCoverImageWithDialog, importEditorMediaFilesWithDialog, invoke } from './desktop';
 
 export type PageKind = 'note' | 'studio_note';
 
@@ -155,8 +155,8 @@ export async function duplicatePage(sourceId: string): Promise<Page> {
   });
 }
 
-export async function importCoverImage(sourcePath: string, pageId: string): Promise<string> {
-  return await invoke<string>('import_cover_image', { sourcePath, pageId });
+export async function importCoverImageFromDialog(pageId: string): Promise<string | null> {
+  return await importCoverImageWithDialog(pageId);
 }
 
 const EDITOR_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
@@ -193,8 +193,8 @@ export async function importEditorImage(file: File, pageId: string): Promise<str
   });
 }
 
-export async function importEditorImagePath(sourcePath: string, pageId: string): Promise<string> {
-  return await invoke<string>('import_editor_image', { sourcePath, pageId });
+export async function importEditorImageFilesFromDialog(pageId: string): Promise<Array<{ sourceName: string; path: string }>> {
+  return await importEditorMediaFilesWithDialog('image', pageId);
 }
 
 export async function importEditorVideo(file: File, pageId: string): Promise<string> {
@@ -207,8 +207,8 @@ export async function importEditorVideo(file: File, pageId: string): Promise<str
   });
 }
 
-export async function importEditorVideoPath(sourcePath: string, pageId: string): Promise<string> {
-  return await invoke<string>('import_editor_video', { sourcePath, pageId });
+export async function importEditorVideoFilesFromDialog(pageId: string): Promise<Array<{ sourceName: string; path: string }>> {
+  return await importEditorMediaFilesWithDialog('video', pageId);
 }
 
 export async function importEditorMedia(file: File, pageId: string): Promise<string> {

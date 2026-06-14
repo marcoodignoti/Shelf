@@ -94,7 +94,7 @@ Grab the latest build from the **[releases page](https://github.com/marcoodignot
 | Platform | File | Notes |
 |---|---|---|
 | macOS (Apple Silicon) | `Shelf_<version>_arm64.dmg` | First launch needs one extra step, see below |
-| Windows 10/11 (x64) | `Shelf_<version>_setup_win-x64.exe` | Installer with built-in auto-update |
+| Windows 10/11 (x64) | `Shelf_<version>_setup_win-x64.exe` | Installer with signed in-app update notice |
 | Windows portable | `Shelf_<version>_win-x64.zip` | Extract and run `Shelf.exe` |
 
 ### macOS (Apple Silicon)

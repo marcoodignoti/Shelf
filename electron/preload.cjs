@@ -41,12 +41,33 @@ contextBridge.exposeInMainWorld("openNotion", {
   open(options) {
     return ipcRenderer.invoke("opennotion:dialog-open", isRecord(options) ? options : {});
   },
-  save(options) {
-    return ipcRenderer.invoke("opennotion:dialog-save", isRecord(options) ? options : {});
-  },
-  exportFiles(options) {
-    return ipcRenderer.invoke("opennotion:export-files", isRecord(options) ? options : {});
-  },
+	  save(options) {
+	    return ipcRenderer.invoke("opennotion:dialog-save", isRecord(options) ? options : {});
+	  },
+	  exportBackup(options) {
+	    return ipcRenderer.invoke("opennotion:backup-export", isRecord(options) ? options : {});
+	  },
+	  importBackup(options) {
+	    return ipcRenderer.invoke("opennotion:backup-import", isRecord(options) ? options : {});
+	  },
+	  importStudioDocument(options) {
+	    return ipcRenderer.invoke("opennotion:studio-document-import", isRecord(options) ? options : {});
+	  },
+	  replaceStudioDocumentFile(options) {
+	    return ipcRenderer.invoke("opennotion:studio-document-replace-file", isRecord(options) ? options : {});
+	  },
+	  importCoverImage(options) {
+	    return ipcRenderer.invoke("opennotion:cover-image-import", isRecord(options) ? options : {});
+	  },
+	  importProfileAvatar(options) {
+	    return ipcRenderer.invoke("opennotion:profile-avatar-import", isRecord(options) ? options : {});
+	  },
+	  importEditorMediaFiles(options) {
+	    return ipcRenderer.invoke("opennotion:editor-media-files-import", isRecord(options) ? options : {});
+	  },
+	  exportFiles(options) {
+	    return ipcRenderer.invoke("opennotion:export-files", isRecord(options) ? options : {});
+	  },
   importPageFile(options) {
     return ipcRenderer.invoke("opennotion:import-page-file", isRecord(options) ? options : {});
   },

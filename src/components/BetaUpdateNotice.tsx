@@ -42,11 +42,10 @@ export function BetaUpdateNotice() {
   const [copiedHomebrewCommand, setCopiedHomebrewCommand] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  useEffect(() => {
-    // electron-updater owns update delivery on Windows installer builds
-    // (background download + restart-to-update); skip the manifest notice
-    // there so users don't get two competing update prompts.
-    if (desktopAutoUpdateActive()) return;
+	  useEffect(() => {
+	    // Legacy bridge builds can opt out; current desktop builds use the
+	    // signed manifest notice on every platform.
+	    if (desktopAutoUpdateActive()) return;
 
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {

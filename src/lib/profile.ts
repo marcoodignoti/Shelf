@@ -1,4 +1,4 @@
-import { invoke } from "./desktop";
+import { importProfileAvatarWithDialog, invoke } from "./desktop";
 
 export interface WorkspaceProfile {
   name: string;
@@ -16,6 +16,6 @@ export async function updateWorkspaceProfile(
   return await invoke<WorkspaceProfile>("update_workspace_profile", patch);
 }
 
-export async function importProfileAvatar(sourcePath: string): Promise<string> {
-  return await invoke<string>("import_profile_avatar", { sourcePath });
+export async function importProfileAvatarFromDialog(): Promise<string | null> {
+  return await importProfileAvatarWithDialog();
 }

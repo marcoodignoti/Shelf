@@ -113,6 +113,8 @@ async function setupStudioMock(page: Page) {
         if (cmd === "update_page") return null;
         throw new Error(`Unhandled profile command: ${cmd}`);
       },
+      importStudioDocument: async (args: Record<string, unknown>) =>
+        window.openNotion!.invoke("import_studio_document", args),
       open: async () => "/tmp/profile.pdf",
       save: async () => null,
       fileSrc: (filePath: string) => filePath,

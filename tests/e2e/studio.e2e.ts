@@ -191,7 +191,7 @@ test.beforeEach(async ({ page }) => {
         }
         if (cmd === "replace_studio_document_file") {
           const documents = load<any>(documentsKey);
-          const sourcePath = args.sourcePath as string;
+          const sourcePath = (args.sourcePath as string | undefined) ?? "/tmp/civil-law.pdf";
           const originalFilename = sourcePath.split("/").pop() ?? "document.pdf";
           const document = documents.find((candidate) => candidate.id === args.id);
           if (!document) throw new Error("document not found");
@@ -311,6 +311,10 @@ test.beforeEach(async ({ page }) => {
         if (cmd === "get_workspace_profile") return { name: "", workspaceName: "Shelf", avatarPath: null };
         throw new Error(`Unhandled e2e command: ${cmd}`);
       },
+      importStudioDocument: async (args: Record<string, unknown>) =>
+        window.openNotion!.invoke("import_studio_document", args),
+      replaceStudioDocumentFile: async (args: Record<string, unknown>) =>
+        window.openNotion!.invoke("replace_studio_document_file", args),
       open: async () => "/tmp/civil-law.pdf",
       save: async () => null,
       fileSrc: (filePath: string) => filePath,

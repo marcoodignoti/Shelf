@@ -42,17 +42,29 @@ export interface ExportFilesResult {
   fileCount: number;
 }
 
+export interface ImportedMediaFile {
+  sourceName: string;
+  path: string;
+}
+
 export interface ImportedFile {
   path: string;
   content: string;
 }
 
 interface ShelfDesktopBridge {
-  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
-  save(options?: SaveDialogOptions): Promise<string | null>;
-  exportFiles?(options: ExportFilesOptions): Promise<ExportFilesResult | null>;
-  importPageFile?(options?: OpenDialogOptions): Promise<ImportedFile | null>;
+	  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+	  open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
+	  save(options?: SaveDialogOptions): Promise<string | null>;
+	  exportBackup?(options?: { defaultPath?: string; exportedAt?: string }): Promise<number | null>;
+	  importBackup?(options?: { importedAt?: string }): Promise<number | null>;
+	  importStudioDocument?(options: { documentId: string; notePageId: string; importedAt?: string }): Promise<unknown | null>;
+	  replaceStudioDocumentFile?(options: { id: string; updatedAt?: string }): Promise<unknown | null>;
+	  importCoverImage?(options: { pageId: string }): Promise<string | null>;
+	  importProfileAvatar?(): Promise<string | null>;
+	  importEditorMediaFiles?(options: { kind: "image" | "video"; pageId: string }): Promise<ImportedMediaFile[]>;
+	  exportFiles?(options: ExportFilesOptions): Promise<ExportFilesResult | null>;
+	  importPageFile?(options?: OpenDialogOptions): Promise<ImportedFile | null>;
   fileSrc(filePath: string): string;
   studioPdfSrc?(documentId: string): string;
   onDesktopUpdate?(callback: (eventName: DesktopUpdateEventName, payload: unknown) => void): () => void;
@@ -85,6 +97,48 @@ export async function saveDialog(options?: SaveDialogOptions): Promise<string | 
   return await bridge().save(options);
 }
 
+export async function exportBackupWithDialog(options?: { defaultPath?: string; exportedAt?: string }): Promise<number | null> {
+  const desktop = bridge();
+  if (!desktop.exportBackup) throw new Error("backup export is not available in this build");
+  return await desktop.exportBackup(options);
+}
+
+export async function importBackupWithDialog(options?: { importedAt?: string }): Promise<number | null> {
+  const desktop = bridge();
+  if (!desktop.importBackup) throw new Error("backup import is not available in this build");
+  return await desktop.importBackup(options);
+}
+
+export async function importStudioDocumentWithDialog<T>(options: { documentId: string; notePageId: string; importedAt?: string }): Promise<T | null> {
+  const desktop = bridge();
+  if (!desktop.importStudioDocument) throw new Error("Studio document import is not available in this build");
+  return await desktop.importStudioDocument(options) as T | null;
+}
+
+export async function replaceStudioDocumentFileWithDialog<T>(options: { id: string; updatedAt?: string }): Promise<T | null> {
+  const desktop = bridge();
+  if (!desktop.replaceStudioDocumentFile) throw new Error("Studio document file replace is not available in this build");
+  return await desktop.replaceStudioDocumentFile(options) as T | null;
+}
+
+export async function importCoverImageWithDialog(pageId: string): Promise<string | null> {
+  const desktop = bridge();
+  if (!desktop.importCoverImage) throw new Error("cover image import is not available in this build");
+  return await desktop.importCoverImage({ pageId });
+}
+
+export async function importProfileAvatarWithDialog(): Promise<string | null> {
+  const desktop = bridge();
+  if (!desktop.importProfileAvatar) throw new Error("profile avatar import is not available in this build");
+  return await desktop.importProfileAvatar();
+}
+
+export async function importEditorMediaFilesWithDialog(kind: "image" | "video", pageId: string): Promise<ImportedMediaFile[]> {
+  const desktop = bridge();
+  if (!desktop.importEditorMediaFiles) throw new Error("editor media import is not available in this build");
+  return await desktop.importEditorMediaFiles({ kind, pageId });
+}
+
 export function fileSrc(filePath: string): string {
   return bridge().fileSrc(filePath);
 }
@@ -113,8 +167,9 @@ export async function importPageFileWithDialog(options?: OpenDialogOptions): Pro
   return await desktop.importPageFile(options);
 }
 
-// True when the platform auto-updater (electron-updater on Windows installer
-// builds) owns update delivery; the manifest-based notice defers to it.
+// Reserved for legacy desktop updater events. Current builds use the signed
+// manifest update flow on every platform, so the real Electron bridge returns
+// false and the manifest notice remains active.
 export function desktopAutoUpdateActive(): boolean {
   try {
     return window.openNotion?.autoUpdateActive?.() ?? false;

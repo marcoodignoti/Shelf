@@ -1,4 +1,4 @@
-import { invoke } from "./desktop";
+import { exportBackupWithDialog, importBackupWithDialog } from "./desktop";
 import { Page } from "./db";
 
 export const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
@@ -104,12 +104,12 @@ export function parseBackup(raw: string): WorkspaceBackup {
   };
 }
 
-export async function exportWorkspaceBackup(path: string, exportedAt = new Date().toISOString()): Promise<number> {
-  return await invoke<number>("export_backup", { path, exportedAt });
+export async function exportWorkspaceBackupWithDialog(defaultPath: string, exportedAt = new Date().toISOString()): Promise<number | null> {
+  return await exportBackupWithDialog({ defaultPath, exportedAt });
 }
 
-export async function importWorkspaceBackup(path: string, importedAt = new Date().toISOString()): Promise<number> {
-  return await invoke<number>("import_backup", { path, importedAt });
+export async function importWorkspaceBackupWithDialog(importedAt = new Date().toISOString()): Promise<number | null> {
+  return await importBackupWithDialog({ importedAt });
 }
 
 export function prepareImportedPages(

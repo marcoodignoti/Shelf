@@ -26,6 +26,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate CI run provenance
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          run_id="${{ inputs.run_id }}"
+          run_json="$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")"
+          run_repo="$(jq -r '.repository.full_name' <<<"$run_json")"
+          run_event="$(jq -r '.event' <<<"$run_json")"
+          run_conclusion="$(jq -r '.conclusion' <<<"$run_json")"
+          run_head_branch="$(jq -r '.head_branch' <<<"$run_json")"
+          run_head_sha="$(jq -r '.head_sha' <<<"$run_json")"
+          run_workflow="$(jq -r '.name' <<<"$run_json")"
+          git check-ref-format --allow-onelevel "$tag"
+          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+          release_sha="$(git rev-list -n 1 "$tag")"
+          if [ "$run_repo" != "${{ github.repository }}" ]; then
+            echo "CI run belongs to $run_repo, not ${{ github.repository }}" >&2
+            exit 1
+          fi
+          if [ "$run_workflow" != "CI" ] || [ "$run_event" != "push" ] || [ "$run_head_branch" != "main" ]; then
+            echo "CI run must be the CI workflow from a push to main" >&2
+            exit 1
+          fi
+          if [ "$run_conclusion" != "success" ]; then
+            echo "CI run conclusion is $run_conclusion, not success" >&2
+            exit 1
+          fi
+          if [ "$run_head_sha" != "$release_sha" ]; then
+            echo "CI run SHA $run_head_sha does not match release target $release_sha" >&2
+            exit 1
+          fi
+
       - name: Download CI artifacts
         run: gh run download "${{ inputs.run_id }}" --repo "${{ github.repository }}" --dir artifacts
 
@@ -50,12 +82,11 @@ jobs:
           set -euo pipefail
           tag="${{ inputs.tag }}"
           assets=(
-            artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg \
-            artifacts/Shelf_win-x64/Shelf_*_win-x64.zip \
-            artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe \
-            artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe.blockmap \
-            artifacts/Shelf_win-x64_installer/latest.yml
-          )
+              artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg \
+              artifacts/Shelf_win-x64/Shelf_*_win-x64.zip \
+              artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe \
+              artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe.blockmap
+            )
           if [ -f dist-electron/beta-update.json ]; then
             assets+=(dist-electron/beta-update.json)
           fi

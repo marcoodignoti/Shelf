@@ -11,6 +11,7 @@ const VALID_SHA = "a".repeat(64);
 const VALID_MAC_URL = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_arm64.dmg";
 const VALID_WIN_URL = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_win-x64.zip";
 const VALID_WIN_INSTALLER_URL = "https://github.com/marcoodignoti/Shelf/releases/download/v99.0.0/Shelf_99.0.0_setup_win-x64.exe";
+const VALID_DOWNLOAD_TOKEN = "verified-token";
 
 describe("beta update manifest", () => {
   afterEach(() => {
@@ -31,8 +32,8 @@ describe("beta update manifest", () => {
       title: "Shelf 0.1.1",
       summary: "Studio links and update flow.",
       changes: ["Studio bookmarks", "Shared search", "Inline page links", "Slash search", "Update notice", "Hidden"],
-      downloads: {
-        macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA, size: "120 MB" },
+	    downloads: {
+	      macosArm64: { url: VALID_MAC_URL, label: "macOS Apple Silicon", sha256: VALID_SHA, size: "120 MB", downloadToken: VALID_DOWNLOAD_TOKEN },
         windowsX64: { url: VALID_WIN_URL, label: "Windows x64", sha256: VALID_SHA },
         windowsInstallerX64: { url: VALID_WIN_INSTALLER_URL, label: "Windows x64 installer", sha256: VALID_SHA },
         ignored: { url: "http://example.com/bad.zip", label: "Bad", sha256: VALID_SHA },
@@ -46,7 +47,8 @@ describe("beta update manifest", () => {
       "Slash search",
       "Update notice",
     ]);
-    expect(manifest.downloads.macosArm64?.size).toBe("120 MB");
+	    expect(manifest.downloads.macosArm64?.size).toBe("120 MB");
+	    expect(manifest.downloads.macosArm64?.downloadToken).toBe(VALID_DOWNLOAD_TOKEN);
     expect(manifest.downloads.windowsX64?.label).toBe("Windows x64");
     expect(manifest.downloads.windowsInstallerX64?.label).toBe("Windows x64 installer");
     expect(manifest.downloads.windowsX64?.sha256).toBe(VALID_SHA);
@@ -115,16 +117,30 @@ describe("beta update manifest", () => {
     const invoke = vi.fn(async () => ({ path: "/tmp/Shelf.dmg", bytes: 7, sha256: VALID_SHA }));
     vi.stubGlobal("window", { openNotion: { invoke } });
 
-    await expect(downloadVerifiedUpdate({
-      url: VALID_MAC_URL,
-      label: "macOS Apple Silicon",
-      sha256: VALID_SHA,
-    })).resolves.toEqual({ path: "/tmp/Shelf.dmg", bytes: 7, sha256: VALID_SHA });
-    expect(invoke).toHaveBeenCalledWith("download_update_artifact", {
-      url: VALID_MAC_URL,
-      sha256: VALID_SHA,
-    });
-  });
+	    await expect(downloadVerifiedUpdate({
+	      url: VALID_MAC_URL,
+	      label: "macOS Apple Silicon",
+	      sha256: VALID_SHA,
+	      downloadToken: VALID_DOWNLOAD_TOKEN,
+	    })).resolves.toEqual({ path: "/tmp/Shelf.dmg", bytes: 7, sha256: VALID_SHA });
+	    expect(invoke).toHaveBeenCalledWith("download_update_artifact", {
+	      url: VALID_MAC_URL,
+	      sha256: VALID_SHA,
+	      downloadToken: VALID_DOWNLOAD_TOKEN,
+	    });
+	  });
+
+	  it("rejects desktop update downloads without a manifest token", async () => {
+	    const invoke = vi.fn();
+	    vi.stubGlobal("window", { openNotion: { invoke } });
+
+	    await expect(downloadVerifiedUpdate({
+	      url: VALID_MAC_URL,
+	      label: "macOS Apple Silicon",
+	      sha256: VALID_SHA,
+	    })).rejects.toThrow("Update download is not linked to a verified manifest");
+	    expect(invoke).not.toHaveBeenCalled();
+	  });
 
   it("uses the signed latest manifest URL before the beta channel fallback", async () => {
     const fetchMock = vi.fn(async (url: string) => {

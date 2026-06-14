@@ -14,21 +14,21 @@ import {
   type PageWidth,
   type TitleEnterBehavior,
 } from '../lib/preferences';
-import { openDialog, invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/desktop';
+import { invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/desktop';
 import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
 import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
-import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatar } from '../lib/profile';
+import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatarFromDialog } from '../lib/profile';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { openNotionEditorSchema } from '../lib/editorMath';
 import {
-  deleteStudioDocument,
-  importStudioDocument,
-  listAllStudioDocumentPageLinks,
-  listStudioDocuments,
-  renameStudioDocument,
-  replaceStudioDocumentFile,
+	  deleteStudioDocument,
+	  importStudioDocumentFromDialog,
+	  listAllStudioDocumentPageLinks,
+	  listStudioDocuments,
+	  renameStudioDocument,
+	  replaceStudioDocumentFileFromDialog,
   StudioDocument,
   StudioDocumentPageLink,
   StudioPanelLayout,
@@ -52,7 +52,7 @@ interface AppState {
   profile: WorkspaceProfile | null;
   fetchProfile: () => Promise<void>;
   updateProfileAction: (patch: Partial<Pick<WorkspaceProfile, "name" | "workspaceName">> & { avatarPath?: null }) => Promise<void>;
-  importProfileAvatarAction: (sourcePath: string) => Promise<void>;
+  importProfileAvatarAction: () => Promise<void>;
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
@@ -205,9 +205,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().showError(error);
     }
   },
-  importProfileAvatarAction: async (sourcePath) => {
+  importProfileAvatarAction: async () => {
     try {
-      const avatarPath = await importProfileAvatar(sourcePath);
+      const avatarPath = await importProfileAvatarFromDialog();
+      if (!avatarPath) return;
       const current = get().profile;
       if (current) set({ profile: { ...current, avatarPath } });
     } catch (error) {
@@ -283,13 +284,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
   importStudioPdfAction: async (projectId = null) => {
     try {
-      const path = await openDialog({
-        multiple: false,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      });
-      if (!path || Array.isArray(path)) return null;
-
-      const document = await importStudioDocument(path);
+      const document = await importStudioDocumentFromDialog();
+      if (!document) return null;
       const importedDocument = projectId ? { ...document, project_id: projectId } : document;
       const pages = await getPages();
       const studioDocumentPageLinks = await listAllStudioDocumentPageLinks();
@@ -313,13 +309,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   replaceStudioPdfAction: async (documentId) => {
     try {
-      const path = await openDialog({
-        multiple: false,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      });
-      if (!path || Array.isArray(path)) return null;
-
-      const document = await replaceStudioDocumentFile(documentId, path);
+      const document = await replaceStudioDocumentFileFromDialog(documentId);
+      if (!document) return null;
       set((state) => ({
         studioDocuments: state.studioDocuments.map((candidate) =>
           candidate.id === document.id ? document : candidate
@@ -454,7 +445,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           get().showSuccess("notice.pageTreeImported");
           return rootPage || null;
         } else if (parsed.version === 1 && Array.isArray(parsed.pages)) {
-          await invoke("import_backup", { path: filePath });
+          await invoke("import_backup_content", { content: raw, importedAt: new Date().toISOString() });
           await get().fetchPages();
           get().showSuccess("notice.workspaceBackupImported");
           return null;

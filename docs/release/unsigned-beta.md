@@ -8,7 +8,7 @@ Unsigned beta releases are for private testing before paid signing credentials e
 - Windows unsigned Electron zip from GitHub Actions for private testing
 - Windows unsigned NSIS installer from GitHub Actions for private testing
 - signed assisted beta update checks with SHA-256 verified downloads
-- Windows installer background downloads with install-on-quit updates
+- Windows installer guided downloads through the signed update manifest
 - ad-hoc macOS codesigning with hardened runtime enabled
 - explicit warning text for testers
 
@@ -44,7 +44,6 @@ Build the unsigned Windows zip and installer from GitHub Actions by running the
 ```text
 Shelf_0.1.4_win-x64.zip
 Shelf_0.1.4_setup_win-x64.exe
-latest.yml
 ```
 
 Generate the update manifest after packaging:
@@ -58,8 +57,8 @@ Local macOS dry-runs can generate a manifest with only the DMG present. Full
 multi-platform releases should set `SHELF_UPDATE_REQUIRE_ALL_ARTIFACTS=1`
 after the Windows ZIP exists.
 
-Upload signed `beta-update.json` with the DMG, ZIP, installer, and `latest.yml`
-in the same GitHub Release. Then update the stable `beta` release manifest too;
+Upload signed `beta-update.json` with the DMG, ZIP, and installer in the same
+GitHub Release. Then update the stable `beta` release manifest too;
 otherwise existing beta apps can keep seeing an old version. See
 [`docs/release/beta-updates.md`](beta-updates.md).
 

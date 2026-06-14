@@ -3,7 +3,7 @@
 Shelf's Windows release ships two artifacts from GitHub Actions:
 
 - unsigned portable Electron zip for compatibility with existing testers
-- unsigned NSIS installer for Windows auto-update support
+- unsigned NSIS installer for guided signed-manifest updates
 
 ## GitHub Actions Artifact
 
@@ -13,7 +13,6 @@ The `Windows package` job in `.github/workflows/ci.yml` runs on
 ```text
 Shelf_0.1.4_win-x64.zip
 Shelf_0.1.4_setup_win-x64.exe
-latest.yml
 ```
 
 Inside the extracted zip:
@@ -22,9 +21,8 @@ Inside the extracted zip:
 Shelf.exe
 ```
 
-`latest.yml` must be uploaded to the same GitHub Release as the installer.
-`electron-updater` uses that file to discover and download future Windows
-installer updates.
+Windows installer updates are discovered through the signed `beta-update.json`
+manifest, not through installer metadata.
 
 ## Local Windows Build
 
@@ -46,7 +44,6 @@ Generated installer files:
 
 ```text
 dist-electron/builder/Shelf_0.1.4_setup_win-x64.exe
-dist-electron/builder/latest.yml
 ```
 
 ## Acceptance Criteria
@@ -58,8 +55,7 @@ dist-electron/builder/latest.yml
 - The zip does not contain local development databases, imported PDFs, editor
   images, covers, or Studio documents.
 - Portable zip beta update notices open the latest GitHub Release zip manually.
-- Installer builds check for Windows updates in background, download newer
-  installers automatically, and install on app quit.
+- Installer builds use the signed update notice to download newer installers.
 
 ## Not Yet Supported
 
