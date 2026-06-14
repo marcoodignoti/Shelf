@@ -18,7 +18,7 @@ import { invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/
 import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
 import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
-import { Page, getPage, getPages, createPage, createPageFromTemplate, createStudioNotePage, deletePage, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
+import { Page, getPage, getPages, createPage, createPageFromTemplate, createProject, createStudioNotePage, deletePage, deleteProject, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatarFromDialog } from '../lib/profile';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { openNotionEditorSchema } from '../lib/editorMath';
@@ -57,7 +57,7 @@ interface AppState {
   fetchStudioDocuments: () => Promise<void>;
   setCurrentPageId: (id: string | null) => void;
   setCurrentStudioDocumentId: (id: string | null) => void;
-  importStudioPdfAction: (projectId?: string | null) => Promise<StudioDocument | null>;
+  importStudioPdfAction: (projectPageId?: string | null) => Promise<StudioDocument | null>;
   replaceStudioPdfAction: (documentId: string) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
@@ -66,6 +66,8 @@ interface AppState {
   importPageAction: () => Promise<Page | null>;
   exportProjectNotesMarkdown: (project: StudioProject) => Promise<void>;
   exportProjectNotesJSON: (project: StudioProject) => Promise<void>;
+  createProjectAction: (title?: string) => Promise<Page | null>;
+  removeProjectAction: (id: string) => Promise<void>;
   addPage: (title?: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   updatePageOptimistically: (id: string, updates: Partial<Page>) => void;
   renamePageAction: (id: string, title: string) => Promise<void>;
@@ -282,11 +284,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
-  importStudioPdfAction: async (projectId = null) => {
+  importStudioPdfAction: async (projectPageId = null) => {
     try {
       const document = await importStudioDocumentFromDialog();
       if (!document) return null;
-      const importedDocument = projectId ? { ...document, project_id: projectId } : document;
+      if (projectPageId) {
+        await movePage(document.note_page_id, projectPageId);
+      }
       const pages = await getPages();
       const studioDocumentPageLinks = await listAllStudioDocumentPageLinks();
       const opensInPageTree = document.id === document.note_page_id;
@@ -294,14 +298,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem('opennotion-current-page-id', document.id);
       }
       set((state) => ({
-        studioDocuments: [importedDocument, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
+        studioDocuments: [document, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         studioDocumentPageLinks,
         pages,
         currentStudioDocumentId: opensInPageTree ? null : document.id,
         currentPageId: opensInPageTree ? document.id : state.currentPageId,
         error: null
       }));
-      return importedDocument;
+      return document;
     } catch (error: unknown) {
       get().showError(error);
       return null;
@@ -530,6 +534,57 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       get().showSuccess("notice.projectNotesExportedJSON", { path: result.path });
     } catch (error: unknown) {
+      get().showError(error);
+    }
+  },
+  createProjectAction: async (title = 'Untitled') => {
+    try {
+      const project = await createProject(title);
+      set((state) => ({
+        pages: [project, ...state.pages.filter((page) => page.id !== project.id)],
+        error: null,
+      }));
+      return project;
+    } catch (error: unknown) {
+      logStoreError(error);
+      get().showError(error);
+      return null;
+    }
+  },
+  removeProjectAction: async (id) => {
+    const previousPages = get().pages;
+    const previousStudioDocumentPageLinks = get().studioDocumentPageLinks;
+    const optimisticPages = previousPages
+      .filter((page) => page.id !== id)
+      .map((page) => page.parent_id === id ? { ...page, parent_id: null } : page);
+    const nextCurrentPageId = get().currentPageId === id ? HOME_PAGE_ID : get().currentPageId;
+
+    set({
+      pages: optimisticPages,
+      currentPageId: nextCurrentPageId,
+      error: null,
+    });
+    localStorage.setItem('opennotion-current-page-id', nextCurrentPageId || HOME_PAGE_ID);
+
+    try {
+      await deleteProject(id);
+      const [pages, studioDocumentPageLinks] = await Promise.all([
+        getPages(),
+        listAllStudioDocumentPageLinks(),
+      ]);
+      set((state) => ({
+        pages,
+        studioDocumentPageLinks,
+        currentPageId: resolveCurrentPageId(pages, state.currentPageId),
+      }));
+      const current = get().currentPageId;
+      localStorage.setItem('opennotion-current-page-id', current || HOME_PAGE_ID);
+    } catch (error: unknown) {
+      logStoreError(error);
+      set({
+        pages: previousPages,
+        studioDocumentPageLinks: previousStudioDocumentPageLinks,
+      });
       get().showError(error);
     }
   },

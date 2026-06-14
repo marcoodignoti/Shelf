@@ -135,6 +135,7 @@ function runMigrations(db) {
   addPageColumn("database_schema", "ALTER TABLE pages ADD COLUMN database_schema TEXT");
   addPageColumn("properties", "ALTER TABLE pages ADD COLUMN properties TEXT");
   addPageColumn("page_kind", "ALTER TABLE pages ADD COLUMN page_kind TEXT NOT NULL DEFAULT 'note'");
+  db.exec("UPDATE pages SET page_kind = 'project' WHERE id LIKE 'studio-project:%' AND page_kind <> 'project'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS studio_documents (
@@ -338,6 +339,12 @@ function studioProjectPageId(projectId) {
   return `studio-project:${projectId}`;
 }
 
+function studioProjectIdFromPageId(pageId) {
+  const prefix = "studio-project:";
+  const value = String(pageId ?? "");
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
+
 function numericSchemaVersion(value) {
   const parsed = Number.parseInt(String(value ?? "0"), 10);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -418,11 +425,14 @@ function sanitizeImportedPageContent(value) {
 }
 
 function sanitizeImportedPageRecord(page) {
+  const pageKind = page.page_kind === "studio_note" || page.page_kind === "project"
+    ? page.page_kind
+    : "note";
   return {
     ...page,
     content: sanitizeImportedPageContent(page.content),
     cover_url: normalizeImportedCoverUrl(page.cover_url),
-    page_kind: page.page_kind === "studio_note" ? "studio_note" : "note",
+    page_kind: pageKind,
   };
 }
 
@@ -759,8 +769,10 @@ class ShelfBackend {
       search_pages: (args) => this.searchPages(args),
       get_page: (args) => this.getPage(args),
       create_page: (args) => this.createPage(args),
+      create_project: (args) => this.createProject(args),
       update_page: (args) => this.updatePage(args),
       delete_page: (args) => this.deletePage(args),
+      delete_project: (args) => this.deleteProject(args),
       move_page: (args) => this.movePage(args),
       reorder_pages: (args) => this.reorderPages(args),
       import_pages: (args) => this.importPages(args),
@@ -893,7 +905,7 @@ class ShelfBackend {
     if (existing) {
       this.db.prepare(`
         UPDATE pages
-        SET title = ?, parent_id = ?, is_deleted = 0, page_kind = 'note', sort_order = ?, updated_at = ?
+        SET title = ?, parent_id = ?, is_deleted = 0, page_kind = 'project', sort_order = ?, updated_at = ?
         WHERE id = ?
       `).run(project.name, parentPageId, project.sort_order, updatedAt, pageId);
       return pageId;
@@ -901,7 +913,7 @@ class ShelfBackend {
 
     this.db.prepare(`
       INSERT INTO pages (${PAGE_COLUMNS})
-      VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
+      VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'project', ?, ?)
     `).run(pageId, project.name, parentPageId, project.sort_order, project.created_at, updatedAt);
     return pageId;
   }
@@ -1068,7 +1080,7 @@ class ShelfBackend {
   }
 
   listPages() {
-    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind IN ('note', 'studio_note') ORDER BY sort_order ASC, created_at DESC`).all();
+    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind IN ('note', 'studio_note', 'project') ORDER BY sort_order ASC, created_at DESC`).all();
   }
 
   listAllPages() {
@@ -1117,13 +1129,38 @@ class ShelfBackend {
     return this.getPage({ id });
   }
 
+  createProject({ id, title, createdAt, created_at }) {
+    const created = createdAt ?? created_at;
+    const trimmed = String(title ?? "").trim();
+    if (!trimmed) throw new Error("project title cannot be empty");
+    const sortOrder = rowValue(this.db.prepare(`
+      SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
+      FROM pages
+      WHERE is_deleted = 0
+        AND page_kind = 'project'
+    `).get(), "value");
+
+    this.db.prepare(`
+      INSERT INTO pages (${PAGE_COLUMNS})
+      VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'project', ?, ?)
+    `).run(id, trimmed, sortOrder, created, created);
+    return this.getPage({ id });
+  }
+
   updatePage({ id, updates, updatedAt, updated_at }) {
     const updated = updatedAt ?? updated_at;
     this.withTransaction(() => {
       const apply = (column, value) => {
         this.db.prepare(`UPDATE pages SET ${column} = ?, updated_at = ? WHERE id = ?`).run(value, updated, id);
       };
-      if (own(updates, "title")) apply("title", updates.title);
+      if (own(updates, "title")) {
+        apply("title", updates.title);
+        const studioProjectId = studioProjectIdFromPageId(id);
+        if (studioProjectId) {
+          this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?")
+            .run(updates.title, updated, studioProjectId);
+        }
+      }
       if (own(updates, "parent_id")) apply("parent_id", updates.parent_id);
       if (own(updates, "content")) {
         const searchText = own(updates, "search_text") ? updates.search_text : updates.content;
@@ -1180,6 +1217,27 @@ class ShelfBackend {
         DELETE FROM pages
         WHERE id IN (SELECT id FROM descendants)
       `).run(id);
+    });
+  }
+
+  deleteProject({ id, updatedAt, updated_at }) {
+    const updated = updatedAt ?? updated_at;
+    const project = this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0 AND page_kind = 'project'`).get(id);
+    if (!project) throw new Error("project not found");
+    const studioProjectId = studioProjectIdFromPageId(id);
+
+    this.withTransaction(() => {
+      this.db.prepare("UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+        .run(updated, id);
+      if (studioProjectId) {
+        this.db.prepare("UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?")
+          .run(updated, studioProjectId);
+        this.db.prepare("UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+          .run(updated, studioProjectId);
+        this.db.prepare("DELETE FROM studio_projects WHERE id = ?").run(studioProjectId);
+      }
+      this.db.prepare("DELETE FROM studio_document_page_links WHERE page_id = ?").run(id);
+      this.db.prepare("DELETE FROM pages WHERE id = ? AND page_kind = 'project'").run(id);
     });
   }
 
@@ -1740,22 +1798,6 @@ class ShelfBackend {
           INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
           VALUES (?, ?, ?, NULL, 'Primary note', 0, ?, ?)
         `).run(crypto.randomUUID(), documentIdValue, notePageIdValue, imported, imported);
-        if (documentIdValue === notePageIdValue) {
-          const linkedNotePageId = crypto.randomUUID();
-          const linkedNoteSortOrder = rowValue(this.db.prepare(`
-            SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
-            FROM pages
-            WHERE is_deleted = 0 AND parent_id = ?
-          `).get(documentIdValue), "value");
-          this.db.prepare(`
-            INSERT INTO pages (${PAGE_COLUMNS})
-            VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
-          `).run(linkedNotePageId, `${title} Notes`, documentIdValue, linkedNoteSortOrder, imported, imported);
-          this.db.prepare(`
-            INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
-            VALUES (?, ?, ?, NULL, 'Linked note', 1, ?, ?)
-          `).run(crypto.randomUUID(), documentIdValue, linkedNotePageId, imported, imported);
-        }
       });
     } catch (error) {
       fs.rmSync(destination, { force: true });

@@ -1,6 +1,6 @@
 import { fileSrc, importCoverImageWithDialog, importEditorMediaFilesWithDialog, invoke } from './desktop';
 
-export type PageKind = 'note' | 'studio_note';
+export type PageKind = 'note' | 'studio_note' | 'project';
 
 export interface Page {
   id: string;
@@ -54,6 +54,17 @@ export async function createPage(title: string = 'Untitled', parentId: string | 
   });
 }
 
+export async function createProject(title: string = 'Untitled'): Promise<Page> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  return await invoke<Page>('create_project', {
+    id,
+    title,
+    createdAt: now,
+  });
+}
+
 export async function createStudioNotePage(id: string, title: string): Promise<Page> {
   const now = new Date().toISOString();
   const page = await invoke<Page>('create_page', {
@@ -99,6 +110,13 @@ export async function updatePage(id: string, updates: Partial<Page>): Promise<vo
 
 export async function deletePage(id: string): Promise<void> {
   await invoke('delete_page', { id });
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await invoke('delete_project', {
+    id,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export async function movePage(id: string, parentId: string | null): Promise<void> {

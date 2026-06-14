@@ -950,6 +950,8 @@ export function Editor({
   const movePageAction = useAppStore((state) => state.movePageAction);
   const reorderPagesAction = useAppStore((state) => state.reorderPagesAction);
   const removePage = useAppStore((state) => state.removePage);
+  const deleteStudioDocumentAction = useAppStore((state) => state.deleteStudioDocumentAction);
+  const studioDocuments = useAppStore((state) => state.studioDocuments);
   const toggleFavoriteAction = useAppStore((state) => state.toggleFavoriteAction);
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
   const showError = useAppStore((state) => state.showError);
@@ -1660,7 +1662,12 @@ export function Editor({
     setSubpageActionsMenu(null);
     setSubpageContextMenu(null);
     try {
-      await removePage(childPage.id);
+      const doc = studioDocuments.find(d => d.note_page_id === childPage.id);
+      if (doc) {
+        await deleteStudioDocumentAction(doc.id);
+      } else {
+        await removePage(childPage.id);
+      }
       showSuccess("editor.pageDeleted", { title: childPage.title || t("sidebar.untitled") });
     } catch (err) {
       showError(err);
@@ -1890,7 +1897,12 @@ export function Editor({
   };
 
   const handleConfirmDelete = async () => {
-    await removePage(page.id);
+    const doc = studioDocuments.find(d => d.note_page_id === page.id);
+    if (doc) {
+      await deleteStudioDocumentAction(doc.id);
+    } else {
+      await removePage(page.id);
+    }
     setIsDeleteConfirmOpen(false);
   };
 
@@ -2361,9 +2373,9 @@ export function Editor({
               const childTitle = childPage.title || t("sidebar.untitled");
               const dropClass = subpageDropTarget?.pageId === childPage.id
                 ? subpageDropTarget.position === "before"
-                  ? "border-t-primary"
-                  : "border-b-primary"
-                : "border-y-transparent";
+                  ? "on-subpage-drop-before"
+                  : "on-subpage-drop-after"
+                : "";
 
               const isActionsMenuOpen = subpageActionsMenu?.page.id === childPage.id;
 
@@ -2371,7 +2383,7 @@ export function Editor({
                 <div
                   key={childPage.id}
                   data-subpage-row-id={childPage.id}
-                  className={`group flex w-full items-center rounded-md border-y-2 text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${dropClass} ${draggedSubpageId === childPage.id ? "opacity-45" : ""}`}
+                  className={`group relative flex w-full items-center rounded-md border-y-2 border-y-transparent text-sm text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${dropClass} ${draggedSubpageId === childPage.id ? "opacity-45" : ""}`}
                   onContextMenu={(event) => handleSubpageContextMenu(event, childPage)}
                 >
                   <button
@@ -2397,7 +2409,7 @@ export function Editor({
                   </button>
                   <button
                     type="button"
-                    className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 ${
+                    className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 ${
                       isActionsMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                     }`}
                     onClick={(e) => {

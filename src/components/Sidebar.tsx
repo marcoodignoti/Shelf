@@ -18,9 +18,14 @@ import Check from 'lucide-react/dist/esm/icons/check.mjs';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.mjs';
 import Pin from 'lucide-react/dist/esm/icons/pin.mjs';
 import Copy from 'lucide-react/dist/esm/icons/copy.mjs';
+import Folder from 'lucide-react/dist/esm/icons/folder.mjs';
+import FolderOpen from 'lucide-react/dist/esm/icons/folder-open.mjs';
+import FolderPlus from 'lucide-react/dist/esm/icons/folder-plus.mjs';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.mjs';
 import { Page } from '../lib/db';
 import type { StudioDocument, StudioDocumentPageLink } from '../lib/studio';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
+import { buildSidebarSections, sortSidebarPages } from '../lib/sidebarProjects';
 import { SettingsModal } from './SettingsModal';
 import { HOME_PAGE_ID } from '../lib/navigation';
 import { normalizePageTitle } from '../lib/pageTitle';
@@ -36,6 +41,7 @@ import { useT } from '../lib/i18n';
 type PendingDelete = {
   page: Page;
   hasChildren: boolean;
+  kind?: 'page' | 'project';
 };
 
 type DropTarget = {
@@ -96,6 +102,7 @@ function isDescendantPage(pages: Page[], pageId: string, possibleDescendantId: s
 function PageItem({
   page,
   allPages,
+  projectMoveTargets,
   studioContextsByPageId,
   depth = 0,
   onRequestDelete,
@@ -109,6 +116,7 @@ function PageItem({
 }: {
   page: Page,
   allPages: Page[],
+  projectMoveTargets: Page[],
   studioContextsByPageId: Map<string, PageStudioContext[]>,
   depth?: number,
   onRequestDelete: (pendingDelete: PendingDelete) => void,
@@ -120,7 +128,7 @@ function PageItem({
   onRenameHandled: () => void,
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void
 }) {
-  const { currentPageId, setCurrentPageId, setCurrentStudioDocumentId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction } = useAppStore();
+  const { currentPageId, setCurrentPageId, setCurrentStudioDocumentId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction, importStudioPdfAction } = useAppStore();
   const t = useT();
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
@@ -141,6 +149,10 @@ function PageItem({
     ? `Open linked PDF: ${primaryStudioContext?.document.title ?? t("sidebar.untitled")}`
     : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || t("sidebar.untitled")).join(', ')}`;
   const moveTargets = moveTargetPages(allPages, page.id).filter(target =>
+    (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
+  );
+  const moveProjectTargets = projectMoveTargets.filter(target =>
+    target.id !== page.id &&
     (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
   );
 
@@ -272,6 +284,13 @@ function PageItem({
     await toggleTemplateAction(page.id, page.is_template !== 1);
   };
 
+  const handleImportPdf = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    setIsExpanded(true);
+    await importStudioPdfAction(page.id);
+  };
+
   const handleDuplicatePage = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
@@ -333,11 +352,11 @@ function PageItem({
 
   const dropClass = dropTarget?.pageId === page.id
     ? dropTarget.position === 'inside'
-      ? 'border-y-2 border-y-transparent bg-accent'
+      ? 'on-sidebar-drop-inside'
       : dropTarget.position === 'before'
-      ? 'border-t-2 border-t-primary'
-      : 'border-b-2 border-b-primary'
-    : 'border-y-2 border-y-transparent';
+      ? 'on-sidebar-drop-before'
+      : 'on-sidebar-drop-after'
+    : '';
 
   return (
     <div>
@@ -359,7 +378,7 @@ function PageItem({
           {isRenaming ? (
             <input
               ref={renameInputRef}
-              className="h-[20px] min-w-0 flex-1 rounded bg-transparent px-0 py-0 text-[13px] leading-5 text-foreground outline-none ring-0 focus:outline-none focus:ring-0"
+              className="on-sidebar-rename-input"
               value={draftTitle}
               onChange={(event) => setDraftTitle(event.target.value)}
               onClick={(event) => event.stopPropagation()}
@@ -449,7 +468,24 @@ function PageItem({
                 {page.parent_id === target.id && <Check className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
               </button>
             ))}
-            {moveTargets.length === 0 && moveQuery.trim() && (
+            {moveProjectTargets.map(target => (
+              <button
+                key={`project-target-${target.id}`}
+                className="on-menu-item justify-between"
+                onClick={() => void handleMovePage(target.id)}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {target.icon ? (
+                    <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center text-xs">{target.icon}</span>
+                  ) : (
+                    <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{target.title || t("sidebar.untitled")}</span>
+                </span>
+                {page.parent_id === target.id && <Check className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
+              </button>
+            ))}
+            {moveTargets.length === 0 && moveProjectTargets.length === 0 && moveQuery.trim() && (
               <div className="px-2 py-2 text-xs text-muted-foreground">{t("sidebar.noPagesFound")}</div>
             )}
           </div>
@@ -475,19 +511,19 @@ function PageItem({
           </button>
           <button
             className="on-menu-item"
+            onClick={(event) => void handleImportPdf(event)}
+          >
+            <FileUp className="h-3.5 w-3.5 text-muted-foreground" />
+            {t("sidebar.contextImportPdf")}
+          </button>
+          <button
+            className="on-menu-item"
             onClick={(event) => void handleDuplicatePage(event)}
           >
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
             {t("sidebar.contextDuplicate")}
           </button>
           <div className="on-menu-separator" />
-          <button
-            className="on-menu-item"
-            onClick={(event) => void handleToggleFavorite(event)}
-          >
-            <Pin className={`h-3.5 w-3.5 text-muted-foreground ${page.is_favorite === 1 ? 'fill-current' : ''}`} />
-            {page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
-          </button>
           <button
             className="on-menu-item"
             onClick={(event) => void handleToggleTemplate(event)}
@@ -537,6 +573,7 @@ function PageItem({
               key={child.id}
               page={child}
               allPages={allPages}
+              projectMoveTargets={projectMoveTargets}
               studioContextsByPageId={studioContextsByPageId}
               depth={depth + 1}
               onRequestDelete={onRequestDelete}
@@ -549,6 +586,299 @@ function PageItem({
               onPointerDownPage={onPointerDownPage}
             />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectItem({
+  project,
+  children,
+  contentPages,
+  projectMoveTargets,
+  studioContextsByPageId,
+  depth = 0,
+  onRequestDelete,
+  draggedPageId,
+  dropTarget,
+  forcedExpandedPageId,
+  forcedCollapsedPageId,
+  renameRequestedPageId,
+  onRenameHandled,
+  onRequestRenamePage,
+  onPointerDownPage,
+}: {
+  project: Page;
+  children: Page[];
+  contentPages: Page[];
+  projectMoveTargets: Page[];
+  studioContextsByPageId: Map<string, PageStudioContext[]>;
+  depth?: number;
+  onRequestDelete: (pendingDelete: PendingDelete) => void;
+  draggedPageId: string | null;
+  dropTarget: DropTarget | null;
+  forcedExpandedPageId: string | null;
+  forcedCollapsedPageId: string | null;
+  renameRequestedPageId: string | null;
+  onRenameHandled: () => void;
+  onRequestRenamePage: (pageId: string) => void;
+  onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void;
+}) {
+  const { addPage, importStudioPdfAction, renamePageAction, toggleFavoriteAction } = useAppStore();
+  const t = useT();
+  const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(project.id));
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(project.title || t("sidebar.untitled"));
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const hasChildren = children.length > 0;
+  const ProjectFolderIcon = isExpanded ? FolderOpen : Folder;
+
+  const setExpanded = (expanded: boolean) => {
+    storeExpandedState(project.id, expanded);
+    setIsExpanded(expanded);
+  };
+
+  useEffect(() => {
+    if (!isRenaming) {
+      setDraftTitle(project.title || t("sidebar.untitled"));
+    }
+  }, [isRenaming, project.title, t]);
+
+  useEffect(() => {
+    if (isRenaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [isRenaming]);
+
+  useEffect(() => {
+    if (forcedExpandedPageId === project.id) {
+      setExpanded(true);
+    }
+  }, [forcedExpandedPageId, project.id]);
+
+  useEffect(() => {
+    if (forcedCollapsedPageId === project.id) {
+      setExpanded(false);
+    }
+  }, [forcedCollapsedPageId, project.id]);
+
+  useEffect(() => {
+    if (renameRequestedPageId === project.id) {
+      setDraftTitle(project.title || t("sidebar.untitled"));
+      setIsRenaming(true);
+      onRenameHandled();
+    }
+  }, [onRenameHandled, project.id, project.title, renameRequestedPageId, t]);
+
+  useEffect(() => {
+    if (!contextMenuPosition) return;
+
+    const closeMenu = () => setContextMenuPosition(null);
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && contextMenuRef.current?.contains(target)) return;
+      closeMenu();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
+    };
+  }, [contextMenuPosition]);
+
+  const commitRename = async () => {
+    const nextTitle = normalizePageTitle(draftTitle);
+    setIsRenaming(false);
+    setDraftTitle(nextTitle);
+
+    if (nextTitle !== project.title) {
+      await renamePageAction(project.id, nextTitle);
+    }
+  };
+
+  const cancelRename = () => {
+    setDraftTitle(project.title || t("sidebar.untitled"));
+    setIsRenaming(false);
+  };
+
+  const startRename = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    setDraftTitle(project.title || t("sidebar.untitled"));
+    setIsRenaming(true);
+  };
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeOpenOverlays();
+    setContextMenuPosition(
+      clampContextMenuPosition(event.clientX, event.clientY, window.innerWidth, window.innerHeight, 220, 210)
+    );
+  };
+
+  const handleToggleFavorite = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    await toggleFavoriteAction(project.id, project.is_favorite !== 1);
+  };
+
+  const handleAddPage = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    setExpanded(true);
+    const created = await addPage(t("sidebar.untitled"), project.id);
+    if (created) onRequestRenamePage(created.id);
+  };
+
+  const handleImportPdf = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    setExpanded(true);
+    await importStudioPdfAction(project.id);
+  };
+
+  const handleDeleteProject = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setContextMenuPosition(null);
+    onRequestDelete({ page: project, hasChildren, kind: 'project' });
+  };
+
+  const dropClass = dropTarget?.pageId === project.id
+    ? 'on-sidebar-drop-inside'
+    : '';
+
+  return (
+    <div>
+      <div
+        data-page-id={project.id}
+        className={`group on-shell-row on-sidebar-page-row on-sidebar-project-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${dropClass} ${draggedPageId === project.id ? 'opacity-45' : ''}`}
+        style={{ paddingLeft: `${(depth * 12) + 6}px`, paddingRight: '8px' }}
+        aria-expanded={isExpanded}
+        onClick={() => setExpanded(!isExpanded)}
+        onDoubleClick={startRename}
+        onContextMenu={handleContextMenu}
+      >
+        <div className="flex min-w-0 flex-1 items-center truncate">
+          {project.icon ? (
+            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13px]">
+              {project.icon}
+            </span>
+          ) : (
+            <ProjectFolderIcon className="mr-1.5 h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" strokeWidth={1.8} />
+          )}
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              className="on-sidebar-rename-input"
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onBlur={() => void commitRename()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void commitRename();
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  cancelRename();
+                }
+              }}
+            />
+          ) : (
+            <span className="truncate">{project.title || t("sidebar.untitled")}</span>
+          )}
+        </div>
+        <div className={`flex flex-shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${isRenaming ? 'hidden' : ''}`}>
+          <button
+            className="on-sidebar-pin-button h-6 w-6"
+            title={t("sidebar.contextMenu")}
+            aria-label={t("sidebar.contextMenu")}
+            onClick={handleContextMenu}
+          >
+            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <button
+            className="on-sidebar-pin-button h-6 w-6 mr-1"
+            title={t("sidebar.contextNewPage")}
+            aria-label={t("sidebar.contextNewPage")}
+            onClick={(event) => void handleAddPage(event)}
+          >
+            <FilePenLine className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+      </div>
+
+      {contextMenuPosition && createPortal(
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[180] w-56 on-popover on-page-action-popover"
+          style={sidebarPopoverStyle(contextMenuPosition.left, contextMenuPosition.top)}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button className="on-menu-item" onClick={(event) => startRename(event)}>
+            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            {t("sidebar.contextRename")}
+          </button>
+          <button className="on-menu-item" onClick={(event) => void handleImportPdf(event)}>
+            <FileUp className="h-3.5 w-3.5 text-muted-foreground" />
+            {t("sidebar.contextImportPdf")}
+          </button>
+          <div className="on-menu-separator" />
+          <button className="on-menu-item" onClick={(event) => void handleToggleFavorite(event)}>
+            <Pin className={`h-3.5 w-3.5 text-muted-foreground ${project.is_favorite === 1 ? 'fill-current' : ''}`} />
+            {project.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
+          </button>
+          <div className="on-menu-separator" />
+          <button className="on-menu-item on-menu-item-danger" onClick={(event) => handleDeleteProject(event)}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t("sidebar.contextDelete")}
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {hasChildren && (
+        <div
+          className={`on-sidebar-project-children ${isExpanded ? 'on-sidebar-project-children-open' : ''}`}
+          aria-hidden={!isExpanded}
+        >
+          <div className="on-sidebar-project-children-inner">
+            {children.map(child => (
+              <PageItem
+                key={child.id}
+                page={child}
+                allPages={contentPages}
+                projectMoveTargets={projectMoveTargets}
+                studioContextsByPageId={studioContextsByPageId}
+                depth={depth + 1}
+                onRequestDelete={onRequestDelete}
+                draggedPageId={draggedPageId}
+                dropTarget={dropTarget}
+                forcedExpandedPageId={forcedExpandedPageId}
+                forcedCollapsedPageId={forcedCollapsedPageId}
+                renameRequestedPageId={renameRequestedPageId}
+                onRenameHandled={onRenameHandled}
+                onPointerDownPage={onPointerDownPage}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -730,6 +1060,8 @@ export function Sidebar() {
     setCurrentStudioDocumentId,
     importStudioPdfAction,
     deleteStudioDocumentAction,
+    createProjectAction,
+    removeProjectAction,
     sidebarWidth,
     setSidebarWidth,
   } = useAppStore();
@@ -760,8 +1092,17 @@ export function Sidebar() {
     pagesRef.current = pages;
   }, [pages]);
 
-  const regularNotePages = pages.filter((page) => page.page_kind === 'note');
-  const studioNotePages = sortPages(pages.filter((page) => page.page_kind === 'studio_note'));
+  const sidebarSections = buildSidebarSections(pages);
+  const { pinnedProjects, pinnedPages, projects, rootPages, contentPages } = sidebarSections;
+  const unpinnedContentPages = contentPages.filter((page) => page.is_favorite !== 1);
+  const projectMoveTargets = sortSidebarPages(pages.filter((page) => page.page_kind === 'project' && page.is_deleted === 0));
+  const pinnedProjectGroups = pinnedProjects.map((project) => ({
+    project,
+    children: unpinnedContentPages.filter((page) => page.parent_id === project.id),
+  }));
+  const regularNotePages = contentPages.filter((page) => page.page_kind === 'note');
+  const rootRegularPages = rootPages.filter((page) => page.page_kind === 'note');
+  const studioNotePages = sortPages(rootPages.filter((page) => page.page_kind === 'studio_note'));
   const studioContextsByPageId = buildPageStudioContexts(studioDocuments, studioDocumentPageLinks);
   const { documents: studioNoteDocuments, linkedPageIds: groupedStudioNoteIds } = buildStudioNoteDocuments(
     studioDocuments,
@@ -770,14 +1111,10 @@ export function Sidebar() {
   );
   const ungroupedStudioNotes = studioNotePages.filter((page) => !groupedStudioNoteIds.has(page.id));
   const sortedPages = sortPages(regularNotePages);
-  const unpinnedPages = sortedPages.filter(p => p.is_favorite !== 1);
-  const rootPages = unpinnedPages.filter(p => p.parent_id === null);
   const templatePages = sortedPages.filter(p => p.is_template === 1);
-  const favoritePages = sortedPages.filter(p => p.is_favorite === 1);
   const pendingDeleteStudioDocument = pendingDelete
-    ? studioContextsByPageId
-        .get(pendingDelete.page.id)
-        ?.find((context) => context.document.note_page_id === pendingDelete.page.id)?.document ?? null
+    && pendingDelete.kind !== 'project'
+    ? studioDocuments.find((doc) => doc.note_page_id === pendingDelete.page.id) ?? null
     : null;
 
   useEffect(() => {
@@ -837,10 +1174,19 @@ export function Sidebar() {
     setNewPageMenuPosition(null);
   };
 
+  const handleCreateProject = async () => {
+    const project = await createProjectAction(t("sidebar.newProjectName"));
+    if (project) {
+      setRenameRequestedPageId(project.id);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!pendingDelete) return;
 
-    if (pendingDeleteStudioDocument) {
+    if (pendingDelete.kind === 'project') {
+      await removeProjectAction(pendingDelete.page.id);
+    } else if (pendingDeleteStudioDocument) {
       await deleteStudioDocumentAction(pendingDeleteStudioDocument.id);
     } else {
       await removePage(pendingDelete.page.id);
@@ -971,7 +1317,8 @@ export function Sidebar() {
     const targetPage = currentPages.find(candidate => candidate.id === targetId);
 
     const rect = row.getBoundingClientRect();
-    const position = dropPositionFromOffset(clientY - rect.top, rect.height);
+    const rawPosition = dropPositionFromOffset(clientY - rect.top, rect.height);
+    const position: DropPosition = targetPage?.page_kind === 'project' ? 'inside' : rawPosition;
     const isValidSiblingDrop = draggedPage?.parent_id === targetPage?.parent_id;
     const isValidCrossParentOrderDrop = Boolean(
       draggedPage &&
@@ -1089,13 +1436,18 @@ export function Sidebar() {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
-  const hasPageContent = rootPages.length > 0 || studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
+  const hasPageContent = rootRegularPages.length > 0 || studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
   const deleteTitle = pendingDelete?.page.title || t("sidebar.untitled");
   const deleteMessage = pendingDeleteStudioDocument
     ? `Delete "${deleteTitle}" and its PDF permanently? This cannot be undone.`
+    : pendingDelete?.kind === 'project'
+    ? t("sidebar.deleteProjectDialogBody", { title: deleteTitle })
     : pendingDelete?.hasChildren
     ? t("sidebar.deleteDialogBodyWithChildren", { title: deleteTitle })
     : t("sidebar.deleteDialogBody", { title: deleteTitle });
+  const deleteDialogTitle = pendingDelete?.kind === 'project'
+    ? t("sidebar.deleteProjectDialogTitle")
+    : t("sidebar.deleteDialogTitle");
   const deleteDialog = pendingDelete ? createPortal(
     <div className="on-modal-overlay z-[180] items-center justify-center p-4" onMouseDown={() => setPendingDelete(null)}>
       <div className="on-modal-panel on-delete-dialog w-[420px] max-w-[calc(100vw-2rem)]" onMouseDown={(event) => event.stopPropagation()}>
@@ -1104,7 +1456,7 @@ export function Sidebar() {
             <AlertTriangle className="h-4 w-4" />
           </div>
           <div>
-            <div className="text-sm font-semibold">Delete permanently?</div>
+            <div className="text-sm font-semibold">{deleteDialogTitle}</div>
             <div className="mt-1 text-sm text-muted-foreground">{deleteMessage}</div>
           </div>
         </div>
@@ -1216,11 +1568,31 @@ export function Sidebar() {
         <div className="px-1 pb-6">
           <section className="on-sidebar-section">
             <div className="on-section-label">{t("sidebar.sectionPinned")}</div>
-            {favoritePages.map(page => (
+            {pinnedProjectGroups.map(({ project, children }) => (
+              <ProjectItem
+                key={`pinned-project-${project.id}`}
+                project={project}
+                children={children}
+                contentPages={unpinnedContentPages}
+                projectMoveTargets={projectMoveTargets}
+                studioContextsByPageId={studioContextsByPageId}
+                onRequestDelete={setPendingDelete}
+                draggedPageId={draggedPageId}
+                dropTarget={dropTarget}
+                forcedExpandedPageId={forcedExpandedPageId}
+                forcedCollapsedPageId={forcedCollapsedPageId}
+                renameRequestedPageId={renameRequestedPageId}
+                onRenameHandled={() => setRenameRequestedPageId(null)}
+                onRequestRenamePage={setRenameRequestedPageId}
+                onPointerDownPage={handlePointerDownPage}
+              />
+            ))}
+            {pinnedPages.map(page => (
               <PageItem
                 key={`pinned-${page.id}`}
                 page={page}
-                allPages={sortedPages}
+                allPages={unpinnedContentPages}
+                projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
                 onRequestDelete={setPendingDelete}
                 draggedPageId={draggedPageId}
@@ -1232,14 +1604,46 @@ export function Sidebar() {
                 onPointerDownPage={handlePointerDownPage}
               />
             ))}
-            {!isLoading && favoritePages.length === 0 && (
+            {!isLoading && pinnedProjects.length === 0 && pinnedPages.length === 0 && (
               <div className="on-sidebar-empty">{t("sidebar.noPinnedPages")}</div>
             )}
           </section>
 
           <section className="on-sidebar-section">
-            <div className="on-section-label">{t("sidebar.sectionProjects")}</div>
-            <div className="on-sidebar-empty">{t("sidebar.noProjects")}</div>
+            <div className="on-sidebar-section-heading">
+              <div className="on-section-label">{t("sidebar.sectionProjects")}</div>
+              <button
+                type="button"
+                className="on-sidebar-section-action"
+                title={t("sidebar.createProject")}
+                aria-label={t("sidebar.createProject")}
+                onClick={() => void handleCreateProject()}
+              >
+                <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+            </div>
+            {projects.map(({ project, children }) => (
+              <ProjectItem
+                key={project.id}
+                project={project}
+                children={children}
+                contentPages={unpinnedContentPages}
+                projectMoveTargets={projectMoveTargets}
+                studioContextsByPageId={studioContextsByPageId}
+                onRequestDelete={setPendingDelete}
+                draggedPageId={draggedPageId}
+                dropTarget={dropTarget}
+                forcedExpandedPageId={forcedExpandedPageId}
+                forcedCollapsedPageId={forcedCollapsedPageId}
+                renameRequestedPageId={renameRequestedPageId}
+                onRenameHandled={() => setRenameRequestedPageId(null)}
+                onRequestRenamePage={setRenameRequestedPageId}
+                onPointerDownPage={handlePointerDownPage}
+              />
+            ))}
+            {!isLoading && projects.length === 0 && (
+              <div className="on-sidebar-empty">{t("sidebar.noProjects")}</div>
+            )}
           </section>
 
           <section className="on-sidebar-section">
@@ -1247,11 +1651,12 @@ export function Sidebar() {
             {!isLoading && !hasPageContent && (
               <div className="on-sidebar-empty">{t("sidebar.noPages")}</div>
             )}
-            {rootPages.map(page => (
+            {rootRegularPages.map(page => (
               <PageItem
                 key={page.id}
                 page={page}
-                allPages={unpinnedPages}
+                allPages={unpinnedContentPages}
+                projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
                 onRequestDelete={setPendingDelete}
                 draggedPageId={draggedPageId}

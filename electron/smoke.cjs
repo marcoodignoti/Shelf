@@ -147,6 +147,30 @@ async function run() {
     throw new Error("create_page returned wrong page");
   }
 
+  const project = await backend.invoke("create_project", {
+    id: "project-1",
+    title: "Smoke project",
+    createdAt,
+  });
+  assert.strictEqual(project.page_kind, "project");
+
+  await backend.invoke("move_page", {
+    id: "page-1",
+    parentId: "project-1",
+    updatedAt: createdAt,
+  });
+  const pagesWithProject = await backend.invoke("list_pages");
+  assert.ok(pagesWithProject.some((candidate) => candidate.id === "project-1" && candidate.page_kind === "project"));
+  assert.strictEqual(pagesWithProject.find((candidate) => candidate.id === "page-1")?.parent_id, "project-1");
+
+  await backend.invoke("delete_project", {
+    id: "project-1",
+    updatedAt: createdAt,
+  });
+  const pagesAfterProjectDelete = await backend.invoke("list_pages");
+  assert.ok(!pagesAfterProjectDelete.some((candidate) => candidate.id === "project-1"));
+  assert.strictEqual(pagesAfterProjectDelete.find((candidate) => candidate.id === "page-1")?.parent_id, null);
+
   await backend.invoke("update_page", {
     id: "page-1",
     updates: { content: "Hello Electron", search_text: "Hello Electron" },
