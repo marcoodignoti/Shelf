@@ -8,7 +8,7 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.mjs';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.mjs';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
-import FilePenLine from 'lucide-react/dist/esm/icons/file-pen-line.mjs';
+import SquarePen from 'lucide-react/dist/esm/icons/square-pen.mjs';
 import FilePlus from 'lucide-react/dist/esm/icons/file-plus.mjs';
 import FileUp from 'lucide-react/dist/esm/icons/file-up.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
@@ -821,7 +821,7 @@ function ProjectItem({
             aria-label={t("sidebar.contextNewPage")}
             onClick={(event) => void handleAddPage(event)}
           >
-            <FilePenLine className="h-4 w-4 text-muted-foreground" />
+            <SquarePen className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
       </div>
@@ -1510,7 +1510,7 @@ export function Sidebar() {
             toggleNewPageMenu();
           }}
         >
-          <FilePenLine className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <SquarePen className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>{t("sidebar.newPage")}</span>
         </button>
         {newPageMenuPosition && createPortal(
