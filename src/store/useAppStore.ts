@@ -4,9 +4,9 @@ import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
 import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createProject, createStudioNotePage, deletePage, deleteProject, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
-import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatarFromDialog } from '../lib/profile';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
 import { createSharedSlice, type SharedSlice } from './slices/sharedSlice';
+import { createProfileSlice, type ProfileSlice } from './slices/profileSlice';
 import { logStoreError, pageTreeIds } from './slices/helpers';
 import { openNotionEditorSchema } from '../lib/editorMath';
 import {
@@ -25,14 +25,10 @@ import {
 
 type CreatePageOptions = { select?: boolean };
 
-export interface AppState extends SharedSlice {
+export interface AppState extends SharedSlice, ProfileSlice {
   pages: Page[];
   studioDocuments: StudioDocument[];
   studioDocumentPageLinks: StudioDocumentPageLink[];
-  profile: WorkspaceProfile | null;
-  fetchProfile: () => Promise<void>;
-  updateProfileAction: (patch: Partial<Pick<WorkspaceProfile, "name" | "workspaceName">> & { avatarPath?: null }) => Promise<void>;
-  importProfileAvatarAction: () => Promise<void>;
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
   importStudioPdfAction: (projectPageId?: string | null) => Promise<StudioDocument | null>;
@@ -60,40 +56,11 @@ export interface AppState extends SharedSlice {
 
 export const useAppStore = create<AppState>()((set, get, ...a) => ({
   ...createSharedSlice(set, get, ...a),
+  ...createProfileSlice(set, get, ...a),
   pages: [],
-  profile: null,
   studioDocuments: [],
   studioDocumentPageLinks: [],
   currentStudioDocumentId: null,
-  fetchProfile: async () => {
-    try {
-      set({ profile: await getWorkspaceProfile() });
-    } catch (error) {
-      get().showError(error);
-    }
-  },
-  updateProfileAction: async (patch) => {
-    const previousProfile = get().profile;
-    if (previousProfile) {
-      set({ profile: { ...previousProfile, ...patch } as WorkspaceProfile });
-    }
-    try {
-      set({ profile: await updateWorkspaceProfile(patch) });
-    } catch (error) {
-      set({ profile: previousProfile });
-      get().showError(error);
-    }
-  },
-  importProfileAvatarAction: async () => {
-    try {
-      const avatarPath = await importProfileAvatarFromDialog();
-      if (!avatarPath) return;
-      const current = get().profile;
-      if (current) set({ profile: { ...current, avatarPath } });
-    } catch (error) {
-      get().showError(error);
-    }
-  },
   fetchPages: async () => {
     try {
       const pages = await getPages();
