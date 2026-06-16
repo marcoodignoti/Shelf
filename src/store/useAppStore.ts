@@ -154,21 +154,6 @@ function logStoreError(error: unknown): void {
   }
 }
 
-function descendantPageIds(pages: Page[], rootId: string): Set<string> {
-  const ids = new Set([rootId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const page of pages) {
-      if (page.parent_id && ids.has(page.parent_id) && !ids.has(page.id)) {
-        ids.add(page.id);
-        changed = true;
-      }
-    }
-  }
-  return ids;
-}
-
 export const useAppStore = create<AppState>((set, get) => ({
   pages: [],
   profile: null,
@@ -626,7 +611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   removePage: async (id) => {
     const previousPages = get().pages;
     const previousStudioDocumentPageLinks = get().studioDocumentPageLinks;
-    const deletedIds = descendantPageIds(previousPages, id);
+    const deletedIds = pageTreeIds(previousPages, id);
     const optimisticPages = previousPages.filter((page) => !deletedIds.has(page.id));
     set((state) => ({
       pages: optimisticPages,
