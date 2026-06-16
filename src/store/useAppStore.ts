@@ -1,6 +1,4 @@
 import { create } from 'zustand';
-import { AppNotice, noticeKeyForError } from '../lib/appFeedback';
-import type { TranslationKey, TranslationParams } from '../lib/i18n';
 import { invoke, exportFilesWithDialog, importPageFileWithDialog } from '../lib/desktop';
 import { prepareImportedPages } from '../lib/backup';
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../lib/exportPages';
@@ -8,6 +6,8 @@ import { createPageMarkdownRenderer } from '../lib/exportMarkdown';
 import { Page, getPage, getPages, createPage, createPageFromTemplate, createProject, createStudioNotePage, deletePage, deleteProject, duplicatePage, movePage, reorderPages, toggleFavorite, toggleTemplate, updatePage } from '../lib/db';
 import { WorkspaceProfile, getWorkspaceProfile, updateWorkspaceProfile, importProfileAvatarFromDialog } from '../lib/profile';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../lib/navigation';
+import { createSharedSlice, type SharedSlice } from './slices/sharedSlice';
+import { logStoreError, pageTreeIds } from './slices/helpers';
 import { openNotionEditorSchema } from '../lib/editorMath';
 import {
 	  deleteStudioDocument,
@@ -25,24 +25,16 @@ import {
 
 type CreatePageOptions = { select?: boolean };
 
-interface AppState {
+export interface AppState extends SharedSlice {
   pages: Page[];
-  currentPageId: string | null;
-  isLoading: boolean;
-  error: string | null;
-  notice: AppNotice | null;
-  isCommandPaletteOpen: boolean;
   studioDocuments: StudioDocument[];
   studioDocumentPageLinks: StudioDocumentPageLink[];
-  currentStudioDocumentId: string | null;
   profile: WorkspaceProfile | null;
   fetchProfile: () => Promise<void>;
   updateProfileAction: (patch: Partial<Pick<WorkspaceProfile, "name" | "workspaceName">> & { avatarPath?: null }) => Promise<void>;
   importProfileAvatarAction: () => Promise<void>;
   fetchPages: () => Promise<void>;
   fetchStudioDocuments: () => Promise<void>;
-  setCurrentPageId: (id: string | null) => void;
-  setCurrentStudioDocumentId: (id: string | null) => void;
   importStudioPdfAction: (projectPageId?: string | null) => Promise<StudioDocument | null>;
   replaceStudioPdfAction: (documentId: string) => Promise<StudioDocument | null>;
   updateStudioViewerAction: (id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: StudioPanelLayout }) => Promise<void>;
@@ -64,49 +56,12 @@ interface AppState {
   toggleTemplateAction: (id: string, isTemplate: boolean) => Promise<void>;
   addPageFromTemplate: (templateId: string, parentId?: string | null, options?: CreatePageOptions) => Promise<Page | null>;
   duplicatePageAction: (sourceId: string, options?: CreatePageOptions) => Promise<Page | null>;
-  clearError: () => void;
-  setError: (error: string | null) => void;
-  clearNotice: () => void;
-  showSuccess: (key: TranslationKey, params?: TranslationParams) => void;
-  showError: (error: unknown) => void;
-  showErrorKey: (key: TranslationKey, params?: TranslationParams) => void;
-  openCommandPalette: () => void;
-  closeCommandPalette: () => void;
 }
 
-function pageTreeIds(pages: Page[], rootId: string): Set<string> {
-  const ids = new Set<string>([rootId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const page of pages) {
-      if (page.parent_id && ids.has(page.parent_id) && !ids.has(page.id)) {
-        ids.add(page.id);
-        changed = true;
-      }
-    }
-  }
-  return ids;
-}
-
-function getStoredPageId(): string | null {
-  return typeof localStorage !== 'undefined' ? localStorage.getItem('opennotion-current-page-id') : null;
-}
-
-function logStoreError(error: unknown): void {
-  if (import.meta.env.DEV) {
-    console.error(error);
-  }
-}
-
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()((set, get, ...a) => ({
+  ...createSharedSlice(set, get, ...a),
   pages: [],
   profile: null,
-  currentPageId: getStoredPageId(),
-  isLoading: true,
-  error: null,
-  notice: null,
-  isCommandPaletteOpen: false,
   studioDocuments: [],
   studioDocumentPageLinks: [],
   currentStudioDocumentId: null,
@@ -185,27 +140,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().showError(error);
     }
   },
-  setCurrentPageId: (id) => {
-    localStorage.setItem('opennotion-current-page-id', id || HOME_PAGE_ID);
-    set({ currentPageId: id, currentStudioDocumentId: null });
-  },
-  setCurrentStudioDocumentId: (id) => {
-    set({ currentStudioDocumentId: id });
-  },
-  clearError: () => set({ error: null }),
-  setError: (error) => set({ error, notice: error ? { kind: 'error', rawMessage: error } : null }),
-  clearNotice: () => set({ notice: null }),
-  showSuccess: (key, params) => set({ notice: { kind: 'success', messageKey: key, params }, error: null }),
-  showErrorKey: (key, params) => set({ notice: { kind: 'error', messageKey: key, params }, error: key }),
-  showError: (error) => {
-    const noticePart = noticeKeyForError(error);
-    const notice: AppNotice = { kind: 'error', ...noticePart } as AppNotice;
-    // Derive a plain string for the legacy `error` field (used in ErrorBoundary / setError)
-    const errorText = 'rawMessage' in noticePart ? noticePart.rawMessage : noticePart.messageKey;
-    set({ error: errorText, notice });
-  },
-  openCommandPalette: () => set({ isCommandPaletteOpen: true }),
-  closeCommandPalette: () => set({ isCommandPaletteOpen: false }),
   importStudioPdfAction: async (projectPageId = null) => {
     try {
       const document = await importStudioDocumentFromDialog();
