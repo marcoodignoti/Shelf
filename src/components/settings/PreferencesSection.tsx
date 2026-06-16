@@ -1,15 +1,15 @@
-import { useAppStore } from '../../store/useAppStore';
+import { useUIStore } from '../../store/useUIStore';
 import { useT } from '../../lib/i18n';
 import type { LocalePreference, PageWidth, TitleEnterBehavior } from '../../lib/preferences';
 
 export function PreferencesSection() {
   const t = useT();
-  const localePreference = useAppStore((state) => state.localePreference);
-  const setLocalePreference = useAppStore((state) => state.setLocalePreference);
-  const titleEnterBehavior = useAppStore((state) => state.titleEnterBehavior);
-  const setTitleEnterBehavior = useAppStore((state) => state.setTitleEnterBehavior);
-  const pageWidth = useAppStore((state) => state.pageWidth);
-  const setPageWidth = useAppStore((state) => state.setPageWidth);
+  const localePreference = useUIStore((state) => state.localePreference);
+  const setLocalePreference = useUIStore((state) => state.setLocalePreference);
+  const titleEnterBehavior = useUIStore((state) => state.titleEnterBehavior);
+  const setTitleEnterBehavior = useUIStore((state) => state.setTitleEnterBehavior);
+  const pageWidth = useUIStore((state) => state.pageWidth);
+  const setPageWidth = useUIStore((state) => state.setPageWidth);
 
   return (
     <div className="on-settings-content">

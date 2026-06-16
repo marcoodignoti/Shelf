@@ -11,6 +11,7 @@ import { createPage, Page } from "../lib/db";
 import { useT } from "../lib/i18n";
 import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
 import { useAppStore } from "../store/useAppStore";
+import { useUIStore } from "../store/useUIStore";
 import {
   buildStudioPanelGridColumns,
   clampStudioPage,
@@ -93,7 +94,7 @@ export function StudioWorkspace({
     { value: "single" as StudioPdfDisplayMode, label: t("studio.displayModeSingle"), shortcut: t("studio.displayModeShortcut2"), shortcutKey: "2", icon: Square },
     { value: "two-page" as StudioPdfDisplayMode, label: t("studio.displayModeTwoPage"), shortcut: t("studio.displayModeShortcut3"), shortcutKey: "3", icon: BookOpen },
   ], [t]);
-  const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const fetchPages = useAppStore((state) => state.fetchPages);
   const fetchStudioDocuments = useAppStore((state) => state.fetchStudioDocuments);
   const removePage = useAppStore((state) => state.removePage);
