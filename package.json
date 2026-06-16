@@ -63,7 +63,15 @@
       "dist/**/*",
       "electron/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!**/.shelf-dev",
+      "!**/.opennotion-dev",
+      "!**/.secrets",
+      "!**/*.db",
+      "!**/*.sqlite",
+      "!**/*.sqlite3",
+      "!**/*.pem.local",
+      "!**/.DS_Store"
     ],
     "extraMetadata": {
       "main": "electron/main.cjs"

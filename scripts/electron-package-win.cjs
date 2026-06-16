@@ -1,6 +1,7 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { copyDirectoryFiltered, assertBundleClean } = require("./audit-release-bundle.cjs");
 
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
@@ -11,7 +12,7 @@ const appResourcesDir = path.join(resourcesDir, "app");
 const appIcon = path.join(root, "assets", "app-icon.ico");
 
 function copyDirectory(source, destination) {
-  fs.cpSync(source, destination, { recursive: true });
+  copyDirectoryFiltered(source, destination);
 }
 
 function env(name, fallback = "") {
@@ -109,6 +110,7 @@ async function main() {
       2
     )
   );
+  assertBundleClean(appResourcesDir);
 
   signWindowsExecutable(shelfExe);
   console.log(`Packaged ${outputDir}`);

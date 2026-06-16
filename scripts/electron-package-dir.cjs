@@ -2,6 +2,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { copyDirectoryFiltered, assertBundleClean } = require("./audit-release-bundle.cjs");
 
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
@@ -38,7 +39,7 @@ function macCodesignArgs(appPath) {
 }
 
 function copyDirectory(source, destination) {
-  fs.cpSync(source, destination, { recursive: true });
+  copyDirectoryFiltered(source, destination);
 }
 
 function copyAppBundle(source, destination) {
@@ -62,6 +63,7 @@ copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
 copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
 copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
 fs.copyFileSync(appIcon, path.join(resourcesDir, "app-icon.icns"));
+assertBundleClean(appResourcesDir);
 fs.writeFileSync(
   path.join(appResourcesDir, "package.json"),
   JSON.stringify(
