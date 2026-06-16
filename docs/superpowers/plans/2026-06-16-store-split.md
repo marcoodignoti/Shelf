@@ -48,11 +48,11 @@ Consumer migration (Step 1 only) touches these files, replacing `useAppStore` �
 ## Task 1: Characterization test harness (failing shell)
 
 **Files:**
-- Create: `src/store/useAppStore.test.ts`
+- Create: `src/store/useAppStore.test.ts` (already present in the working tree as an untracked file)
 
-- [ ] **Step 1: Write the test harness with one failing test**
+- [ ] **Step 1: Ensure the test harness is in place**
 
-Create `src/store/useAppStore.test.ts`:
+`src/store/useAppStore.test.ts` should already contain the harness below. If it does not, create it with this content:
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,7 +80,6 @@ interface FakeBridgeOptions {
 
 function installFakeBridge(options: FakeBridgeOptions = {}) {
   const calls: InvokeCall[] = [];
-  const store: Record<string, unknown> = {};
   const handler = options.invokeHandler ?? (() => undefined);
   const fakeBridge = {
     invoke: vi.fn(async (command: string, args: Record<string, unknown>) => {
@@ -91,11 +90,16 @@ function installFakeBridge(options: FakeBridgeOptions = {}) {
     onDesktopUpdate: () => () => {},
     fileSrc: (p: string) => `app://asset/${p}`,
     studioPdfSrc: (id: string) => `http://localhost/studio/${id}`,
+    importStudioDocument: vi.fn(() => Promise.resolve(null)),
+    replaceStudioDocumentFile: vi.fn(() => Promise.resolve(null)),
+    importProfileAvatar: vi.fn(() => Promise.resolve(null)),
+    exportFiles: vi.fn(() => Promise.resolve(null)),
+    importPageFile: vi.fn(() => Promise.resolve(null)),
   };
   (globalThis as { window: Record<string, unknown> }).window =
     (globalThis as { window?: Record<string, unknown> }).window ?? {};
   (globalThis as { window: Record<string, unknown> }).window.openNotion = fakeBridge;
-  return { calls, store, fakeBridge };
+  return { calls, fakeBridge };
 }
 
 function installLocalStorage() {
@@ -183,13 +187,17 @@ Append to the `describe("useAppStore characterization harness", ...)` block in `
     const linkPageId = "parent"; // a studio link references the parent page
 
     const allPages = [home, parent, child];
+    let deleted = false;
     const baseHandler = (call: { command: string; args: Record<string, unknown> }): unknown => {
       switch (call.command) {
-        case "list_pages": return allPages;
-        case "delete_page": return undefined;
-        case "list_all_studio_document_page_links": return [
-          { id: "link1", document_id: "doc1", page_id: linkPageId, pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: parent },
-        ];
+        case "list_pages": return deleted ? [home] : allPages;
+        case "delete_page":
+          deleted = true;
+          return undefined;
+        case "list_all_studio_document_page_links":
+          return deleted ? [] : [
+            { id: "link1", document_id: "doc1", page_id: linkPageId, pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: parent },
+          ];
         case "list_studio_documents": return [];
         default: return undefined;
       }
@@ -319,7 +327,7 @@ git commit -m "test: characterize renameStudioDocument mirroring + rollback"
 
 ---
 
-## Task 4: Characterize `{select: false}` preserves currentPageId + optimistic reorder rollback
+## Task 4: Characterize remaining cross-slice flows
 
 **Files:**
 - Modify: `src/store/useAppStore.test.ts`
@@ -374,18 +382,156 @@ Append to the `describe` block in `src/store/useAppStore.test.ts`:
     expect(after).toEqual(before);
     expect(useAppStore.getState().notice?.kind).toBe("error");
   });
+
+  it("removePage failure rolls back pages and studio links", async () => {
+    const home = makePage({ id: "home", sort_order: 0 });
+    const parent = makePage({ id: "parent", sort_order: 1 });
+    const child = makePage({ id: "child", parent_id: "parent", sort_order: 0 });
+    const allPages = [home, parent, child];
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return allPages;
+        if (call.command === "delete_page") throw new Error("boom");
+        if (call.command === "list_all_studio_document_page_links") return [
+          { id: "link1", document_id: "doc1", page_id: "parent", pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: parent },
+        ];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    await useAppStore.getState().fetchStudioDocuments();
+    const beforePages = useAppStore.getState().pages;
+    const beforeLinks = useAppStore.getState().studioDocumentPageLinks;
+
+    await useAppStore.getState().removePage("parent");
+
+    const state = useAppStore.getState();
+    expect(state.pages).toEqual(beforePages);
+    expect(state.studioDocumentPageLinks).toEqual(beforeLinks);
+    expect(state.notice?.kind).toBe("error");
+  });
+
+  it("removeProjectAction resets parent_id on orphaned pages and refetches links", async () => {
+    const project = makePage({ id: "project", page_kind: "project", sort_order: 0 });
+    const child = makePage({ id: "child", parent_id: "project", sort_order: 0 });
+    let deleted = false;
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return deleted ? [child] : [project, child];
+        if (call.command === "delete_project") {
+          deleted = true;
+          return undefined;
+        }
+        if (call.command === "list_all_studio_document_page_links") return [];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    useAppStore.getState().setCurrentPageId("project");
+
+    await useAppStore.getState().removeProjectAction("project");
+
+    const state = useAppStore.getState();
+    const childPage = state.pages.find((p) => p.id === "child");
+    expect(childPage?.parent_id).toBeNull();
+    expect(state.pages.find((p) => p.id === "project")).toBeUndefined();
+    expect(state.currentPageId).not.toBe("project");
+  });
+
+  it("importStudioPdfAction sets navigation for unified vs note-page documents", async () => {
+    const unifiedDoc = {
+      id: "unified", title: "Unified", original_filename: "u.pdf",
+      stored_file_path: "/x/u.pdf", note_page_id: "unified", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const noteDoc = {
+      id: "doc1", title: "Doc", original_filename: "d.pdf",
+      stored_file_path: "/x/d.pdf", note_page_id: "note-1", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const notePage = makePage({ id: "note-1" });
+    const { fakeBridge } = installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [notePage];
+        if (call.command === "list_all_studio_document_page_links") return [];
+        if (call.command === "list_studio_documents") return [];
+        return undefined;
+      },
+    });
+    fakeBridge.importStudioDocument
+      .mockResolvedValueOnce(unifiedDoc)
+      .mockResolvedValueOnce(noteDoc);
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    await useAppStore.getState().importStudioPdfAction();
+    let state = useAppStore.getState();
+    expect(state.currentPageId).toBe("unified");
+    expect(state.currentStudioDocumentId).toBeNull();
+
+    await useAppStore.getState().importStudioPdfAction();
+    state = useAppStore.getState();
+    expect(state.currentPageId).not.toBe("doc1");
+    expect(state.currentStudioDocumentId).toBe("doc1");
+  });
+
+  it("fetchStudioDocuments merges missing studio notes and dedups by id", async () => {
+    const existingNote = makePage({ id: "note-1", title: "Existing Note" });
+    const missingNote = makePage({ id: "note-2", title: "Missing Note" });
+    const doc1 = {
+      id: "doc1", title: "Doc 1", original_filename: "d1.pdf",
+      stored_file_path: "/x/d1.pdf", note_page_id: "note-1", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const doc2 = {
+      id: "doc2", title: "Doc 2", original_filename: "d2.pdf",
+      stored_file_path: "/x/d2.pdf", note_page_id: "note-2", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [existingNote];
+        if (call.command === "get_page" && call.args.id === "note-2") return missingNote;
+        if (call.command === "list_studio_documents") return [doc1, doc2];
+        if (call.command === "list_all_studio_document_page_links") return [
+          { id: "link1", document_id: "doc1", page_id: "note-1", pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: existingNote },
+        ];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    await useAppStore.getState().fetchStudioDocuments();
+
+    const state = useAppStore.getState();
+    const noteIds = new Set(state.pages.map((p) => p.id));
+    expect(noteIds.has("note-1")).toBe(true);
+    expect(noteIds.has("note-2")).toBe(true);
+    expect(state.pages.filter((p) => p.id === "note-1").length).toBe(1);
+  });
 ```
 
 - [ ] **Step 2: Run the tests to verify they pass**
 
 Run: `npx vitest run src/store/useAppStore.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add src/store/useAppStore.test.ts
-git commit -m "test: characterize select:false and reorder rollback"
+git commit -m "test: characterize select:false, reorder rollback, and remaining cross-slice flows"
 ```
 
 ---
@@ -440,7 +586,7 @@ Run: `npm run build`
 Expected: succeeds (no `noUnusedLocals` error, no references to the deleted function).
 
 Run: `npx vitest run src/store/useAppStore.test.ts`
-Expected: PASS (6 tests) — the `removePage` cascade test exercises this path.
+Expected: PASS (10 tests) — the `removePage` cascade test exercises this path.
 
 - [ ] **Step 4: Commit**
 
@@ -969,7 +1115,7 @@ function getStoredPageId(): string | null {
 
 Note: `setCurrentPageId` no longer calls `resolveCurrentPageId` (it didn't in the original either — that resolution happens in `fetchPages`). The `resolveCurrentPageId` import is used elsewhere; if `tsc` reports it unused in `sharedSlice.ts`, remove it from this file's imports (it's only needed by `pagesSlice`).
 
-- [ ] **Step 2: Move `pageTreeIds`, `logStoreError`, `getStoredPageId` to `helpers.ts`**
+- [ ] **Step 2: Move `pageTreeIds` and `logStoreError` to `helpers.ts`**
 
 Create `src/store/slices/helpers.ts`:
 
@@ -1208,8 +1354,6 @@ export interface StudioSlice {
   createMissingStudioNoteAction: (documentId: string) => Promise<Page | null>;
   renameStudioDocumentAction: (id: string, title: string) => Promise<void>;
   deleteStudioDocumentAction: (id: string) => Promise<void>;
-  exportProjectNotesMarkdown: (project: { id: string; name: string }) => Promise<void>;
-  exportProjectNotesJSON: (project: { id: string; name: string }) => Promise<void>;
 }
 
 export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (set, get) => ({
@@ -1237,16 +1381,10 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
   deleteStudioDocumentAction: async (id) => {
     // ... body copied verbatim (uses pageTreeIds imported from helpers, and HOME_PAGE_ID etc.)
   },
-  exportProjectNotesMarkdown: async (project) => {
-    // ... body copied verbatim
-  },
-  exportProjectNotesJSON: async (project) => {
-    // ... body copied verbatim
-  },
 });
 ```
 
-**Copy each action body byte-for-byte from the current `useAppStore.ts`.** The actions reference `get().showError`, `get().fetchStudioDocuments`, `get().pages`, `get().studioDocuments`, `get().studioDocumentPageLinks`, `get().currentPageId` — all resolve against the full `AppState` via `get()`, exactly as today. The `exportProjectNotes*` actions take a `project` param that currently is typed `StudioProject`; use a structural `{ id: string; name: string }` here to avoid importing the full type, OR import `StudioProject` from `../../lib/studio` and use it. Use `StudioProject` to match the original exactly — add it to the studio import list.
+**Copy each action body byte-for-byte from the current `useAppStore.ts`.** The actions reference `get().showError`, `get().fetchStudioDocuments`, `get().pages`, `get().studioDocuments`, `get().studioDocumentPageLinks`, `get().currentPageId` — all resolve against the full `AppState` via `get()`, exactly as today. The `exportProjectNotes*` actions move to `pagesSlice.ts` in Task 12.
 
 - [ ] **Step 2: Compose `studioSlice` into `useAppStore`**
 
@@ -1256,7 +1394,7 @@ In `src/store/useAppStore.ts`:
 ```ts
 import { createStudioSlice, type StudioSlice } from './slices/studioSlice';
 ```
-Remove the now-redundant direct studio imports (`deleteStudioDocument`, `importStudioDocumentFromDialog`, `listAllStudioDocumentPageLinks`, `listStudioDocuments`, `renameStudioDocument`, `replaceStudioDocumentFileFromDialog`, `updateStudioDocumentViewerState`, `StudioDocument`, `StudioDocumentPageLink`, `StudioPanelLayout`, `StudioProject`) — they now live in `studioSlice.ts`. Keep `movePage` only if `pagesSlice` (still inline) uses it.
+Remove the now-redundant direct studio imports (`deleteStudioDocument`, `importStudioDocumentFromDialog`, `listAllStudioDocumentPageLinks`, `listStudioDocuments`, `renameStudioDocument`, `replaceStudioDocumentFileFromDialog`, `updateStudioDocumentViewerState`, `StudioDocument`, `StudioDocumentPageLink`, `StudioPanelLayout`) — they now live in `studioSlice.ts`. Keep `StudioProject` imported in `useAppStore.ts` for now; it moves to `pagesSlice.ts` in Task 12. Keep `movePage` only if `pagesSlice` (still inline) uses it.
 
 (b) `AppState` extends `StudioSlice`:
 ```ts
@@ -1264,9 +1402,9 @@ interface AppState extends SharedSlice, ProfileSlice, StudioSlice {
   // ...remaining fields (pages + page actions + project actions)
 }
 ```
-Remove from `AppState`: `studioDocuments`, `studioDocumentPageLinks`, and the nine studio action signatures.
+Remove from `AppState`: `studioDocuments`, `studioDocumentPageLinks`, and the seven studio action signatures.
 
-(c) In the `create(...)` body, remove the two studio initializers and all nine studio action bodies. Add the slice spread:
+(c) In the `create(...)` body, remove the two studio initializers and all seven studio action bodies. Add the slice spread:
 ```ts
 export const useAppStore = create<AppState>()((...a) => ({
   ...createSharedSlice(...a),
@@ -1303,7 +1441,7 @@ The largest slice. After this, `useAppStore.ts` is just imports + the `AppState`
 
 - [ ] **Step 1: Create `pagesSlice.ts`**
 
-Create `src/store/slices/pagesSlice.ts`. Copy the page/project state initializers and actions verbatim from `useAppStore.ts` (`pages: []`, and the actions `fetchPages`, `addPage`, `updatePageOptimistically`, `renamePageAction`, `removePage`, `movePageAction`, `reorderPagesAction`, `toggleFavoriteAction`, `toggleTemplateAction`, `addPageFromTemplate`, `duplicatePageAction`, `importPageAction`, `createProjectAction`, `removeProjectAction`). The slice factory:
+Create `src/store/slices/pagesSlice.ts`. Copy the page/project state initializers and actions verbatim from `useAppStore.ts` (`pages: []`, and the actions `fetchPages`, `addPage`, `updatePageOptimistically`, `renamePageAction`, `removePage`, `movePageAction`, `reorderPagesAction`, `toggleFavoriteAction`, `toggleTemplateAction`, `addPageFromTemplate`, `duplicatePageAction`, `importPageAction`, `createProjectAction`, `removeProjectAction`, `exportProjectNotesMarkdown`, `exportProjectNotesJSON`). The slice factory:
 
 ```ts
 import type { StateCreator } from 'zustand';
@@ -1317,7 +1455,7 @@ import {
   deletePage, deleteProject, duplicatePage, movePage, reorderPages,
   toggleFavorite, toggleTemplate, updatePage,
 } from '../../lib/db';
-import { listAllStudioDocumentPageLinks } from '../../lib/studio';
+import { StudioProject, listAllStudioDocumentPageLinks } from '../../lib/studio';
 import { openNotionEditorSchema } from '../../lib/editorMath';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../../lib/navigation';
 import { logStoreError, pageTreeIds } from './helpers';
@@ -1339,6 +1477,8 @@ export interface PagesSlice {
   importPageAction: () => Promise<Page | null>;
   createProjectAction: (title?: string) => Promise<Page | null>;
   removeProjectAction: (id: string) => Promise<void>;
+  exportProjectNotesMarkdown: (project: StudioProject) => Promise<void>;
+  exportProjectNotesJSON: (project: StudioProject) => Promise<void>;
 }
 
 export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set, get) => ({
@@ -1386,6 +1526,12 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
   removeProjectAction: async (id) => {
     // ... body copied verbatim (uses listAllStudioDocumentPageLinks cross-slice)
   },
+  exportProjectNotesMarkdown: async (project) => {
+    // ... body copied verbatim from useAppStore.ts
+  },
+  exportProjectNotesJSON: async (project) => {
+    // ... body copied verbatim from useAppStore.ts
+  },
 });
 ```
 
@@ -1397,15 +1543,12 @@ Replace the entire content of `src/store/useAppStore.ts` with:
 
 ```ts
 import { create } from 'zustand';
-import type { Page } from '../lib/db';
 import { createSharedSlice, type SharedSlice } from './slices/sharedSlice';
 import { createProfileSlice, type ProfileSlice } from './slices/profileSlice';
 import { createStudioSlice, type StudioSlice } from './slices/studioSlice';
 import { createPagesSlice, type PagesSlice } from './slices/pagesSlice';
 
-export interface AppState extends SharedSlice, ProfileSlice, StudioSlice, PagesSlice {
-  pages: Page[];
-}
+export interface AppState extends SharedSlice, ProfileSlice, StudioSlice, PagesSlice {}
 
 export const useAppStore = create<AppState>()((...a) => ({
   ...createSharedSlice(...a),
@@ -1415,13 +1558,7 @@ export const useAppStore = create<AppState>()((...a) => ({
 }));
 ```
 
-**Important:** `pages: Page[]` is declared in both `PagesSlice` and `AppState`. Declare it once — in `PagesSlice` only — and remove the redundant `pages: Page[]` from the `extends` body (leave `AppState` as purely the intersection of the four slice interfaces, with empty braces or omit braces). Correct final form:
-
-```ts
-export interface AppState extends SharedSlice, ProfileSlice, StudioSlice, PagesSlice {}
-```
-
-Since every field lives in a slice, `AppState` is just the intersection. Remove the now-unused `import type { Page }` if it's no longer referenced.
+Also delete the now-unused local `type CreatePageOptions = { select?: boolean };` from `useAppStore.ts` (the `PagesSlice` interface inlines `{ select?: boolean }`), and remove the `StudioProject` import that now lives only in `pagesSlice.ts`.
 
 - [ ] **Step 3: Typecheck + test**
 
@@ -1478,7 +1615,7 @@ No code change. If any test or check fails, do NOT commit — fix the regression
 
 - "New `useUIStore`" → Tasks 6-8.
 - "Slice-organized `useAppStore` (shared/pages/studio/profile)" → Tasks 9-12.
-- "Characterization tests for cross-slice flows" → Tasks 1-4 (+ Task 8 for UI prefs).
+- "Characterization tests for cross-slice flows" → Tasks 1-4 (+ Task 8 for UI prefs). Task 4 now also covers removePage rollback, removeProjectAction, importStudioPdfAction navigation, and fetchStudioDocuments dedup.
 - "Deduplicate `pageTreeIds`/`descendantPageIds`" → Task 5 (then moves to `helpers.ts` in Task 9).
 - "API stability / no consumer edits in slicing phase" → Tasks 9-12 touch only `src/store/`; consumer edits are confined to Task 7 (UI extraction).
 - "Per-step verification gates" → every task ends with `npm run build` + `npm test`; Task 13 adds `npm run check` + e2e.

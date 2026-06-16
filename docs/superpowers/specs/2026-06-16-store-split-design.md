@@ -43,11 +43,11 @@ Each step is independently shippable and revertible. The public `useAppStore` AP
 - State: `isSidebarOpen`, `sidebarWidth`, `theme`, `localePreference`, `editorFont`, `editorFontSize`, `pageWidth`, `titleEnterBehavior`
 - Actions: `toggleSidebar`, `setSidebarWidth`, `setTheme`, `setLocalePreference`, `setEditorFont`, `setEditorFontSize`, `setPageWidth`, `setTitleEnterBehavior`
 - Helpers that move with it: `SIDEBAR_MIN/MAX/DEFAULT_WIDTH`, `clampSidebarWidth`, `getStoredSidebarWidth`, `isTheme`, `getStoredTheme`, `getStoredPreference`
-- The `Theme` type (currently a local const at `useAppStore.ts:39`) moves here and is exported.
+- The `Theme` type (currently a local type alias at `useAppStore.ts:39`) moves here and is exported.
 
 **`useAppStore`** (domain — kept as one store, slice-organized internally):
 
-- `pagesSlice` — owns `pages[]`: `fetchPages`, `addPage`, `renamePageAction`, `removePage`, `movePageAction`, `reorderPagesAction`, `toggleFavoriteAction`, `toggleTemplateAction`, `addPageFromTemplate`, `duplicatePageAction`, `updatePageOptimistically`, `importPageAction`, `createProjectAction`, `removeProjectAction`, `exportProjectNotesMarkdown`, `exportProjectNotesJSON`. Helper: `pageTreeIds` (the deduplicated one). Projects (`createProjectAction`, `removeProjectAction`, `exportProjectNotes*`) live here because a project *is* a page with `page_kind='project'` — they mutate the same `pages[]` via the same optimistic pattern, not a separate collection.
+- `pagesSlice` — owns `pages[]`: `fetchPages`, `addPage`, `renamePageAction`, `removePage`, `movePageAction`, `reorderPagesAction`, `toggleFavoriteAction`, `toggleTemplateAction`, `addPageFromTemplate`, `duplicatePageAction`, `updatePageOptimistically`, `importPageAction`, `createProjectAction`, `removeProjectAction`, `exportProjectNotesMarkdown`, `exportProjectNotesJSON`. Helper: `pageTreeIds` (the deduplicated one). Projects (`createProjectAction`, `removeProjectAction`, `exportProjectNotes*`) live here because a project *is* a page with `page_kind='project'` — they read the same `pages[]` and `studioDocuments` collections via `get()`, not a separate collection.
 - `studioSlice` — owns `studioDocuments[]`, `studioDocumentPageLinks[]`: `fetchStudioDocuments`, `importStudioPdfAction`, `replaceStudioPdfAction`, `updateStudioViewerAction`, `createMissingStudioNoteAction`, `renameStudioDocumentAction`, `deleteStudioDocumentAction`.
 - `profileSlice` — owns `profile`: `fetchProfile`, `updateProfileAction`, `importProfileAvatarAction`.
 - `sharedSlice` — cross-cutting concerns shared across slices (see below).
@@ -92,7 +92,7 @@ src/store/
     pagesSlice.ts
     studioSlice.ts
     profileSlice.ts
-    helpers.ts            # pageTreeIds (dedup), logStoreError, getStoredPageId
+    helpers.ts            # pageTreeIds (dedup), logStoreError
 ```
 
 ### API stability
