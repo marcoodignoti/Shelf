@@ -132,4 +132,72 @@ describe("useAppStore characterization harness", () => {
     expect(state.studioDocumentPageLinks.find((l) => l.page_id === linkPageId)).toBeUndefined();
     expect(state.currentPageId).not.toBe("parent");
   });
+
+  it("renameStudioDocumentAction mirrors title onto the linked page (${title} Notes)", async () => {
+    const notePageId = "note-page-1";
+    const docPage = makePage({ id: notePageId, title: "Old Notes" });
+    const baseHandler = (call: { command: string; args: Record<string, unknown> }): unknown => {
+      switch (call.command) {
+        case "list_pages": return [docPage];
+        case "list_all_studio_document_page_links": return [];
+        case "list_studio_documents": return [{
+          id: "doc1", title: "Old", original_filename: "old.pdf",
+          stored_file_path: "/x/old.pdf", note_page_id: notePageId, project_id: null,
+          last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+          created_at: "", updated_at: "",
+        }];
+        case "rename_studio_document": return undefined;
+        default: return undefined;
+      }
+    };
+    installFakeBridge({ invokeHandler: baseHandler });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    await useAppStore.getState().fetchStudioDocuments();
+
+    await useAppStore.getState().renameStudioDocumentAction("doc1", "New Title");
+
+    const state = useAppStore.getState();
+    expect(state.studioDocuments[0].title).toBe("New Title");
+    const linked = state.pages.find((p) => p.id === notePageId);
+    expect(linked?.title).toBe("New Title Notes");
+  });
+
+  it("renameStudioDocumentAction rolls back both studioDocuments and pages on error", async () => {
+    const notePageId = "note-page-2";
+    const docPage = makePage({ id: notePageId, title: "Old Notes" });
+    let shouldFail = false;
+    const baseHandler = (call: { command: string; args: Record<string, unknown> }): unknown => {
+      switch (call.command) {
+        case "list_pages": return [docPage];
+        case "list_all_studio_document_page_links": return [];
+        case "list_studio_documents": return [{
+          id: "doc2", title: "Old", original_filename: "old.pdf",
+          stored_file_path: "/x/old.pdf", note_page_id: notePageId, project_id: null,
+          last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+          created_at: "", updated_at: "",
+        }];
+        case "rename_studio_document":
+          if (shouldFail) throw new Error("boom");
+          return undefined;
+        default: return undefined;
+      }
+    };
+    installFakeBridge({ invokeHandler: baseHandler });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    await useAppStore.getState().fetchStudioDocuments();
+    const beforeDocs = useAppStore.getState().studioDocuments;
+    const beforePages = useAppStore.getState().pages;
+
+    shouldFail = true;
+    await useAppStore.getState().renameStudioDocumentAction("doc2", "New Title");
+
+    const state = useAppStore.getState();
+    expect(state.studioDocuments).toEqual(beforeDocs);
+    expect(state.pages.map((p) => p.title)).toEqual(beforePages.map((p) => p.title));
+    expect(state.notice?.kind).toBe("error");
+  });
 });
