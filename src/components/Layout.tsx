@@ -1,12 +1,12 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
-import { useAppStore } from '../store/useAppStore';
+import { useUIStore } from '../store/useUIStore';
 import { PanelLeft } from 'lucide-react';
 import { useT } from '../lib/i18n';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const t = useT();
-  const { isSidebarOpen, sidebarWidth, toggleSidebar } = useAppStore();
+  const { isSidebarOpen, sidebarWidth, toggleSidebar } = useUIStore();
   const sidebarGap = 8;
   const sidebarMargin = 8;
   const sidebarToggleRightInset = 8;

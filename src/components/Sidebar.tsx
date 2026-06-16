@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
+import { useUIStore } from '../store/useUIStore';
 import Plus from 'lucide-react/dist/esm/icons/plus.mjs';
 import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.mjs';
@@ -1067,9 +1068,8 @@ export function Sidebar() {
     deleteStudioDocumentAction,
     createProjectAction,
     removeProjectAction,
-    sidebarWidth,
-    setSidebarWidth,
   } = useAppStore();
+  const { sidebarWidth, setSidebarWidth } = useUIStore();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const newPageButtonRef = useRef<HTMLButtonElement>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

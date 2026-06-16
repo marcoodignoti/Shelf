@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { en } from "./locales/en";
 import { it } from "./locales/it";
 import type { LocalePreference } from "./preferences";
-import { useAppStore } from "../store/useAppStore";
+import { useUIStore } from "../store/useUIStore";
 
 export type Locale = "en" | "it";
 export type TranslationKey = keyof typeof en;
@@ -28,7 +28,7 @@ export function translate(
 }
 
 export function useLocale(): Locale {
-  const preference = useAppStore((state) => state.localePreference);
+  const preference = useUIStore((state) => state.localePreference);
   return resolveLocale(preference, typeof navigator !== "undefined" ? navigator.language : undefined);
 }
 

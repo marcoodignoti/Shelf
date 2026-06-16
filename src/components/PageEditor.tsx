@@ -45,6 +45,7 @@ import { subpageSectionMode } from "../lib/subpageSection";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import { rankedSuggestionItems } from "../lib/slashSearch";
 import { useAppStore } from "../store/useAppStore";
+import { useUIStore } from "../store/useUIStore";
 import { FloatingPopover } from "./FloatingPopover";
 
 const ICON_OPTIONS = ["📄", "✅", "💡", "📌", "🚀", "🧠", "🛠️", "📚", "🎯", "✨", "🔥", "📝"];
@@ -956,12 +957,12 @@ export function Editor({
   const toggleTemplateAction = useAppStore((state) => state.toggleTemplateAction);
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
-  const appTheme = useAppStore((state) => state.theme);
-  const isSidebarOpen = useAppStore((state) => state.isSidebarOpen);
-  const editorFont = useAppStore((state) => state.editorFont);
-  const editorFontSize = useAppStore((state) => state.editorFontSize);
-  const pageWidth = useAppStore((state) => state.pageWidth);
-  const titleEnterBehavior = useAppStore((state) => state.titleEnterBehavior);
+  const appTheme = useUIStore((state) => state.theme);
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
+  const editorFont = useUIStore((state) => state.editorFont);
+  const editorFontSize = useUIStore((state) => state.editorFontSize);
+  const pageWidth = useUIStore((state) => state.pageWidth);
+  const titleEnterBehavior = useUIStore((state) => state.titleEnterBehavior);
   const locale = useLocale();
   const t = useT();
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);

@@ -1,4 +1,4 @@
-import { useAppStore } from '../../store/useAppStore';
+import { useUIStore } from '../../store/useUIStore';
 import { useT } from '../../lib/i18n';
 import type { EditorFont, EditorFontSize } from '../../lib/preferences';
 
@@ -12,12 +12,12 @@ const FONT_PREVIEW_STACKS: Record<EditorFont, string> = {
 
 export function AppearanceSection() {
   const t = useT();
-  const theme = useAppStore((state) => state.theme);
-  const setTheme = useAppStore((state) => state.setTheme);
-  const editorFont = useAppStore((state) => state.editorFont);
-  const setEditorFont = useAppStore((state) => state.setEditorFont);
-  const editorFontSize = useAppStore((state) => state.editorFontSize);
-  const setEditorFontSize = useAppStore((state) => state.setEditorFontSize);
+  const theme = useUIStore((state) => state.theme);
+  const setTheme = useUIStore((state) => state.setTheme);
+  const editorFont = useUIStore((state) => state.editorFont);
+  const setEditorFont = useUIStore((state) => state.setEditorFont);
+  const editorFontSize = useUIStore((state) => state.editorFontSize);
+  const setEditorFontSize = useUIStore((state) => state.setEditorFontSize);
 
   return (
     <div className="on-settings-content">

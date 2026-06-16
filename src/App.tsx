@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
+import { useUIStore } from "./store/useUIStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppNotice } from "./components/AppNotice";
 import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
@@ -28,8 +29,8 @@ function WorkspaceLoadingFallback() {
 export default function App() {
   const pages = useAppStore((state) => state.pages);
   const currentPageId = useAppStore((state) => state.currentPageId);
-  const theme = useAppStore((state) => state.theme);
-  const localePreference = useAppStore((state) => state.localePreference);
+  const theme = useUIStore((state) => state.theme);
+  const localePreference = useUIStore((state) => state.localePreference);
   const isLoading = useAppStore((state) => state.isLoading);
   const addPage = useAppStore((state) => state.addPage);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
