@@ -93,4 +93,43 @@ describe("useAppStore characterization harness", () => {
     await useAppStore.getState().fetchPages();
     expect(useAppStore.getState().pages).toEqual([]);
   });
+
+  it("removePage cascades: removes subtree from pages, prunes studio links, refetches studio, recomputes currentPageId", async () => {
+    const home = makePage({ id: "home", sort_order: 0 });
+    const parent = makePage({ id: "parent", sort_order: 1 });
+    const child = makePage({ id: "child", parent_id: "parent", sort_order: 0 });
+    const linkPageId = "parent"; // a studio link references the parent page
+
+    const allPages = [home, parent, child];
+    let deleted = false;
+    const baseHandler = (call: { command: string; args: Record<string, unknown> }): unknown => {
+      switch (call.command) {
+        case "list_pages": return deleted ? [home] : allPages;
+        case "delete_page":
+          deleted = true;
+          return undefined;
+        case "list_all_studio_document_page_links":
+          return deleted ? [] : [
+            { id: "link1", document_id: "doc1", page_id: linkPageId, pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: parent },
+          ];
+        case "list_studio_documents": return [];
+        default: return undefined;
+      }
+    };
+    installFakeBridge({ invokeHandler: baseHandler });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    await useAppStore.getState().fetchStudioDocuments();
+    useAppStore.getState().setCurrentPageId("parent");
+
+    await useAppStore.getState().removePage("parent");
+
+    const state = useAppStore.getState();
+    expect(state.pages.find((p) => p.id === "parent")).toBeUndefined();
+    expect(state.pages.find((p) => p.id === "child")).toBeUndefined();
+    expect(state.pages.find((p) => p.id === "home")).toBeDefined();
+    expect(state.studioDocumentPageLinks.find((l) => l.page_id === linkPageId)).toBeUndefined();
+    expect(state.currentPageId).not.toBe("parent");
+  });
 });
