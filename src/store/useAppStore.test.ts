@@ -200,4 +200,189 @@ describe("useAppStore characterization harness", () => {
     expect(state.pages.map((p) => p.title)).toEqual(beforePages.map((p) => p.title));
     expect(state.notice?.kind).toBe("error");
   });
+
+  it("addPage with {select: false} does not change currentPageId", async () => {
+    const home = makePage({ id: "home" });
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [home];
+        if (call.command === "create_page") return makePage({ id: "new-page", title: "Untitled" });
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    useAppStore.getState().setCurrentPageId("home");
+    const before = useAppStore.getState().currentPageId;
+
+    await useAppStore.getState().addPage("Untitled", null, { select: false });
+
+    expect(useAppStore.getState().currentPageId).toBe(before);
+    expect(useAppStore.getState().pages.find((p) => p.id === "new-page")).toBeDefined();
+  });
+
+  it("reorderPagesAction rolls back on error", async () => {
+    const home = makePage({ id: "home" });
+    const a = makePage({ id: "a", sort_order: 0 });
+    const b = makePage({ id: "b", sort_order: 1 });
+    let shouldFail = false;
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [home, a, b];
+        if (call.command === "reorder_pages" && shouldFail) throw new Error("boom");
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    const before = useAppStore.getState().pages.map((p) => ({ id: p.id, sort_order: p.sort_order }));
+
+    shouldFail = true;
+    await useAppStore.getState().reorderPagesAction(null, ["b", "a"]);
+
+    const after = useAppStore.getState().pages.map((p) => ({ id: p.id, sort_order: p.sort_order }));
+    expect(after).toEqual(before);
+    expect(useAppStore.getState().notice?.kind).toBe("error");
+  });
+
+  it("removePage failure rolls back pages and studio links", async () => {
+    const home = makePage({ id: "home", sort_order: 0 });
+    const parent = makePage({ id: "parent", sort_order: 1 });
+    const child = makePage({ id: "child", parent_id: "parent", sort_order: 0 });
+    const allPages = [home, parent, child];
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return allPages;
+        if (call.command === "delete_page") throw new Error("boom");
+        if (call.command === "list_all_studio_document_page_links") return [
+          { id: "link1", document_id: "doc1", page_id: "parent", pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: parent },
+        ];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    await useAppStore.getState().fetchStudioDocuments();
+    const beforePages = useAppStore.getState().pages;
+    const beforeLinks = useAppStore.getState().studioDocumentPageLinks;
+
+    await useAppStore.getState().removePage("parent");
+
+    const state = useAppStore.getState();
+    expect(state.pages).toEqual(beforePages);
+    expect(state.studioDocumentPageLinks).toEqual(beforeLinks);
+    expect(state.notice?.kind).toBe("error");
+  });
+
+  it("removeProjectAction resets parent_id on orphaned pages and refetches links", async () => {
+    const project = makePage({ id: "project", page_kind: "project", sort_order: 0 });
+    const child = makePage({ id: "child", parent_id: "project", sort_order: 0 });
+    const orphanedChild = { ...child, parent_id: null };
+    let deleted = false;
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return deleted ? [orphanedChild] : [project, child];
+        if (call.command === "delete_project") {
+          deleted = true;
+          return undefined;
+        }
+        if (call.command === "list_all_studio_document_page_links") return [];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+    useAppStore.getState().setCurrentPageId("project");
+
+    await useAppStore.getState().removeProjectAction("project");
+
+    const state = useAppStore.getState();
+    const childPage = state.pages.find((p) => p.id === "child");
+    expect(childPage?.parent_id).toBeNull();
+    expect(state.pages.find((p) => p.id === "project")).toBeUndefined();
+    expect(state.currentPageId).not.toBe("project");
+  });
+
+  it("importStudioPdfAction sets navigation for unified vs note-page documents", async () => {
+    const unifiedDoc = {
+      id: "unified", title: "Unified", original_filename: "u.pdf",
+      stored_file_path: "/x/u.pdf", note_page_id: "unified", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const noteDoc = {
+      id: "doc1", title: "Doc", original_filename: "d.pdf",
+      stored_file_path: "/x/d.pdf", note_page_id: "note-1", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const notePage = makePage({ id: "note-1" });
+    const { fakeBridge } = installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [notePage];
+        if (call.command === "list_all_studio_document_page_links") return [];
+        if (call.command === "list_studio_documents") return [];
+        return undefined;
+      },
+    });
+    fakeBridge.importStudioDocument
+      .mockResolvedValueOnce(unifiedDoc)
+      .mockResolvedValueOnce(noteDoc);
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    await useAppStore.getState().importStudioPdfAction();
+    let state = useAppStore.getState();
+    expect(state.currentPageId).toBe("unified");
+    expect(state.currentStudioDocumentId).toBeNull();
+
+    await useAppStore.getState().importStudioPdfAction();
+    state = useAppStore.getState();
+    expect(state.currentPageId).not.toBe("doc1");
+    expect(state.currentStudioDocumentId).toBe("doc1");
+  });
+
+  it("fetchStudioDocuments merges missing studio notes and dedups by id", async () => {
+    const existingNote = makePage({ id: "note-1", title: "Existing Note" });
+    const missingNote = makePage({ id: "note-2", title: "Missing Note" });
+    const doc1 = {
+      id: "doc1", title: "Doc 1", original_filename: "d1.pdf",
+      stored_file_path: "/x/d1.pdf", note_page_id: "note-1", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    const doc2 = {
+      id: "doc2", title: "Doc 2", original_filename: "d2.pdf",
+      stored_file_path: "/x/d2.pdf", note_page_id: "note-2", project_id: null,
+      last_opened_at: "", viewer_zoom: 100, viewer_page: 1, panel_layout: "pdf-left",
+      created_at: "", updated_at: "",
+    };
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [existingNote];
+        if (call.command === "get_page" && call.args.id === "note-2") return missingNote;
+        if (call.command === "list_studio_documents") return [doc1, doc2];
+        if (call.command === "list_all_studio_document_page_links") return [
+          { id: "link1", document_id: "doc1", page_id: "note-1", pdf_page: null, label: null, sort_order: 0, created_at: "", updated_at: "", page: existingNote },
+        ];
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    await useAppStore.getState().fetchStudioDocuments();
+
+    const state = useAppStore.getState();
+    const noteIds = new Set(state.pages.map((p) => p.id));
+    expect(noteIds.has("note-1")).toBe(true);
+    expect(noteIds.has("note-2")).toBe(true);
+    expect(state.pages.filter((p) => p.id === "note-1").length).toBe(1);
+  });
 });
