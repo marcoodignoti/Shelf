@@ -12,7 +12,7 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
 import SquarePen from 'lucide-react/dist/esm/icons/square-pen.mjs';
 import FilePlus from 'lucide-react/dist/esm/icons/file-plus.mjs';
-import FileUp from 'lucide-react/dist/esm/icons/file-up.mjs';
+import Upload from 'lucide-react/dist/esm/icons/upload.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
 import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.mjs';
@@ -544,7 +544,7 @@ function PageItem({
             className="on-menu-item"
             onClick={(event) => void handleImportPdf(event)}
           >
-            <FileUp className="h-3.5 w-3.5 text-muted-foreground" />
+            <Upload className="h-3.5 w-3.5 text-muted-foreground" />
             {t("sidebar.contextImportPdf")}
           </button>
           <button
@@ -877,7 +877,7 @@ function ProjectItem({
             {t("sidebar.contextNewPage")}
           </button>
           <button className="on-menu-item" onClick={(event) => void handleImportPdf(event)}>
-            <FileUp className="h-3.5 w-3.5 text-muted-foreground" />
+            <Upload className="h-3.5 w-3.5 text-muted-foreground" />
             {t("sidebar.contextImportPdf")}
           </button>
           <div className="on-menu-separator" />
@@ -1102,6 +1102,7 @@ export function Sidebar() {
     deleteStudioDocumentAction,
     createProjectAction,
     removeProjectAction,
+    fetchProfile,
   } = useAppStore(useShallow((s) => ({
     pages: s.pages,
     fetchPages: s.fetchPages,
@@ -1122,6 +1123,7 @@ export function Sidebar() {
     deleteStudioDocumentAction: s.deleteStudioDocumentAction,
     createProjectAction: s.createProjectAction,
     removeProjectAction: s.removeProjectAction,
+    fetchProfile: s.fetchProfile,
   })));
   const { sidebarWidth, setSidebarWidth } = useUIStore();
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -1146,6 +1148,10 @@ export function Sidebar() {
   useEffect(() => {
     void fetchStudioDocuments();
   }, [fetchStudioDocuments]);
+
+  useEffect(() => {
+    void fetchProfile();
+  }, [fetchProfile]);
 
   useEffect(() => {
     pagesRef.current = pages;
@@ -1609,7 +1615,7 @@ export function Sidebar() {
           className="on-shell-row"
           onClick={() => void importStudioPdfAction(null)}
         >
-          <FileUp className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <Upload className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>{t("sidebar.importPdf")}</span>
         </button>
         <button

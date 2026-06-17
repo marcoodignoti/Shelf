@@ -385,4 +385,50 @@ describe("useAppStore characterization harness", () => {
     expect(noteIds.has("note-2")).toBe(true);
     expect(state.pages.filter((p) => p.id === "note-1").length).toBe(1);
   });
+
+  it("profile slice: fetchProfile, updateProfileAction, and importProfileAvatarAction work as expected", async () => {
+    let mockProfile = { name: "Test User", workspaceName: "Test Workspace", avatarPath: "/path/to/avatar.png" };
+    let importAvatarResult = "/path/to/new-avatar.png";
+
+    const { fakeBridge } = installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "get_workspace_profile") {
+          return mockProfile;
+        }
+        if (call.command === "update_workspace_profile") {
+          mockProfile = { ...mockProfile, ...call.args };
+          return mockProfile;
+        }
+        return undefined;
+      },
+    });
+
+    fakeBridge.importProfileAvatar.mockImplementation(async () => importAvatarResult);
+
+    const useAppStore = await loadStore();
+
+    // 1. Initial profile should be null
+    expect(useAppStore.getState().profile).toBeNull();
+
+    // 2. fetchProfile should populate profile
+    await useAppStore.getState().fetchProfile();
+    expect(useAppStore.getState().profile).toEqual({
+      name: "Test User",
+      workspaceName: "Test Workspace",
+      avatarPath: "/path/to/avatar.png",
+    });
+
+    // 3. updateProfileAction should update profile and call update_workspace_profile
+    await useAppStore.getState().updateProfileAction({ name: "Updated User" });
+    expect(useAppStore.getState().profile).toEqual({
+      name: "Updated User",
+      workspaceName: "Test Workspace",
+      avatarPath: "/path/to/avatar.png",
+    });
+    expect(mockProfile.name).toBe("Updated User");
+
+    // 4. importProfileAvatarAction should update the avatar path
+    await useAppStore.getState().importProfileAvatarAction();
+    expect(useAppStore.getState().profile?.avatarPath).toBe("/path/to/new-avatar.png");
+  });
 });
