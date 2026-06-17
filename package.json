@@ -105,11 +105,11 @@
     }
   },
   "dependencies": {
-    "@blocknote/core": "0.51.0",
-    "@blocknote/mantine": "0.51.0",
-    "@blocknote/react": "0.51.0",
-    "@mantine/core": "9.2.1",
-    "@mantine/hooks": "9.2.1",
+    "@blocknote/core": "0.51.4",
+    "@blocknote/mantine": "0.51.4",
+    "@blocknote/react": "0.51.4",
+    "@mantine/core": "9.3.2",
+    "@mantine/hooks": "9.3.2",
     "clsx": "2.1.1",
     "katex": "0.17.0",
     "lucide-react": "1.16.0",
