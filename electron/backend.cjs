@@ -4,767 +4,112 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { DatabaseSync } = require("node:sqlite");
-
-const APP_SCHEMA_VERSION = "1";
-const STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION = "2";
-const APP_ASSET_PROTOCOL = "opennotion-app";
-const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-const PROFILE_TEXT_MAX_LENGTH = 120;
-const PROFILE_METADATA_KEYS = {
-  name: "profile_name",
-  workspaceName: "workspace_name",
-  avatarPath: "profile_avatar_path",
-};
-const STUDIO_PDF_MAX_BYTES = 512 * 1024 * 1024;
-const EDITOR_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
-const UPDATE_MANIFEST_MAX_BYTES = 64 * 1024;
-const UPDATE_ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
-const UPDATE_SIGNATURE_ALGORITHM = "ed25519";
-const UPDATE_DOWNLOAD_TOKEN_BYTES = 32;
-const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
-const EXPORT_MAX_FILES = 2000;
-const EXPORT_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
-const IMPORT_MAX_BYTES = 25 * 1024 * 1024;
-
-function validateExportRelativePath(relativePath) {
-  if (!relativePath) throw new Error("export file path cannot be empty");
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f]/.test(relativePath) || relativePath.includes("\\")) {
-    throw new Error("export file path contains unsupported characters");
-  }
-  const segments = relativePath.split("/");
-  for (const segment of segments) {
-    if (!segment || segment === "." || segment === "..") {
-      throw new Error("export file path cannot traverse directories");
-    }
-  }
-}
-const BACKUP_MAX_PAGES = 5000;
-const BACKUP_MAX_ID_LENGTH = 512;
-const BACKUP_MAX_TITLE_LENGTH = 512;
-const BACKUP_MAX_TEXT_LENGTH = 1024 * 1024;
-const BACKUP_MAX_METADATA_LENGTH = 1024 * 1024;
-const BACKUP_MAX_ICON_LENGTH = 512;
-const BACKUP_MAX_COVER_URL_LENGTH = 4096;
-const UPDATE_MANIFEST_URLS = new Set([
-  "https://github.com/marcoodignoti/Shelf/releases/download/beta/beta-update.json",
-  "https://github.com/marcoodignoti/Shelf/releases/latest/download/beta-update.json",
-]);
-const UPDATE_DOWNLOAD_URL_PATTERN =
-  /^https:\/\/github\.com\/marcoodignoti\/Shelf\/releases\/download\/[^/]+\/Shelf_[^/]+\.(dmg|zip|exe)$/i;
-const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
-const DEFAULT_UPDATE_PUBLIC_KEY_PATH = path.join(__dirname, "update-public-key.pem");
-const INVOKE_PATH_COMMANDS = new Set([
-  "export_backup",
-  "import_backup",
-  "import_studio_document",
-  "replace_studio_document_file",
-  "import_cover_image",
-  "import_profile_avatar",
-]);
-const INVOKE_SOURCE_PATH_COMMANDS = new Set(["import_editor_image", "import_editor_video"]);
-
-const PAGE_COLUMNS =
-  "id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at";
-const STUDIO_DOCUMENT_COLUMNS =
-  "id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at";
-const STUDIO_PROJECT_COLUMNS = "id, name, parent_id, sort_order, created_at, updated_at";
-const STUDIO_DOCUMENT_PAGE_LINK_COLUMNS = "id, document_id, page_id, pdf_page, label, sort_order, created_at, updated_at";
-
-function ensurePrivateDirectory(directoryPath) {
-  fs.mkdirSync(directoryPath, { recursive: true });
-  if (process.platform !== "win32") {
-    fs.chmodSync(directoryPath, 0o700);
-  }
-}
-
-function restrictDatabaseFilePermissions(dbPath) {
-  if (process.platform === "win32") return;
-  for (const candidate of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    try {
-      if (fs.existsSync(candidate)) fs.chmodSync(candidate, 0o600);
-    } catch {
-      // A missing sidecar on a fresh DB, or a chmod race, must not fail startup.
-    }
-  }
-}
-
-function hasColumn(db, table, column) {
-  return db.prepare(`SELECT name FROM pragma_table_info(?)`).all(table).some((row) => row.name === column);
-}
-
-function runMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS pages (
-      id TEXT PRIMARY KEY,
-      title TEXT,
-      parent_id TEXT,
-      content TEXT,
-      icon TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  db.prepare(`
-    INSERT INTO app_metadata (key, value)
-    VALUES ('schema_version', ?)
-    ON CONFLICT(key) DO NOTHING
-  `).run(APP_SCHEMA_VERSION);
-  const currentSchemaVersion = String(rowValue(
-    db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
-    "value",
-    APP_SCHEMA_VERSION
-  ));
-  if (numericSchemaVersion(currentSchemaVersion) < numericSchemaVersion(APP_SCHEMA_VERSION)) {
-    db.prepare("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'").run(APP_SCHEMA_VERSION);
-  }
-
-  const pageColumns = db.prepare("SELECT name FROM pragma_table_info('pages')").all().map((row) => row.name);
-  const addPageColumn = (column, sql) => {
-    if (!pageColumns.includes(column)) db.exec(sql);
-  };
-
-  addPageColumn("cover_url", "ALTER TABLE pages ADD COLUMN cover_url TEXT");
-  if (!pageColumns.includes("search_text")) {
-    db.exec("ALTER TABLE pages ADD COLUMN search_text TEXT");
-    db.exec("UPDATE pages SET search_text = content WHERE search_text IS NULL");
-  }
-  addPageColumn("is_deleted", "ALTER TABLE pages ADD COLUMN is_deleted INTEGER DEFAULT 0");
-  addPageColumn("is_favorite", "ALTER TABLE pages ADD COLUMN is_favorite INTEGER DEFAULT 0");
-  if (!pageColumns.includes("sort_order")) {
-    db.exec("ALTER TABLE pages ADD COLUMN sort_order INTEGER DEFAULT 0");
-    db.exec("UPDATE pages SET sort_order = rowid WHERE sort_order = 0");
-  }
-  addPageColumn("is_template", "ALTER TABLE pages ADD COLUMN is_template INTEGER DEFAULT 0");
-  addPageColumn("is_database", "ALTER TABLE pages ADD COLUMN is_database INTEGER DEFAULT 0");
-  addPageColumn("database_schema", "ALTER TABLE pages ADD COLUMN database_schema TEXT");
-  addPageColumn("properties", "ALTER TABLE pages ADD COLUMN properties TEXT");
-  addPageColumn("page_kind", "ALTER TABLE pages ADD COLUMN page_kind TEXT NOT NULL DEFAULT 'note'");
-  db.exec("UPDATE pages SET page_kind = 'project' WHERE id LIKE 'studio-project:%' AND page_kind <> 'project'");
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS studio_documents (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      original_filename TEXT NOT NULL,
-      stored_file_path TEXT NOT NULL,
-      note_page_id TEXT NOT NULL UNIQUE,
-      project_id TEXT,
-      last_opened_at TEXT NOT NULL,
-      viewer_zoom INTEGER NOT NULL DEFAULT 100,
-      viewer_page INTEGER NOT NULL DEFAULT 1,
-      panel_layout TEXT NOT NULL DEFAULT 'pdf-left',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS studio_projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      parent_id TEXT,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS studio_document_page_links (
-      id TEXT PRIMARY KEY,
-      document_id TEXT NOT NULL,
-      page_id TEXT NOT NULL,
-      pdf_page INTEGER,
-      label TEXT,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(document_id, page_id)
-    );
-  `);
-
-  if (!hasColumn(db, "studio_documents", "title")) {
-    db.exec("ALTER TABLE studio_documents ADD COLUMN title TEXT");
-    db.exec(`
-      UPDATE studio_documents
-      SET title = COALESCE(
-        NULLIF(TRIM((SELECT pages.title FROM pages WHERE pages.id = studio_documents.id)), ''),
-        NULLIF(TRIM(CASE
-          WHEN lower(original_filename) LIKE '%.pdf' THEN substr(original_filename, 1, length(original_filename) - 4)
-          ELSE original_filename
-        END), ''),
-        'Imported PDF'
-      )
-      WHERE title IS NULL OR TRIM(title) = ''
-    `);
-  }
-  if (!hasColumn(db, "studio_documents", "note_page_id")) {
-    db.exec("ALTER TABLE studio_documents ADD COLUMN note_page_id TEXT");
-    db.exec("UPDATE studio_documents SET note_page_id = id WHERE note_page_id IS NULL OR TRIM(note_page_id) = ''");
-  }
-  if (!hasColumn(db, "studio_documents", "project_id")) {
-    db.exec("ALTER TABLE studio_documents ADD COLUMN project_id TEXT");
-  }
-  db.exec(`
-    UPDATE studio_documents
-    SET title = 'Imported PDF'
-    WHERE title IS NULL OR TRIM(title) = '';
-    UPDATE studio_documents
-    SET note_page_id = id
-    WHERE note_page_id IS NULL OR TRIM(note_page_id) = '';
-  `);
-
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_studio_documents_last_opened
-      ON studio_documents (last_opened_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_studio_documents_project
-      ON studio_documents (project_id, last_opened_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_studio_projects_parent_sort
-      ON studio_projects (parent_id, sort_order, name);
-    CREATE INDEX IF NOT EXISTS idx_studio_document_page_links_document
-      ON studio_document_page_links (document_id, sort_order, created_at);
-    CREATE INDEX IF NOT EXISTS idx_studio_document_page_links_page
-      ON studio_document_page_links (page_id);
-    CREATE INDEX IF NOT EXISTS idx_pages_active_parent_sort
-      ON pages (is_deleted, parent_id, sort_order);
-    CREATE INDEX IF NOT EXISTS idx_pages_active_updated_at
-      ON pages (is_deleted, updated_at);
-  `);
-
-  db.exec(`
-    INSERT OR IGNORE INTO studio_document_page_links (
-      id, document_id, page_id, pdf_page, label, sort_order, created_at, updated_at
-    )
-    SELECT lower(hex(randomblob(16))), id, note_page_id, NULL, 'Primary note', 0, created_at, updated_at
-    FROM studio_documents
-  `);
-}
-
-const CURRENT_APP_VERSION = (() => {
-  try {
-    return require("../package.json").version;
-  } catch {
-    return null;
-  }
-})();
-const DB_BACKUP_RETENTION = 5;
-
-function readStoredAppVersion(db) {
-  try {
-    const row = db.prepare("SELECT value FROM app_metadata WHERE key = 'app_version'").get();
-    return row ? String(row.value) : null;
-  } catch {
-    // Databases that predate app_metadata still deserve a backup; treat them
-    // as "version unknown".
-    return null;
-  }
-}
-
-function pruneDatabaseBackups(backupsDir) {
-  const backups = fs.readdirSync(backupsDir)
-    .filter((name) => (name.startsWith("shelf-") || name.startsWith("opennotion-")) && name.endsWith(".db"))
-    .map((name) => {
-      const filePath = path.join(backupsDir, name);
-      return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
-    })
-    .sort((first, second) => second.mtimeMs - first.mtimeMs);
-  for (const backup of backups.slice(DB_BACKUP_RETENTION)) {
-    fs.rmSync(backup.filePath, { force: true });
-  }
-}
-
-function backupDatabaseFile(db, dbPath, storedVersion) {
-  const backupsDir = path.join(path.dirname(dbPath), "backups");
-  ensurePrivateDirectory(backupsDir);
-  // Fold the WAL into the main file first so the copy is a complete,
-  // self-contained snapshot.
-  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = path.join(backupsDir, `shelf-v${storedVersion || "unknown"}-${stamp}.db`);
-  fs.copyFileSync(dbPath, backupPath);
-  pruneDatabaseBackups(backupsDir);
-  return backupPath;
-}
-
-function openDatabase(appConfigDir, appVersion = CURRENT_APP_VERSION) {
-  ensurePrivateDirectory(appConfigDir);
-  const dbPath = path.join(appConfigDir, "opennotion.db");
-  const databaseExisted = fs.existsSync(dbPath);
-  const db = new DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = NORMAL");
-  restrictDatabaseFilePermissions(dbPath);
-  // Wait instead of failing with SQLITE_BUSY when another connection (e.g. a
-  // lingering process from a previous run) briefly holds the write lock.
-  db.exec("PRAGMA busy_timeout = 5000");
-
-  // First launch of a new app version: snapshot the database before the new
-  // version's migrations touch it, so a bad migration can never destroy the
-  // only copy of the user's data. Backup failure must not block startup.
-  if (databaseExisted && appVersion) {
-    const storedVersion = readStoredAppVersion(db);
-    if (storedVersion !== appVersion) {
-      try {
-        backupDatabaseFile(db, dbPath, storedVersion);
-      } catch (error) {
-        console.error("Failed to back up the database before migrating:", error);
-      }
-    }
-  }
-
-  // Run migrations atomically: a failure midway (one ALTER succeeding, the
-  // next failing) must not leave a partially-migrated schema behind.
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    runMigrations(db);
-    if (appVersion) {
-      db.prepare(`
-        INSERT INTO app_metadata (key, value)
-        VALUES ('app_version', ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      `).run(appVersion);
-    }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-  restrictDatabaseFilePermissions(dbPath);
-  return db;
-}
-
-function own(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
-}
-
-function normalizeOptionalString(value) {
-  return value === undefined ? null : value;
-}
-
-function rowValue(row, key, fallback = 0) {
-  return row && row[key] !== undefined ? row[key] : fallback;
-}
-
-function studioProjectPageId(projectId) {
-  return `studio-project:${projectId}`;
-}
-
-function studioProjectIdFromPageId(pageId) {
-  const prefix = "studio-project:";
-  const value = String(pageId ?? "");
-  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
-}
-
-function numericSchemaVersion(value) {
-  const parsed = Number.parseInt(String(value ?? "0"), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function lowerLikePattern(query) {
-  return `%${query.trim().toLowerCase()}%`;
-}
-
-function validateJsonPath(filePath) {
-  if (path.extname(filePath).toLowerCase() !== ".json") {
-    throw new Error("backup file must be a JSON file");
-  }
-}
-
-function validateBackupImportSource(filePath) {
-  validateJsonPath(filePath);
-  const stats = fs.statSync(filePath);
-  if (!stats.isFile()) throw new Error("backup path must be a file");
-  if (stats.size > BACKUP_MAX_BYTES) throw new Error("Backup file is too large");
-}
-
-function validateBackupExportDestination(filePath) {
-  validateJsonPath(filePath);
-  const parent = path.dirname(filePath);
-  if (!fs.statSync(parent).isDirectory()) {
-    throw new Error("backup destination parent must be a directory");
-  }
-}
-
-function validateOptionalStringLength(field, value, maxLength) {
-  if (value !== null && value !== undefined && String(value).length > maxLength) {
-    throw new Error(`backup field ${field} is too large`);
-  }
-}
-
-function normalizeImportedCoverUrl(value) {
-  if (value === null || value === undefined) return null;
-  const coverUrl = String(value).trim();
-  if (!coverUrl) return null;
-  if (/^https:\/\//i.test(coverUrl)) return coverUrl;
-  if (/^blob:/i.test(coverUrl)) return coverUrl;
-  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) return coverUrl;
-  return null;
-}
-
-const IMPORTED_MEDIA_BLOCK_TYPES = new Set(["image", "video", "audio", "file"]);
-
-function sanitizeImportedBlockMedia(block) {
-  if (!block || typeof block !== "object" || Array.isArray(block)) return block;
-  const next = { ...block };
-  if (
-    IMPORTED_MEDIA_BLOCK_TYPES.has(next.type) &&
-    next.props &&
-    typeof next.props === "object" &&
-    !Array.isArray(next.props)
-  ) {
-    next.props = { ...next.props };
-    if (typeof next.props.url === "string" && /^file:\/\//i.test(next.props.url)) {
-      delete next.props.url;
-    }
-  }
-  if (Array.isArray(next.children)) {
-    next.children = next.children.map(sanitizeImportedBlockMedia);
-  }
-  return next;
-}
-
-function sanitizeImportedPageContent(value) {
-  if (typeof value !== "string" || value.trim() === "") return value;
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return value;
-    return JSON.stringify(parsed.map(sanitizeImportedBlockMedia));
-  } catch {
-    return value;
-  }
-}
-
-function sanitizeImportedPageRecord(page) {
-  const pageKind = page.page_kind === "studio_note" || page.page_kind === "project"
-    ? page.page_kind
-    : "note";
-  return {
-    ...page,
-    content: sanitizeImportedPageContent(page.content),
-    cover_url: normalizeImportedCoverUrl(page.cover_url),
-    page_kind: pageKind,
-  };
-}
-
-function validateImportedPage(page) {
-  if (typeof page !== "object" || page === null || Array.isArray(page)) {
-    throw new Error("Backup file has invalid pages");
-  }
-  if (String(page.id ?? "").length > BACKUP_MAX_ID_LENGTH) throw new Error("backup field id is too large");
-  if (String(page.title ?? "").length > BACKUP_MAX_TITLE_LENGTH) throw new Error("backup field title is too large");
-  validateOptionalStringLength("parent_id", page.parent_id, BACKUP_MAX_ID_LENGTH);
-  validateOptionalStringLength("content", page.content, BACKUP_MAX_TEXT_LENGTH);
-  validateOptionalStringLength("search_text", page.search_text, BACKUP_MAX_TEXT_LENGTH);
-  validateOptionalStringLength("icon", page.icon, BACKUP_MAX_ICON_LENGTH);
-  validateOptionalStringLength("cover_url", page.cover_url, BACKUP_MAX_COVER_URL_LENGTH);
-  validateOptionalStringLength("database_schema", page.database_schema, BACKUP_MAX_METADATA_LENGTH);
-  validateOptionalStringLength("properties", page.properties, BACKUP_MAX_METADATA_LENGTH);
-}
-
-function readImportedBackup(filePath) {
-  validateBackupImportSource(filePath);
-  const raw = fs.readFileSync(filePath, "utf8");
-  return parseImportedBackup(raw);
-}
-
-function parseImportedBackup(raw) {
-  if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES) {
-    throw new Error("Backup file is too large");
-  }
-
-  let backup;
-  try {
-    backup = JSON.parse(raw);
-  } catch {
-    throw new Error("Backup file is not valid JSON");
-  }
-
-  if (!backup || typeof backup !== "object" || Array.isArray(backup)) {
-    throw new Error("Backup file has invalid shape");
-  }
-  if (backup.version !== 1) throw new Error("Backup file version is not supported");
-  if (typeof backup.exported_at !== "string" || backup.exported_at.length > BACKUP_MAX_TITLE_LENGTH) {
-    throw new Error("Backup file has invalid export timestamp");
-  }
-  if (!Array.isArray(backup.pages) || backup.pages.length > BACKUP_MAX_PAGES) {
-    throw new Error("Backup file has too many pages");
-  }
-  backup.pages.forEach(validateImportedPage);
-  return backup;
-}
-
-function prepareImportedBackupPages(pages, importedAt) {
-  const idMap = new Map();
-  pages.forEach((page, index) => {
-    idMap.set(page.id, `${crypto.randomUUID()}-${index + 1}`);
-  });
-
-  return pages.map((page) => ({
-    ...sanitizeImportedPageRecord(page),
-    id: idMap.get(page.id) || page.id,
-    parent_id: page.parent_id ? idMap.get(page.parent_id) ?? null : null,
-    is_deleted: 0,
-    is_template: 0,
-    created_at: importedAt,
-    updated_at: importedAt,
-  }));
-}
-
-function allowedCoverExtension(filePath) {
-  const extension = path.extname(filePath).slice(1).toLowerCase();
-  if (extension === "jpeg") return "jpg";
-  if (["jpg", "png", "webp", "gif"].includes(extension)) return extension;
-  return null;
-}
-
-function coverExtensionFromMagic(bytes) {
-  if (bytes.length >= 12 && bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"))) {
-    return "webp";
-  }
-  if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "png";
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
-  if (bytes.subarray(0, 6).equals(Buffer.from("GIF87a")) || bytes.subarray(0, 6).equals(Buffer.from("GIF89a"))) return "gif";
-  return null;
-}
-
-function validatedPdfFile(filePath) {
-  if (path.extname(filePath).toLowerCase() !== ".pdf") throw new Error("file must be a PDF");
-  const stats = fs.statSync(filePath);
-  if (stats.size > STUDIO_PDF_MAX_BYTES) throw new Error("PDF must be 512 MB or smaller");
-  const fd = fs.openSync(filePath, "r");
-  try {
-    const header = Buffer.alloc(5);
-    const bytesRead = fs.readSync(fd, header, 0, 5, 0);
-    if (bytesRead < 5 || !header.equals(Buffer.from("%PDF-"))) {
-      throw new Error("PDF content is not valid");
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function safeStorageId(id) {
-  const safeId = String(id ?? "").replace(/[^a-zA-Z0-9-]/g, "");
-  return safeId || "document";
-}
-
-function safeFileStem(fileName) {
-  const parsed = path.parse(fileName || "image");
-  const safeName = parsed.name.replace(/[^a-zA-Z0-9_-]/g, "");
-  return safeName || "image";
-}
-
-function validatedCoverExtension(filePath, maxBytes) {
-  const extension = allowedCoverExtension(filePath);
-  if (!extension) throw new Error("cover image must be PNG, JPG, WebP, or GIF");
-  const stats = fs.statSync(filePath);
-  if (stats.size > maxBytes) throw new Error("cover image must be 10 MB or smaller");
-  const fd = fs.openSync(filePath, "r");
-  try {
-    const header = Buffer.alloc(12);
-    const bytesRead = fs.readSync(fd, header, 0, 12, 0);
-    const detected = coverExtensionFromMagic(header.subarray(0, bytesRead));
-    if (!detected) throw new Error("cover image content is not a supported image");
-    if (detected !== extension) throw new Error("cover image content does not match its extension");
-    return extension;
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function validatedEditorImageExtension(fileName, bytes) {
-  if (bytes.length > COVER_IMAGE_MAX_BYTES) throw new Error("image must be 10 MB or smaller");
-  const extension = allowedCoverExtension(fileName);
-  if (!extension) throw new Error("image must be PNG, JPG, WebP, or GIF");
-  const detected = coverExtensionFromMagic(bytes);
-  if (!detected) throw new Error("image content is not a supported image");
-  if (detected !== extension) throw new Error("image content does not match its extension");
-  return extension;
-}
-
-function validatedEditorImageSource(filePath) {
-  return validatedCoverExtension(String(filePath ?? ""), COVER_IMAGE_MAX_BYTES);
-}
-
-function allowedEditorVideoExtension(fileName) {
-  const extension = path.extname(fileName).slice(1).toLowerCase();
-  if (extension === "mov") return "mov";
-  if (extension === "m4v") return "m4v";
-  if (extension === "webm") return "webm";
-  if (extension === "mp4") return "mp4";
-  return null;
-}
-
-function isIsoBaseMediaVideo(bytes) {
-  if (bytes.length < 12 || !bytes.subarray(4, 8).equals(Buffer.from("ftyp"))) return false;
-  const brandText = bytes.subarray(8, Math.min(bytes.length, 64)).toString("latin1");
-  return /\b(isom|iso2|mp41|mp42|M4V |qt  )/.test(brandText);
-}
-
-function isWebmVideo(bytes) {
-  return bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
-}
-
-function validatedEditorVideoExtension(fileName, bytes) {
-  if (bytes.length > EDITOR_VIDEO_MAX_BYTES) throw new Error("video must be 512 MB or smaller");
-  const extension = allowedEditorVideoExtension(fileName);
-  if (!extension) throw new Error("video must be MP4, M4V, MOV, or WebM");
-  const detected = extension === "webm" ? isWebmVideo(bytes) : isIsoBaseMediaVideo(bytes);
-  if (!detected) throw new Error("video content is not a supported video");
-  return extension;
-}
-
-function validatedEditorVideoSource(filePath) {
-  const source = String(filePath ?? "");
-  const extension = allowedEditorVideoExtension(source);
-  if (!extension) throw new Error("video must be MP4, M4V, MOV, or WebM");
-  const stats = fs.statSync(source);
-  if (stats.size > EDITOR_VIDEO_MAX_BYTES) throw new Error("video must be 512 MB or smaller");
-  const fd = fs.openSync(source, "r");
-  try {
-    const header = Buffer.alloc(64);
-    const bytesRead = fs.readSync(fd, header, 0, 64, 0);
-    return validatedEditorVideoExtension(source, header.subarray(0, bytesRead));
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function isPathInside(rootPath, candidatePath) {
-  const relative = path.relative(rootPath, candidatePath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot) {
-  const canonicalPath = fs.realpathSync(storedFilePath);
-  const canonicalRoot = fs.realpathSync(studioDocumentsRoot);
-  const expected = path.basename(canonicalPath) === "source.pdf" && isPathInside(canonicalRoot, canonicalPath);
-  if (!expected) throw new Error("stored Studio document path is outside app storage");
-  return canonicalPath;
-}
-
-function validateManagedAssetPath(filePath, appConfigDir) {
-  const canonicalPath = fs.realpathSync(filePath);
-  const roots = ["covers", "editor-images", "editor-videos", "studio-documents", "avatars"]
-    .map((directory) => path.join(appConfigDir, directory))
-    .filter((directory) => fs.existsSync(directory))
-    .map((directory) => fs.realpathSync(directory));
-  if (!roots.some((root) => isPathInside(root, canonicalPath))) {
-    throw new Error("file path is outside app-managed storage");
-  }
-  return canonicalPath;
-}
-
-function encodeAppAssetPath(filePath) {
-  return Buffer.from(filePath, "utf8").toString("base64url");
-}
-
-function decodeAppAssetPath(token) {
-  const encoded = String(token ?? "").trim();
-  if (!/^[a-zA-Z0-9_-]+$/.test(encoded)) {
-    throw new Error("asset URL token is invalid");
-  }
-  const decoded = Buffer.from(encoded, "base64url").toString("utf8");
-  if (!decoded) throw new Error("asset URL token is invalid");
-  return decoded;
-}
-
-function normalizePem(value) {
-  return String(value ?? "").replace(/\\n/g, "\n").trim();
-}
-
-function updateManifestPublicKey(configuredKey) {
-  if (configuredKey) return normalizePem(configuredKey);
-  const publicKeyPath = process.env.SHELF_UPDATE_PUBLIC_KEY_PATH || process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PATH;
-  if (publicKeyPath) {
-    return normalizePem(fs.readFileSync(path.resolve(publicKeyPath), "utf8"));
-  }
-  const publicKeyPem = process.env.SHELF_UPDATE_PUBLIC_KEY_PEM || process.env.OPENNOTION_UPDATE_PUBLIC_KEY_PEM;
-  if (publicKeyPem) {
-    return normalizePem(publicKeyPem);
-  }
-  return normalizePem(fs.readFileSync(DEFAULT_UPDATE_PUBLIC_KEY_PATH, "utf8"));
-}
-
-function canonicalJson(value) {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-  }
-  throw new Error("Update manifest contains unsupported data");
-}
-
-function signedManifestPayload(value, publicKeyPem) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Invalid signed update manifest");
-  }
-
-  const envelope = value;
-  if (envelope.signatureAlgorithm !== UPDATE_SIGNATURE_ALGORITHM) {
-    throw new Error("Invalid update manifest signature algorithm");
-  }
-  if (!envelope.payload || typeof envelope.payload !== "object" || Array.isArray(envelope.payload)) {
-    throw new Error("Invalid signed update manifest payload");
-  }
-  if (typeof envelope.signature !== "string" || !envelope.signature.trim()) {
-    throw new Error("Invalid update manifest signature");
-  }
-
-  const payloadBytes = Buffer.from(canonicalJson(envelope.payload), "utf8");
-  const signature = Buffer.from(envelope.signature, "base64");
-  const verified = crypto.verify(null, payloadBytes, crypto.createPublicKey(publicKeyPem), signature);
-  if (!verified) throw new Error("Update manifest signature verification failed");
-  return envelope.payload;
-}
-
-function updateArtifactFileName(parsedUrl) {
-  const fileName = decodeURIComponent(path.basename(parsedUrl.pathname));
-  if (!/^Shelf_[a-zA-Z0-9._-]+\.(dmg|zip|exe)$/i.test(fileName)) {
-    throw new Error("update artifact filename is not trusted");
-  }
-  return fileName;
-}
-
-function trustedUpdateDownload(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const url = String(value.url ?? "");
-  const sha256 = String(value.sha256 ?? "").trim().toLowerCase();
-  if (!UPDATE_DOWNLOAD_URL_PATTERN.test(url) || !SHA256_PATTERN.test(sha256)) return null;
-  return { url, sha256 };
-}
-
-function assertSafeInvokeArgs(command, args) {
-  if (INVOKE_PATH_COMMANDS.has(command)) {
-    throw new Error(`${command} requires a trusted file dialog`);
-  }
-  if (
-    INVOKE_SOURCE_PATH_COMMANDS.has(command) &&
-    args &&
-    typeof args === "object" &&
-    !Array.isArray(args) &&
-    (typeof args.sourcePath === "string" || typeof args.source_path === "string")
-  ) {
-    throw new Error(`${command} sourcePath requires a trusted file dialog`);
-  }
-}
-
-function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
-  if (!fs.existsSync(storedFilePath)) return;
-  const storedPath = validateManagedStudioDocumentPath(storedFilePath, studioDocumentsRoot);
-  fs.rmSync(storedPath, { force: true });
-  fs.rmSync(path.dirname(storedPath), { recursive: true, force: true });
-}
+const {
+  APP_SCHEMA_VERSION,
+  STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION,
+  APP_ASSET_PROTOCOL,
+  COVER_IMAGE_MAX_BYTES,
+  PROFILE_TEXT_MAX_LENGTH,
+  PROFILE_METADATA_KEYS,
+  STUDIO_PDF_MAX_BYTES,
+  EDITOR_VIDEO_MAX_BYTES,
+  UPDATE_MANIFEST_MAX_BYTES,
+  UPDATE_ARTIFACT_MAX_BYTES,
+  UPDATE_SIGNATURE_ALGORITHM,
+  UPDATE_DOWNLOAD_TOKEN_BYTES,
+  BACKUP_MAX_BYTES,
+  EXPORT_MAX_FILES,
+  EXPORT_MAX_TOTAL_BYTES,
+  IMPORT_MAX_BYTES,
+  validateExportRelativePath,
+  BACKUP_MAX_PAGES,
+  BACKUP_MAX_ID_LENGTH,
+  BACKUP_MAX_TITLE_LENGTH,
+  BACKUP_MAX_TEXT_LENGTH,
+  BACKUP_MAX_METADATA_LENGTH,
+  BACKUP_MAX_ICON_LENGTH,
+  BACKUP_MAX_COVER_URL_LENGTH,
+  UPDATE_MANIFEST_URLS,
+  UPDATE_DOWNLOAD_URL_PATTERN,
+  SHA256_PATTERN,
+  DEFAULT_UPDATE_PUBLIC_KEY_PATH,
+  INVOKE_PATH_COMMANDS,
+  INVOKE_SOURCE_PATH_COMMANDS,
+  PAGE_COLUMNS,
+  STUDIO_DOCUMENT_COLUMNS,
+  STUDIO_PROJECT_COLUMNS,
+  STUDIO_DOCUMENT_PAGE_LINK_COLUMNS,
+  ensurePrivateDirectory,
+  restrictDatabaseFilePermissions,
+  hasColumn,
+  runMigrations,
+  CURRENT_APP_VERSION,
+  DB_BACKUP_RETENTION,
+  readStoredAppVersion,
+  pruneDatabaseBackups,
+  backupDatabaseFile,
+  openDatabase,
+  own,
+  normalizeOptionalString,
+  rowValue,
+  studioProjectPageId,
+  studioProjectIdFromPageId,
+  numericSchemaVersion,
+  lowerLikePattern,
+  validateJsonPath,
+  validateBackupImportSource,
+  validateBackupExportDestination,
+  validateOptionalStringLength,
+  normalizeImportedCoverUrl,
+  validatePageIdValue,
+  validatePageCreateInput,
+  validatePageUpdateInput,
+  validateImportedPagesArray,
+  IMPORTED_MEDIA_BLOCK_TYPES,
+  sanitizeImportedBlockMedia,
+  sanitizeImportedPageContent,
+  sanitizeImportedPageRecord,
+  validateImportedPage,
+  readImportedBackup,
+  parseImportedBackup,
+  prepareImportedBackupPages,
+  allowedCoverExtension,
+  coverExtensionFromMagic,
+  validatedPdfFile,
+  safeStorageId,
+  safeFileStem,
+  validatedCoverExtension,
+  validatedEditorImageExtension,
+  validatedEditorImageSource,
+  allowedEditorVideoExtension,
+  isIsoBaseMediaVideo,
+  isWebmVideo,
+  validatedEditorVideoExtension,
+  validatedEditorVideoSource,
+  isPathInside,
+  validateManagedStudioDocumentPath,
+  validateManagedAssetPath,
+  encodeAppAssetPath,
+  decodeAppAssetPath,
+  normalizePem,
+  updateManifestPublicKey,
+  canonicalJson,
+  signedManifestPayload,
+  updateArtifactFileName,
+  trustedUpdateDownload,
+  assertSafeInvokeArgs,
+  removeStoredStudioDocumentFile,
+} = require("./backend-helpers.cjs");
 
 class ShelfBackend {
-  constructor({ appConfigDir, downloadsDir, openPath, revealPath, openExternalUrl, updateManifestPublicKey: publicKey }) {
+  constructor({
+    appConfigDir,
+    downloadsDir,
+    openPath,
+    revealPath,
+    openExternalUrl,
+    updateManifestPublicKey: publicKey,
+  }) {
     this.appConfigDir = appConfigDir;
     this.downloadsDir = downloadsDir || path.join(appConfigDir, "downloads");
     this.updateManifestPublicKey = updateManifestPublicKey(publicKey);
@@ -791,24 +136,35 @@ class ShelfBackend {
       import_pages: (args) => this.importPages(args),
       list_studio_documents: () => this.listStudioDocuments(),
       list_studio_projects: () => this.listStudioProjects(),
-      preview_studio_page_unification: () => this.previewStudioPageUnification(),
-      migrate_studio_page_unification: (args) => this.migrateStudioPageUnification(args),
+      preview_studio_page_unification: () =>
+        this.previewStudioPageUnification(),
+      migrate_studio_page_unification: (args) =>
+        this.migrateStudioPageUnification(args),
       create_studio_project: (args) => this.createStudioProject(args),
       rename_studio_project: (args) => this.renameStudioProject(args),
-      update_studio_project_parent: (args) => this.updateStudioProjectParent(args),
+      update_studio_project_parent: (args) =>
+        this.updateStudioProjectParent(args),
       delete_studio_project: (args) => this.deleteStudioProject(args),
-      update_studio_document_project: (args) => this.updateStudioDocumentProject(args),
-      list_all_studio_document_page_links: () => this.listAllStudioDocumentPageLinks(),
-      list_studio_document_page_links: (args) => this.listStudioDocumentPageLinks(args),
+      update_studio_document_project: (args) =>
+        this.updateStudioDocumentProject(args),
+      list_all_studio_document_page_links: () =>
+        this.listAllStudioDocumentPageLinks(),
+      list_studio_document_page_links: (args) =>
+        this.listStudioDocumentPageLinks(args),
       link_studio_document_page: (args) => this.linkStudioDocumentPage(args),
-      update_studio_document_page_link: (args) => this.updateStudioDocumentPageLink(args),
-      unlink_studio_document_page: (args) => this.unlinkStudioDocumentPage(args),
+      update_studio_document_page_link: (args) =>
+        this.updateStudioDocumentPageLink(args),
+      unlink_studio_document_page: (args) =>
+        this.unlinkStudioDocumentPage(args),
       import_studio_document: (args) => this.importStudioDocument(args),
-      replace_studio_document_file: (args) => this.replaceStudioDocumentFile(args),
-      update_studio_document_viewer_state: (args) => this.updateStudioDocumentViewerState(args),
+      replace_studio_document_file: (args) =>
+        this.replaceStudioDocumentFile(args),
+      update_studio_document_viewer_state: (args) =>
+        this.updateStudioDocumentViewerState(args),
       rename_studio_document: (args) => this.renameStudioDocument(args),
       open_studio_document_file: (args) => this.openStudioDocumentFile(args),
-      reveal_studio_document_file: (args) => this.revealStudioDocumentFile(args),
+      reveal_studio_document_file: (args) =>
+        this.revealStudioDocumentFile(args),
       delete_studio_document: (args) => this.deleteStudioDocument(args),
       toggle_favorite: (args) => this.toggleFavorite(args),
       toggle_template: (args) => this.toggleTemplate(args),
@@ -844,18 +200,30 @@ class ShelfBackend {
   // process, which passes paths the user just picked in a native dialog.
   // The renderer itself never supplies a path.
   writeExportFiles({ targetPath, files }) {
-    if (typeof targetPath !== "string" || !targetPath) throw new Error("export target path is required");
-    if (!Array.isArray(files) || files.length === 0) throw new Error("export files are required");
-    if (files.length > EXPORT_MAX_FILES) throw new Error(`export cannot contain more than ${EXPORT_MAX_FILES} files`);
+    if (typeof targetPath !== "string" || !targetPath)
+      throw new Error("export target path is required");
+    if (!Array.isArray(files) || files.length === 0)
+      throw new Error("export files are required");
+    if (files.length > EXPORT_MAX_FILES)
+      throw new Error(
+        `export cannot contain more than ${EXPORT_MAX_FILES} files`,
+      );
 
     let totalBytes = 0;
     for (const file of files) {
-      if (!file || typeof file.relativePath !== "string" || typeof file.content !== "string") {
-        throw new Error("export files must have a relativePath and string content");
+      if (
+        !file ||
+        typeof file.relativePath !== "string" ||
+        typeof file.content !== "string"
+      ) {
+        throw new Error(
+          "export files must have a relativePath and string content",
+        );
       }
       validateExportRelativePath(file.relativePath);
       totalBytes += Buffer.byteLength(file.content, "utf8");
-      if (totalBytes > EXPORT_MAX_TOTAL_BYTES) throw new Error("export content is too large");
+      if (totalBytes > EXPORT_MAX_TOTAL_BYTES)
+        throw new Error("export content is too large");
     }
 
     // A single root-level file is written to the dialog path itself; a tree
@@ -866,7 +234,9 @@ class ShelfBackend {
     }
 
     const extension = path.extname(targetPath);
-    const rootDir = extension ? targetPath.slice(0, -extension.length) : targetPath;
+    const rootDir = extension
+      ? targetPath.slice(0, -extension.length)
+      : targetPath;
     for (const file of files) {
       const destination = path.join(rootDir, ...file.relativePath.split("/"));
       fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -876,10 +246,12 @@ class ShelfBackend {
   }
 
   readImportFile({ path: filePath }) {
-    if (typeof filePath !== "string" || !filePath) throw new Error("import path is required");
+    if (typeof filePath !== "string" || !filePath)
+      throw new Error("import path is required");
     const stats = fs.statSync(filePath);
     if (!stats.isFile()) throw new Error("import path must be a file");
-    if (stats.size > IMPORT_MAX_BYTES) throw new Error("Import file is too large");
+    if (stats.size > IMPORT_MAX_BYTES)
+      throw new Error("Import file is too large");
     return { path: filePath, content: fs.readFileSync(filePath, "utf8") };
   }
 
@@ -900,11 +272,17 @@ class ShelfBackend {
   }
 
   schemaVersion() {
-    return String(rowValue(
-      this.db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
-      "value",
-      "1"
-    ));
+    return String(
+      rowValue(
+        this.db
+          .prepare(
+            "SELECT value FROM app_metadata WHERE key = 'schema_version'",
+          )
+          .get(),
+        "value",
+        "1",
+      ),
+    );
   }
 
   isStudioPageUnified() {
@@ -913,34 +291,61 @@ class ShelfBackend {
 
   mirrorStudioProjectPage(project, updatedAt = project.updated_at) {
     const pageId = studioProjectPageId(project.id);
-    const parentPageId = project.parent_id ? studioProjectPageId(project.parent_id) : null;
-    const existing = this.db.prepare("SELECT id FROM pages WHERE id = ?").get(pageId);
+    const parentPageId = project.parent_id
+      ? studioProjectPageId(project.parent_id)
+      : null;
+    const existing = this.db
+      .prepare("SELECT id FROM pages WHERE id = ?")
+      .get(pageId);
     if (existing) {
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         UPDATE pages
         SET title = ?, parent_id = ?, is_deleted = 0, page_kind = 'project', sort_order = ?, updated_at = ?
         WHERE id = ?
-      `).run(project.name, parentPageId, project.sort_order, updatedAt, pageId);
+      `,
+        )
+        .run(project.name, parentPageId, project.sort_order, updatedAt, pageId);
       return pageId;
     }
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO pages (${PAGE_COLUMNS})
       VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'project', ?, ?)
-    `).run(pageId, project.name, parentPageId, project.sort_order, project.created_at, updatedAt);
+    `,
+      )
+      .run(
+        pageId,
+        project.name,
+        parentPageId,
+        project.sort_order,
+        project.created_at,
+        updatedAt,
+      );
     return pageId;
   }
 
   mirrorStudioDocumentPageParent(documentId, projectId, updatedAt) {
     if (!this.isStudioPageUnified()) return;
-    const document = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(documentId);
+    const document = this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(documentId);
     if (!document) return;
     const parentPageId = projectId ? studioProjectPageId(projectId) : null;
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       UPDATE pages
       SET parent_id = ?, page_kind = 'note', updated_at = ?
       WHERE id = ?
-    `).run(parentPageId, updatedAt, document.note_page_id);
+    `,
+      )
+      .run(parentPageId, updatedAt, document.note_page_id);
   }
 
   autoMigrateStudioPageUnification() {
@@ -956,19 +361,24 @@ class ShelfBackend {
   }
 
   resolveManagedAssetPath(assetPathToken) {
-    return validateManagedAssetPath(decodeAppAssetPath(assetPathToken), this.appConfigDir);
+    return validateManagedAssetPath(
+      decodeAppAssetPath(assetPathToken),
+      this.appConfigDir,
+    );
   }
 
   async openExternalUrl({ url }) {
     const parsed = new URL(String(url ?? ""));
-    if (parsed.protocol !== "https:") throw new Error("external URL must use HTTPS");
+    if (parsed.protocol !== "https:")
+      throw new Error("external URL must use HTTPS");
     const error = await this.openExternal(parsed.toString());
     if (error) throw new Error(error);
   }
 
   async fetchUpdateManifest({ url }) {
     const parsed = new URL(String(url ?? ""));
-    if (parsed.protocol !== "https:") throw new Error("update manifest URL must use HTTPS");
+    if (parsed.protocol !== "https:")
+      throw new Error("update manifest URL must use HTTPS");
     if (!UPDATE_MANIFEST_URLS.has(parsed.toString())) {
       throw new Error("update manifest URL is not trusted");
     }
@@ -982,8 +392,14 @@ class ShelfBackend {
       throw new Error(`Update check failed (${response.status})`);
     }
 
-    const contentLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
-    if (Number.isFinite(contentLength) && contentLength > UPDATE_MANIFEST_MAX_BYTES) {
+    const contentLength = Number.parseInt(
+      response.headers.get("content-length") || "0",
+      10,
+    );
+    if (
+      Number.isFinite(contentLength) &&
+      contentLength > UPDATE_MANIFEST_MAX_BYTES
+    ) {
       throw new Error("Update manifest is too large");
     }
 
@@ -998,19 +414,29 @@ class ShelfBackend {
     } catch {
       throw new Error("Invalid signed update manifest");
     }
-    return this.rememberVerifiedUpdateDownloads(signedManifestPayload(signedManifest, this.updateManifestPublicKey));
+    return this.rememberVerifiedUpdateDownloads(
+      signedManifestPayload(signedManifest, this.updateManifestPublicKey),
+    );
   }
 
   rememberVerifiedUpdateDownloads(payload) {
     const manifest = structuredClone(payload);
-    const downloads = manifest && typeof manifest === "object" && !Array.isArray(manifest) && manifest.downloads && typeof manifest.downloads === "object" && !Array.isArray(manifest.downloads)
-      ? manifest.downloads
-      : {};
+    const downloads =
+      manifest &&
+      typeof manifest === "object" &&
+      !Array.isArray(manifest) &&
+      manifest.downloads &&
+      typeof manifest.downloads === "object" &&
+      !Array.isArray(manifest.downloads)
+        ? manifest.downloads
+        : {};
     this.verifiedUpdateDownloads.clear();
     for (const key of Object.keys(downloads)) {
       const download = trustedUpdateDownload(downloads[key]);
       if (!download) continue;
-      const downloadToken = crypto.randomBytes(UPDATE_DOWNLOAD_TOKEN_BYTES).toString("base64url");
+      const downloadToken = crypto
+        .randomBytes(UPDATE_DOWNLOAD_TOKEN_BYTES)
+        .toString("base64url");
       this.verifiedUpdateDownloads.set(downloadToken, download);
       downloads[key] = { ...downloads[key], downloadToken };
     }
@@ -1020,9 +446,12 @@ class ShelfBackend {
   verifiedUpdateDownload({ downloadToken, url, sha256 }) {
     const token = String(downloadToken ?? "").trim();
     const verified = this.verifiedUpdateDownloads.get(token);
-    if (!verified) throw new Error("update download is not linked to a verified manifest");
+    if (!verified)
+      throw new Error("update download is not linked to a verified manifest");
     const requestedUrl = String(url ?? "");
-    const requestedSha256 = String(sha256 ?? "").trim().toLowerCase();
+    const requestedSha256 = String(sha256 ?? "")
+      .trim()
+      .toLowerCase();
     if (requestedUrl !== verified.url || requestedSha256 !== verified.sha256) {
       throw new Error("update download does not match verified manifest");
     }
@@ -1031,7 +460,11 @@ class ShelfBackend {
   }
 
   async downloadUpdateArtifact({ url, sha256, downloadToken, download_token }) {
-    const verifiedDownload = this.verifiedUpdateDownload({ downloadToken: downloadToken ?? download_token, url, sha256 });
+    const verifiedDownload = this.verifiedUpdateDownload({
+      downloadToken: downloadToken ?? download_token,
+      url,
+      sha256,
+    });
     const parsed = new URL(String(url ?? ""));
     const expectedSha256 = verifiedDownload.sha256;
     if (!UPDATE_DOWNLOAD_URL_PATTERN.test(parsed.toString())) {
@@ -1044,18 +477,28 @@ class ShelfBackend {
     const fileName = updateArtifactFileName(parsed);
     fs.mkdirSync(this.downloadsDir, { recursive: true });
     const finalPath = path.join(this.downloadsDir, fileName);
-    const tempPath = path.join(this.downloadsDir, `.${fileName}.${process.pid}.${Date.now()}.download`);
+    const tempPath = path.join(
+      this.downloadsDir,
+      `.${fileName}.${process.pid}.${Date.now()}.download`,
+    );
 
     try {
       const response = await fetch(parsed.toString(), {
         headers: { accept: "application/octet-stream" },
         signal: AbortSignal.timeout(600_000),
       });
-      if (!response.ok) throw new Error(`Update download failed (${response.status})`);
+      if (!response.ok)
+        throw new Error(`Update download failed (${response.status})`);
       if (!response.body) throw new Error("Update download response is empty");
 
-      const contentLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
-      if (Number.isFinite(contentLength) && contentLength > UPDATE_ARTIFACT_MAX_BYTES) {
+      const contentLength = Number.parseInt(
+        response.headers.get("content-length") || "0",
+        10,
+      );
+      if (
+        Number.isFinite(contentLength) &&
+        contentLength > UPDATE_ARTIFACT_MAX_BYTES
+      ) {
         throw new Error("Update download is too large");
       }
 
@@ -1068,12 +511,13 @@ class ShelfBackend {
           for await (const chunk of source) {
             const buffer = Buffer.from(chunk);
             bytes += buffer.length;
-            if (bytes > UPDATE_ARTIFACT_MAX_BYTES) throw new Error("Update download is too large");
+            if (bytes > UPDATE_ARTIFACT_MAX_BYTES)
+              throw new Error("Update download is too large");
             hash.update(buffer);
             yield buffer;
           }
         },
-        fs.createWriteStream(tempPath, { flags: "w" })
+        fs.createWriteStream(tempPath, { flags: "w" }),
       );
 
       const actualSha256 = hash.digest("hex");
@@ -1093,18 +537,28 @@ class ShelfBackend {
   }
 
   listPages() {
-    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind IN ('note', 'studio_note', 'project') ORDER BY sort_order ASC, created_at DESC`).all();
+    return this.db
+      .prepare(
+        `SELECT ${PAGE_COLUMNS} FROM pages WHERE is_deleted = 0 AND page_kind IN ('note', 'studio_note', 'project') ORDER BY sort_order ASC, created_at DESC`,
+      )
+      .all();
   }
 
   listAllPages() {
-    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages ORDER BY sort_order ASC, created_at DESC`).all();
+    return this.db
+      .prepare(
+        `SELECT ${PAGE_COLUMNS} FROM pages ORDER BY sort_order ASC, created_at DESC`,
+      )
+      .all();
   }
 
   searchPages({ query }) {
     const trimmed = String(query ?? "").trim();
     if (!trimmed) return [];
     const pattern = lowerLikePattern(trimmed);
-    return this.db.prepare(`
+    return this.db
+      .prepare(
+        `
       SELECT ${PAGE_COLUMNS},
         CASE
           WHEN lower(coalesce(search_text, '')) LIKE ? THEN search_text
@@ -1118,76 +572,113 @@ class ShelfBackend {
         CASE WHEN lower(coalesce(title, '')) LIKE ? THEN 0 ELSE 1 END,
         updated_at DESC
       LIMIT 50
-    `).all(pattern, pattern, pattern, pattern);
+    `,
+      )
+      .all(pattern, pattern, pattern, pattern);
   }
 
   getPage({ id }) {
-    return this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ?`).get(id) || null;
+    return (
+      this.db
+        .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ?`)
+        .get(id) || null
+    );
   }
 
   createPage({ id, title, parentId, parent_id, createdAt, created_at }) {
     const parent = parentId ?? parent_id ?? null;
     const created = createdAt ?? created_at;
-    const sortOrder = rowValue(this.db.prepare(`
+    validatePageCreateInput({ id, title, parent, created });
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
       FROM pages
       WHERE is_deleted = 0
         AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
-    `).get(parent, parent), "value");
+    `,
+        )
+        .get(parent, parent),
+      "value",
+    );
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO pages (${PAGE_COLUMNS})
       VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
-    `).run(id, title, parent, sortOrder, created, created);
+    `,
+      )
+      .run(id, title, parent, sortOrder, created, created);
     return this.getPage({ id });
   }
 
   createProject({ id, title, createdAt, created_at }) {
     const created = createdAt ?? created_at;
+    validatePageCreateInput({ id, title, parent: null, created });
     const trimmed = String(title ?? "").trim();
     if (!trimmed) throw new Error("project title cannot be empty");
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
       FROM pages
       WHERE is_deleted = 0
         AND page_kind = 'project'
-    `).get(), "value");
+    `,
+        )
+        .get(),
+      "value",
+    );
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO pages (${PAGE_COLUMNS})
       VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'project', ?, ?)
-    `).run(id, trimmed, sortOrder, created, created);
+    `,
+      )
+      .run(id, trimmed, sortOrder, created, created);
     return this.getPage({ id });
   }
 
   updatePage({ id, updates, updatedAt, updated_at }) {
+    validatePageIdValue("id", id);
+    const safeUpdates = validatePageUpdateInput(updates);
     const updated = updatedAt ?? updated_at;
     this.withTransaction(() => {
       const setClauses = [];
       const values = [];
 
-      const hasTitle = own(updates, "title");
-      const hasContent = own(updates, "content");
+      const hasTitle = own(safeUpdates, "title");
+      const hasContent = own(safeUpdates, "content");
 
       if (hasTitle) {
         setClauses.push("title = ?");
-        values.push(updates.title);
+        values.push(safeUpdates.title);
         const studioProjectId = studioProjectIdFromPageId(id);
         if (studioProjectId) {
-          this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?")
-            .run(updates.title, updated, studioProjectId);
+          this.db
+            .prepare(
+              "UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?",
+            )
+            .run(safeUpdates.title, updated, studioProjectId);
         }
       }
 
-      if (own(updates, "parent_id")) {
+      if (own(safeUpdates, "parent_id")) {
         setClauses.push("parent_id = ?");
-        values.push(updates.parent_id);
+        values.push(safeUpdates.parent_id);
       }
 
       if (hasContent) {
         setClauses.push("content = ?");
-        values.push(updates.content);
-        const searchText = own(updates, "search_text") ? updates.search_text : updates.content;
+        values.push(safeUpdates.content);
+        const searchText = own(safeUpdates, "search_text")
+          ? safeUpdates.search_text
+          : safeUpdates.content;
         setClauses.push("search_text = ?");
         values.push(searchText);
       }
@@ -1201,12 +692,12 @@ class ShelfBackend {
         "is_database",
         "database_schema",
         "properties",
-        "page_kind"
+        "page_kind",
       ];
       for (const field of simpleFields) {
-        if (own(updates, field)) {
+        if (own(safeUpdates, field)) {
           setClauses.push(`${field} = ?`);
-          values.push(updates[field]);
+          values.push(safeUpdates[field]);
         }
       }
 
@@ -1215,13 +706,17 @@ class ShelfBackend {
         values.push(updated);
         values.push(id);
 
-        this.db.prepare(`UPDATE pages SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+        this.db
+          .prepare(`UPDATE pages SET ${setClauses.join(", ")} WHERE id = ?`)
+          .run(...values);
       }
     });
   }
 
   deletePage({ id }) {
-    const studioDocumentMatch = this.db.prepare(`
+    const studioDocumentMatch = this.db
+      .prepare(
+        `
       WITH RECURSIVE descendants(id) AS (
         SELECT id FROM pages WHERE id = ?
         UNION ALL
@@ -1232,13 +727,19 @@ class ShelfBackend {
       FROM studio_documents
       JOIN descendants ON descendants.id = studio_documents.note_page_id
       LIMIT 1
-    `).get(id);
+    `,
+      )
+      .get(id);
     if (studioDocumentMatch) {
-      throw new Error("delete the Studio document before deleting its primary note");
+      throw new Error(
+        "delete the Studio document before deleting its primary note",
+      );
     }
 
     this.withTransaction(() => {
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         WITH RECURSIVE descendants(id) AS (
           SELECT id FROM pages WHERE id = ?
           UNION ALL
@@ -1247,8 +748,12 @@ class ShelfBackend {
         )
         DELETE FROM studio_document_page_links
         WHERE page_id IN (SELECT id FROM descendants)
-      `).run(id);
-      this.db.prepare(`
+      `,
+        )
+        .run(id);
+      this.db
+        .prepare(
+          `
         WITH RECURSIVE descendants(id) AS (
           SELECT id FROM pages WHERE id = ?
           UNION ALL
@@ -1257,28 +762,49 @@ class ShelfBackend {
         )
         DELETE FROM pages
         WHERE id IN (SELECT id FROM descendants)
-      `).run(id);
+      `,
+        )
+        .run(id);
     });
   }
 
   deleteProject({ id, updatedAt, updated_at }) {
     const updated = updatedAt ?? updated_at;
-    const project = this.db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0 AND page_kind = 'project'`).get(id);
+    const project = this.db
+      .prepare(
+        `SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0 AND page_kind = 'project'`,
+      )
+      .get(id);
     if (!project) throw new Error("project not found");
     const studioProjectId = studioProjectIdFromPageId(id);
 
     this.withTransaction(() => {
-      this.db.prepare("UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+      this.db
+        .prepare(
+          "UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+        )
         .run(updated, id);
       if (studioProjectId) {
-        this.db.prepare("UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?")
+        this.db
+          .prepare(
+            "UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?",
+          )
           .run(updated, studioProjectId);
-        this.db.prepare("UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+        this.db
+          .prepare(
+            "UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+          )
           .run(updated, studioProjectId);
-        this.db.prepare("DELETE FROM studio_projects WHERE id = ?").run(studioProjectId);
+        this.db
+          .prepare("DELETE FROM studio_projects WHERE id = ?")
+          .run(studioProjectId);
       }
-      this.db.prepare("DELETE FROM studio_document_page_links WHERE page_id = ?").run(id);
-      this.db.prepare("DELETE FROM pages WHERE id = ? AND page_kind = 'project'").run(id);
+      this.db
+        .prepare("DELETE FROM studio_document_page_links WHERE page_id = ?")
+        .run(id);
+      this.db
+        .prepare("DELETE FROM pages WHERE id = ? AND page_kind = 'project'")
+        .run(id);
     });
   }
 
@@ -1287,9 +813,13 @@ class ShelfBackend {
     const updated = updatedAt ?? updated_at;
     if (parent) {
       if (parent === id) throw new Error("page cannot be moved under itself");
-      const parentExists = this.db.prepare("SELECT id FROM pages WHERE id = ? AND is_deleted = 0").get(parent);
+      const parentExists = this.db
+        .prepare("SELECT id FROM pages WHERE id = ? AND is_deleted = 0")
+        .get(parent);
       if (!parentExists) throw new Error("target parent page does not exist");
-      const descendantMatch = this.db.prepare(`
+      const descendantMatch = this.db
+        .prepare(
+          `
         WITH RECURSIVE descendants(id) AS (
           SELECT id FROM pages WHERE parent_id = ?
           UNION ALL
@@ -1297,28 +827,45 @@ class ShelfBackend {
           JOIN descendants ON pages.parent_id = descendants.id
         )
         SELECT id FROM descendants WHERE id = ? LIMIT 1
-      `).get(id, parent);
-      if (descendantMatch) throw new Error("page cannot be moved under one of its descendants");
+      `,
+        )
+        .get(id, parent);
+      if (descendantMatch)
+        throw new Error("page cannot be moved under one of its descendants");
     }
-    const result = this.db.prepare("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?").run(parent, updated, id);
+    const result = this.db
+      .prepare("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?")
+      .run(parent, updated, id);
     if (result.changes === 0) throw new Error("page does not exist");
   }
 
-  reorderPages({ parentId, parent_id, orderedIds, ordered_ids, updatedAt, updated_at }) {
+  reorderPages({
+    parentId,
+    parent_id,
+    orderedIds,
+    ordered_ids,
+    updatedAt,
+    updated_at,
+  }) {
     const parent = parentId ?? parent_id ?? null;
     const ordered = orderedIds ?? ordered_ids ?? [];
     const updated = updatedAt ?? updated_at;
     if (ordered.length === 0) return;
     this.withTransaction(() => {
       ordered.forEach((id, index) => {
-        const result = this.db.prepare(`
+        const result = this.db
+          .prepare(
+            `
           UPDATE pages
           SET sort_order = ?, updated_at = ?
           WHERE id = ?
             AND is_deleted = 0
             AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
-        `).run(index, updated, id, parent, parent);
-        if (result.changes === 0) throw new Error("page order contains invalid page");
+        `,
+          )
+          .run(index, updated, id, parent, parent);
+        if (result.changes === 0)
+          throw new Error("page order contains invalid page");
       });
     });
   }
@@ -1327,9 +874,10 @@ class ShelfBackend {
     return this.importPageRecords(pages || []);
   }
 
-  importPageRecords(pages) {
+  importPageRecords(pages, { inTransaction = false } = {}) {
+    validateImportedPagesArray(pages);
     let importedCount = 0;
-    this.withTransaction(() => {
+    const work = () => {
       const insert = this.db.prepare(`
         INSERT INTO pages (${PAGE_COLUMNS})
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1353,10 +901,15 @@ class ShelfBackend {
           sanitizedPage.sort_order ?? 0,
           sanitizedPage.page_kind,
           sanitizedPage.created_at,
-          sanitizedPage.updated_at
+          sanitizedPage.updated_at,
         ).changes;
       }
-    });
+    };
+    if (inTransaction) {
+      work();
+    } else {
+      this.withTransaction(work);
+    }
     return importedCount;
   }
 
@@ -1368,11 +921,19 @@ class ShelfBackend {
       const p = this.getWorkspaceProfile();
       return { name: p.name, workspaceName: p.workspaceName };
     })();
-    const raw = JSON.stringify({ version: 1, exported_at: exported, profile, pages }, null, 2);
-    if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES) throw new Error("Backup export is too large");
+    const raw = JSON.stringify(
+      { version: 1, exported_at: exported, profile, pages },
+      null,
+      2,
+    );
+    if (Buffer.byteLength(raw, "utf8") > BACKUP_MAX_BYTES)
+      throw new Error("Backup export is too large");
     // Write-to-temp-then-rename so an interrupted write (disk full, crash)
     // cannot leave a truncated backup at the destination.
-    const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.tmp`);
+    const tempPath = path.join(
+      path.dirname(filePath),
+      `.${path.basename(filePath)}.${process.pid}.tmp`,
+    );
     try {
       fs.writeFileSync(tempPath, raw);
       fs.renameSync(tempPath, filePath);
@@ -1391,48 +952,97 @@ class ShelfBackend {
 
   importBackupContent({ content, importedAt, imported_at }) {
     const imported = importedAt ?? imported_at;
-    if (typeof content !== "string") throw new Error("backup content is required");
+    if (typeof content !== "string")
+      throw new Error("backup content is required");
     return this.importBackupData(parseImportedBackup(content), imported);
   }
 
-  importBackupData(backup, imported) {
-    const importedCount = this.importPageRecords(prepareImportedBackupPages(backup.pages, imported));
-	    if (backup.profile && typeof backup.profile === "object") {
-	      const current = this.getWorkspaceProfile();
-	      if (current.name === "" && current.workspaceName === "Shelf") {
-	        const { name, workspaceName } = backup.profile;
-        if (name !== undefined) {
-          if (typeof name !== "string" || name.length > PROFILE_TEXT_MAX_LENGTH) {
-            throw new Error("backup profile name too long or invalid");
-          }
-          this.writeMetadataValue(PROFILE_METADATA_KEYS.name, name);
-        }
-        if (workspaceName !== undefined) {
-          if (typeof workspaceName !== "string" || workspaceName.length > PROFILE_TEXT_MAX_LENGTH) {
-            throw new Error("backup workspace name too long or invalid");
-          }
-	          this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, workspaceName);
-	        }
-	      }
-	    }
-	    return importedCount;
-	  }
+  backupProfilePatch(backup) {
+    if (
+      !backup.profile ||
+      typeof backup.profile !== "object" ||
+      Array.isArray(backup.profile)
+    )
+      return null;
+    const patch = {};
+    const { name, workspaceName } = backup.profile;
+    if (name !== undefined) {
+      if (typeof name !== "string" || name.length > PROFILE_TEXT_MAX_LENGTH) {
+        throw new Error("backup profile name too long or invalid");
+      }
+      patch.name = name;
+    }
+    if (workspaceName !== undefined) {
+      if (
+        typeof workspaceName !== "string" ||
+        workspaceName.length > PROFILE_TEXT_MAX_LENGTH
+      ) {
+        throw new Error("backup workspace name too long or invalid");
+      }
+      patch.workspaceName = workspaceName;
+    }
+    return patch;
+  }
 
-	  listStudioDocuments() {
-    return this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY last_opened_at DESC, created_at DESC`).all();
+  importBackupData(backup, imported) {
+    const profilePatch = this.backupProfilePatch(backup);
+    const importedPages = prepareImportedBackupPages(backup.pages, imported);
+    let importedCount = 0;
+    this.withTransaction(() => {
+      importedCount = this.importPageRecords(importedPages, {
+        inTransaction: true,
+      });
+      if (profilePatch) {
+        const current = this.getWorkspaceProfile();
+        if (current.name === "" && current.workspaceName === "Shelf") {
+          if (profilePatch.name !== undefined) {
+            this.writeMetadataValue(
+              PROFILE_METADATA_KEYS.name,
+              profilePatch.name,
+            );
+          }
+          if (profilePatch.workspaceName !== undefined) {
+            this.writeMetadataValue(
+              PROFILE_METADATA_KEYS.workspaceName,
+              profilePatch.workspaceName,
+            );
+          }
+        }
+      }
+    });
+    return importedCount;
+  }
+
+  listStudioDocuments() {
+    return this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY last_opened_at DESC, created_at DESC`,
+      )
+      .all();
   }
 
   listStudioProjects() {
-    return this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`).all();
+    return this.db
+      .prepare(
+        `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`,
+      )
+      .all();
   }
 
   previewStudioPageUnification() {
-    const schemaVersion = String(rowValue(
-      this.db.prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'").get(),
-      "value",
-      APP_SCHEMA_VERSION
-    ));
-    const scalar = (sql) => Number(rowValue(this.db.prepare(sql).get(), "value"));
+    const schemaVersion = String(
+      rowValue(
+        this.db
+          .prepare(
+            "SELECT value FROM app_metadata WHERE key = 'schema_version'",
+          )
+          .get(),
+        "value",
+        APP_SCHEMA_VERSION,
+      ),
+    );
+    const scalar = (sql) =>
+      Number(rowValue(this.db.prepare(sql).get(), "value"));
     const missingPrimaryPages = scalar(`
       SELECT COUNT(*) AS value
       FROM studio_documents documents
@@ -1462,10 +1072,16 @@ class ShelfBackend {
     return {
       schema_version: schemaVersion,
       project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects"),
-      nested_project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects WHERE parent_id IS NOT NULL"),
+      nested_project_count: scalar(
+        "SELECT COUNT(*) AS value FROM studio_projects WHERE parent_id IS NOT NULL",
+      ),
       document_count: scalar("SELECT COUNT(*) AS value FROM studio_documents"),
-      document_without_project_count: scalar("SELECT COUNT(*) AS value FROM studio_documents WHERE project_id IS NULL"),
-      link_count: scalar("SELECT COUNT(*) AS value FROM studio_document_page_links"),
+      document_without_project_count: scalar(
+        "SELECT COUNT(*) AS value FROM studio_documents WHERE project_id IS NULL",
+      ),
+      link_count: scalar(
+        "SELECT COUNT(*) AS value FROM studio_document_page_links",
+      ),
       linked_regular_page_count: scalar(`
         SELECT COUNT(*) AS value
         FROM studio_document_page_links links
@@ -1495,14 +1111,47 @@ class ShelfBackend {
       CREATE TABLE IF NOT EXISTS studio_document_page_links_backup_page_unification AS
         SELECT * FROM studio_document_page_links WHERE 0;
     `);
-    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_documents_backup_page_unification").get(), "value") === 0) {
-      this.db.exec("INSERT INTO studio_documents_backup_page_unification SELECT * FROM studio_documents");
+    if (
+      rowValue(
+        this.db
+          .prepare(
+            "SELECT COUNT(*) AS value FROM studio_documents_backup_page_unification",
+          )
+          .get(),
+        "value",
+      ) === 0
+    ) {
+      this.db.exec(
+        "INSERT INTO studio_documents_backup_page_unification SELECT * FROM studio_documents",
+      );
     }
-    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects_backup_page_unification").get(), "value") === 0) {
-      this.db.exec("INSERT INTO studio_projects_backup_page_unification SELECT * FROM studio_projects");
+    if (
+      rowValue(
+        this.db
+          .prepare(
+            "SELECT COUNT(*) AS value FROM studio_projects_backup_page_unification",
+          )
+          .get(),
+        "value",
+      ) === 0
+    ) {
+      this.db.exec(
+        "INSERT INTO studio_projects_backup_page_unification SELECT * FROM studio_projects",
+      );
     }
-    if (rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_document_page_links_backup_page_unification").get(), "value") === 0) {
-      this.db.exec("INSERT INTO studio_document_page_links_backup_page_unification SELECT * FROM studio_document_page_links");
+    if (
+      rowValue(
+        this.db
+          .prepare(
+            "SELECT COUNT(*) AS value FROM studio_document_page_links_backup_page_unification",
+          )
+          .get(),
+        "value",
+      ) === 0
+    ) {
+      this.db.exec(
+        "INSERT INTO studio_document_page_links_backup_page_unification SELECT * FROM studio_document_page_links",
+      );
     }
   }
 
@@ -1510,95 +1159,182 @@ class ShelfBackend {
     const migrated = migratedAt ?? migrated_at ?? new Date().toISOString();
     const before = this.previewStudioPageUnification();
     if (!before.can_migrate) {
-      throw new Error(`cannot migrate Studio pages: ${before.blockers.join(", ")}`);
+      throw new Error(
+        `cannot migrate Studio pages: ${before.blockers.join(", ")}`,
+      );
     }
 
     this.withTransaction(() => {
       this.backupStudioPageUnificationTables();
 
-      const projects = this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`).all();
+      const projects = this.db
+        .prepare(
+          `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`,
+        )
+        .all();
       for (const project of projects) {
         this.mirrorStudioProjectPage(project, migrated);
       }
 
-      const documents = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY created_at ASC`).all();
+      const documents = this.db
+        .prepare(
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY created_at ASC`,
+        )
+        .all();
       for (const document of documents) {
-        const parentPageId = document.project_id ? studioProjectPageId(document.project_id) : null;
-        this.db.prepare(`
+        const parentPageId = document.project_id
+          ? studioProjectPageId(document.project_id)
+          : null;
+        this.db
+          .prepare(
+            `
           UPDATE pages
           SET title = ?, parent_id = ?, page_kind = 'note', updated_at = ?
           WHERE id = ?
-        `).run(document.title, parentPageId, migrated, document.note_page_id);
+        `,
+          )
+          .run(document.title, parentPageId, migrated, document.note_page_id);
       }
 
       for (const document of documents) {
         if (document.id === document.note_page_id) continue;
         const temporaryId = `__page_unification__${document.id}`;
-        this.db.prepare("UPDATE studio_documents SET id = ? WHERE id = ?").run(temporaryId, document.id);
-        this.db.prepare("UPDATE studio_document_page_links SET document_id = ? WHERE document_id = ?").run(temporaryId, document.id);
+        this.db
+          .prepare("UPDATE studio_documents SET id = ? WHERE id = ?")
+          .run(temporaryId, document.id);
+        this.db
+          .prepare(
+            "UPDATE studio_document_page_links SET document_id = ? WHERE document_id = ?",
+          )
+          .run(temporaryId, document.id);
       }
 
       for (const document of documents) {
         if (document.id === document.note_page_id) continue;
         const temporaryId = `__page_unification__${document.id}`;
-        this.db.prepare("UPDATE studio_documents SET id = ?, updated_at = ? WHERE id = ?")
+        this.db
+          .prepare(
+            "UPDATE studio_documents SET id = ?, updated_at = ? WHERE id = ?",
+          )
           .run(document.note_page_id, migrated, temporaryId);
-        this.db.prepare("UPDATE studio_document_page_links SET document_id = ?, updated_at = ? WHERE document_id = ?")
+        this.db
+          .prepare(
+            "UPDATE studio_document_page_links SET document_id = ?, updated_at = ? WHERE document_id = ?",
+          )
           .run(document.note_page_id, migrated, temporaryId);
       }
 
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         INSERT INTO app_metadata (key, value)
         VALUES ('schema_version', ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      `).run(STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION);
+      `,
+        )
+        .run(STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION);
     });
 
     return this.previewStudioPageUnification();
   }
 
-  createStudioProject({ id, name, parentId, parent_id, createdAt, created_at }) {
+  createStudioProject({
+    id,
+    name,
+    parentId,
+    parent_id,
+    createdAt,
+    created_at,
+  }) {
     const parent = parentId ?? parent_id ?? null;
     const created = createdAt ?? created_at;
     const trimmed = String(name ?? "").trim();
     if (!trimmed) throw new Error("project name cannot be empty");
     if (parent) {
-      const count = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?").get(parent), "value");
+      const count = rowValue(
+        this.db
+          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+          .get(parent),
+        "value",
+      );
       if (count === 0) throw new Error("parent project not found");
     }
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
       FROM studio_projects
       WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?
-    `).get(parent, parent), "value");
-    this.db.prepare("INSERT INTO studio_projects (id, name, parent_id, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    `,
+        )
+        .get(parent, parent),
+      "value",
+    );
+    this.db
+      .prepare(
+        "INSERT INTO studio_projects (id, name, parent_id, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
       .run(id, trimmed, parent, sortOrder, created, created);
     if (this.isStudioPageUnified()) {
-      this.mirrorStudioProjectPage({ id, name: trimmed, parent_id: parent, sort_order: sortOrder, created_at: created, updated_at: created }, created);
+      this.mirrorStudioProjectPage(
+        {
+          id,
+          name: trimmed,
+          parent_id: parent,
+          sort_order: sortOrder,
+          created_at: created,
+          updated_at: created,
+        },
+        created,
+      );
     }
-    return this.db.prepare(`SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE id = ?`).get(id);
+    return this.db
+      .prepare(
+        `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE id = ?`,
+      )
+      .get(id);
   }
 
   renameStudioProject({ id, name, updatedAt, updated_at }) {
     const trimmed = String(name ?? "").trim();
     if (!trimmed) throw new Error("project name cannot be empty");
     const updated = updatedAt ?? updated_at;
-    const result = this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, updated, id);
+    const result = this.db
+      .prepare(
+        "UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(trimmed, updated, id);
     if (result.changes === 0) throw new Error("project not found");
     if (this.isStudioPageUnified()) {
-      this.db.prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
+      this.db
+        .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
         .run(trimmed, updated, studioProjectPageId(id));
     }
   }
 
-  updateStudioProjectParent({ id, parentId, parent_id, updatedAt, updated_at }) {
+  updateStudioProjectParent({
+    id,
+    parentId,
+    parent_id,
+    updatedAt,
+    updated_at,
+  }) {
     const parent = parentId ?? parent_id ?? null;
     const updated = updatedAt ?? updated_at;
     if (parent === id) throw new Error("project cannot be its own parent");
     if (parent) {
-      const parentExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?").get(parent), "value");
+      const parentExists = rowValue(
+        this.db
+          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+          .get(parent),
+        "value",
+      );
       if (parentExists === 0) throw new Error("parent project not found");
-      const wouldCycle = rowValue(this.db.prepare(`
+      const wouldCycle = rowValue(
+        this.db
+          .prepare(
+            `
         WITH RECURSIVE ancestors(id, parent_id) AS (
           SELECT id, parent_id FROM studio_projects WHERE id = ?
           UNION ALL
@@ -1607,22 +1343,49 @@ class ShelfBackend {
           INNER JOIN ancestors ON studio_projects.id = ancestors.parent_id
         )
         SELECT COUNT(*) AS value FROM ancestors WHERE id = ?
-      `).get(parent, id), "value");
+      `,
+          )
+          .get(parent, id),
+        "value",
+      );
       if (wouldCycle > 0) throw new Error("project cycle not allowed");
     }
-    const projectExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?").get(id), "value");
+    const projectExists = rowValue(
+      this.db
+        .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+        .get(id),
+      "value",
+    );
     if (projectExists === 0) throw new Error("project not found");
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
       FROM studio_projects
       WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?
-    `).get(parent, parent), "value");
-    const result = this.db.prepare("UPDATE studio_projects SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?")
+    `,
+        )
+        .get(parent, parent),
+      "value",
+    );
+    const result = this.db
+      .prepare(
+        "UPDATE studio_projects SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+      )
       .run(parent, sortOrder, updated, id);
     if (result.changes === 0) throw new Error("project not found");
     if (this.isStudioPageUnified()) {
-      this.db.prepare("UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?")
-        .run(parent ? studioProjectPageId(parent) : null, sortOrder, updated, studioProjectPageId(id));
+      this.db
+        .prepare(
+          "UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(
+          parent ? studioProjectPageId(parent) : null,
+          sortOrder,
+          updated,
+          studioProjectPageId(id),
+        );
     }
   }
 
@@ -1630,34 +1393,68 @@ class ShelfBackend {
     const updated = updatedAt ?? updated_at;
     let deleted = 0;
     this.withTransaction(() => {
-      this.db.prepare("UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?").run(updated, id);
+      this.db
+        .prepare(
+          "UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?",
+        )
+        .run(updated, id);
       if (this.isStudioPageUnified()) {
-        this.db.prepare(`
+        this.db
+          .prepare(
+            `
           UPDATE pages
           SET parent_id = NULL, updated_at = ?
           WHERE id IN (SELECT note_page_id FROM studio_documents WHERE project_id IS NULL)
-        `).run(updated);
+        `,
+          )
+          .run(updated);
       }
-      this.db.prepare("UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?").run(updated, id);
+      this.db
+        .prepare(
+          "UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+        )
+        .run(updated, id);
       if (this.isStudioPageUnified()) {
-        this.db.prepare("UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?")
+        this.db
+          .prepare(
+            "UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+          )
           .run(updated, studioProjectPageId(id));
-        this.db.prepare("UPDATE pages SET is_deleted = 1, updated_at = ? WHERE id = ?")
+        this.db
+          .prepare(
+            "UPDATE pages SET is_deleted = 1, updated_at = ? WHERE id = ?",
+          )
           .run(updated, studioProjectPageId(id));
       }
-      deleted = this.db.prepare("DELETE FROM studio_projects WHERE id = ?").run(id).changes;
+      deleted = this.db
+        .prepare("DELETE FROM studio_projects WHERE id = ?")
+        .run(id).changes;
     });
     if (deleted === 0) throw new Error("project not found");
   }
 
-  updateStudioDocumentProject({ id, projectId, project_id, updatedAt, updated_at }) {
+  updateStudioDocumentProject({
+    id,
+    projectId,
+    project_id,
+    updatedAt,
+    updated_at,
+  }) {
     const project = projectId ?? project_id ?? null;
     if (project) {
-      const projectExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?").get(project), "value");
+      const projectExists = rowValue(
+        this.db
+          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+          .get(project),
+        "value",
+      );
       if (projectExists === 0) throw new Error("project not found");
     }
     const updated = updatedAt ?? updated_at;
-    const result = this.db.prepare("UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ?")
+    const result = this.db
+      .prepare(
+        "UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ?",
+      )
       .run(project, updated, id);
     if (result.changes === 0) throw new Error("document not found");
     this.mirrorStudioDocumentPageParent(id, project, updated);
@@ -1731,164 +1528,391 @@ class ShelfBackend {
 
   listStudioDocumentPageLinks({ documentId, document_id }) {
     const document = documentId ?? document_id;
-    return this.db.prepare(`
+    return this.db
+      .prepare(
+        `
       ${this.studioDocumentPageLinkSelectSql()}
       WHERE links.document_id = ?
         AND pages.is_deleted = 0
       ORDER BY links.sort_order ASC, links.created_at ASC
-    `).all(document).map((row) => this.studioDocumentPageLinkFromRow(row));
+    `,
+      )
+      .all(document)
+      .map((row) => this.studioDocumentPageLinkFromRow(row));
   }
 
   listAllStudioDocumentPageLinks() {
-    return this.db.prepare(`
+    return this.db
+      .prepare(
+        `
       ${this.studioDocumentPageLinkSelectSql()}
       JOIN studio_documents documents ON documents.id = links.document_id
       WHERE pages.is_deleted = 0
       ORDER BY documents.title COLLATE NOCASE ASC, links.sort_order ASC, links.created_at ASC
-    `).all().map((row) => this.studioDocumentPageLinkFromRow(row));
+    `,
+      )
+      .all()
+      .map((row) => this.studioDocumentPageLinkFromRow(row));
   }
 
-  linkStudioDocumentPage({ id, documentId, document_id, pageId, page_id, pdfPage, pdf_page, label, createdAt, created_at }) {
+  linkStudioDocumentPage({
+    id,
+    documentId,
+    document_id,
+    pageId,
+    page_id,
+    pdfPage,
+    pdf_page,
+    label,
+    createdAt,
+    created_at,
+  }) {
     const linkId = id || crypto.randomUUID();
     const document = documentId ?? document_id;
     const page = pageId ?? page_id;
     const created = createdAt ?? created_at;
-    const pdfPageValue = Number.isFinite(Number(pdfPage ?? pdf_page)) ? Math.max(1, Math.round(Number(pdfPage ?? pdf_page))) : null;
+    const pdfPageValue = Number.isFinite(Number(pdfPage ?? pdf_page))
+      ? Math.max(1, Math.round(Number(pdfPage ?? pdf_page)))
+      : null;
     const labelValue = normalizeOptionalString(label);
-    const documentExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM studio_documents WHERE id = ?").get(document), "value");
+    const documentExists = rowValue(
+      this.db
+        .prepare("SELECT COUNT(*) AS value FROM studio_documents WHERE id = ?")
+        .get(document),
+      "value",
+    );
     if (documentExists === 0) throw new Error("document not found");
-    const pageExists = rowValue(this.db.prepare("SELECT COUNT(*) AS value FROM pages WHERE id = ? AND is_deleted = 0").get(page), "value");
+    const pageExists = rowValue(
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS value FROM pages WHERE id = ? AND is_deleted = 0",
+        )
+        .get(page),
+      "value",
+    );
     if (pageExists === 0) throw new Error("page not found");
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
       FROM studio_document_page_links
       WHERE document_id = ?
-    `).get(document), "value");
+    `,
+        )
+        .get(document),
+      "value",
+    );
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(document_id, page_id) DO UPDATE SET
         pdf_page = excluded.pdf_page,
         label = excluded.label,
         updated_at = excluded.updated_at
-    `).run(linkId, document, page, pdfPageValue, labelValue, sortOrder, created, created);
+    `,
+      )
+      .run(
+        linkId,
+        document,
+        page,
+        pdfPageValue,
+        labelValue,
+        sortOrder,
+        created,
+        created,
+      );
 
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(
+        `
       ${this.studioDocumentPageLinkSelectSql()}
       WHERE links.document_id = ?
         AND links.page_id = ?
         AND pages.is_deleted = 0
-    `).get(document, page);
+    `,
+      )
+      .get(document, page);
     return this.studioDocumentPageLinkFromRow(row);
   }
 
-  updateStudioDocumentPageLink({ id, pdfPage, pdf_page, label, updatedAt, updated_at }) {
+  updateStudioDocumentPageLink({
+    id,
+    pdfPage,
+    pdf_page,
+    label,
+    updatedAt,
+    updated_at,
+  }) {
     const pdfPageInput = pdfPage ?? pdf_page;
-    const pdfPageValue = pdfPageInput === null || pdfPageInput === undefined || pdfPageInput === ""
-      ? null
-      : Math.max(1, Math.round(Number(pdfPageInput)));
-    if (pdfPageValue !== null && !Number.isFinite(pdfPageValue)) throw new Error("invalid PDF page");
-    const result = this.db.prepare(`
+    const pdfPageValue =
+      pdfPageInput === null || pdfPageInput === undefined || pdfPageInput === ""
+        ? null
+        : Math.max(1, Math.round(Number(pdfPageInput)));
+    if (pdfPageValue !== null && !Number.isFinite(pdfPageValue))
+      throw new Error("invalid PDF page");
+    const result = this.db
+      .prepare(
+        `
       UPDATE studio_document_page_links
       SET pdf_page = ?, label = ?, updated_at = ?
       WHERE id = ?
-    `).run(pdfPageValue, normalizeOptionalString(label), updatedAt ?? updated_at, id);
+    `,
+      )
+      .run(
+        pdfPageValue,
+        normalizeOptionalString(label),
+        updatedAt ?? updated_at,
+        id,
+      );
     if (result.changes === 0) throw new Error("link not found");
   }
 
   unlinkStudioDocumentPage({ id }) {
-    const result = this.db.prepare("DELETE FROM studio_document_page_links WHERE id = ?").run(id);
+    const result = this.db
+      .prepare("DELETE FROM studio_document_page_links WHERE id = ?")
+      .run(id);
     if (result.changes === 0) throw new Error("link not found");
   }
 
   studioPdfDestination(documentId) {
-    const directory = path.join(this.appConfigDir, "studio-documents", safeStorageId(documentId));
+    const directory = path.join(
+      this.appConfigDir,
+      "studio-documents",
+      safeStorageId(documentId),
+    );
     ensurePrivateDirectory(directory);
     return path.join(directory, "source.pdf");
   }
 
-  async importStudioDocument({ documentId, document_id, notePageId, note_page_id, sourcePath, source_path, importedAt, imported_at }) {
+  async importStudioDocument({
+    documentId,
+    document_id,
+    notePageId,
+    note_page_id,
+    sourcePath,
+    source_path,
+    importedAt,
+    imported_at,
+  }) {
     const requestedDocumentId = documentId ?? document_id;
-    const requestedNotePageId = notePageId ?? note_page_id ?? requestedDocumentId;
-    const documentIdValue = this.isStudioPageUnified() ? requestedNotePageId : requestedDocumentId;
+    const requestedNotePageId =
+      notePageId ?? note_page_id ?? requestedDocumentId;
+    const documentIdValue = this.isStudioPageUnified()
+      ? requestedNotePageId
+      : requestedDocumentId;
     const notePageIdValue = requestedNotePageId;
     const source = sourcePath ?? source_path;
     const imported = importedAt ?? imported_at;
+    validatePageIdValue("document id", documentIdValue);
+    validatePageIdValue("note page id", notePageIdValue);
     validatedPdfFile(source);
     const parsed = path.parse(source);
     const originalFilename = path.basename(source);
     const title = parsed.name || "Imported PDF";
+    if (
+      this.db
+        .prepare("SELECT id FROM studio_documents WHERE id = ?")
+        .get(documentIdValue)
+    ) {
+      throw new Error("document already exists");
+    }
+    if (
+      this.db.prepare("SELECT id FROM pages WHERE id = ?").get(notePageIdValue)
+    ) {
+      throw new Error("note page already exists");
+    }
     const destination = this.studioPdfDestination(documentIdValue);
-    await fs.promises.copyFile(source, destination);
+    if (fs.existsSync(destination))
+      throw new Error("Studio PDF destination already exists");
+    const tempDestination = path.join(
+      path.dirname(destination),
+      `.source.${process.pid}.${Date.now()}.tmp`,
+    );
+    await fs.promises.copyFile(
+      source,
+      tempDestination,
+      fs.constants.COPYFILE_EXCL,
+    );
+    fs.renameSync(tempDestination, destination);
     const storedFilePath = destination;
 
     try {
       this.withTransaction(() => {
-        const pageTitle = documentIdValue === notePageIdValue ? title : `${title} Notes`;
-        const pageKind = documentIdValue === notePageIdValue ? "note" : "studio_note";
-        this.db.prepare(`
+        const pageTitle =
+          documentIdValue === notePageIdValue ? title : `${title} Notes`;
+        const pageKind =
+          documentIdValue === notePageIdValue ? "note" : "studio_note";
+        this.db
+          .prepare(
+            `
           INSERT INTO pages (${PAGE_COLUMNS})
           VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, 0, ?, ?, ?)
-        `).run(notePageIdValue, pageTitle, pageKind, imported, imported);
-        this.db.prepare(`
+        `,
+          )
+          .run(notePageIdValue, pageTitle, pageKind, imported, imported);
+        this.db
+          .prepare(
+            `
           INSERT INTO studio_documents (id, title, original_filename, stored_file_path, note_page_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, 100, 1, 'pdf-left', ?, ?)
-        `).run(documentIdValue, title, originalFilename, storedFilePath, notePageIdValue, imported, imported, imported);
-        this.db.prepare(`
+        `,
+          )
+          .run(
+            documentIdValue,
+            title,
+            originalFilename,
+            storedFilePath,
+            notePageIdValue,
+            imported,
+            imported,
+            imported,
+          );
+        this.db
+          .prepare(
+            `
           INSERT INTO studio_document_page_links (${STUDIO_DOCUMENT_PAGE_LINK_COLUMNS})
           VALUES (?, ?, ?, NULL, 'Primary note', 0, ?, ?)
-        `).run(crypto.randomUUID(), documentIdValue, notePageIdValue, imported, imported);
+        `,
+          )
+          .run(
+            crypto.randomUUID(),
+            documentIdValue,
+            notePageIdValue,
+            imported,
+            imported,
+          );
       });
     } catch (error) {
       fs.rmSync(destination, { force: true });
+      fs.rmSync(tempDestination, { force: true });
       throw error;
     }
 
-    return this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(documentIdValue);
+    return this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(documentIdValue);
   }
 
-  async replaceStudioDocumentFile({ id, sourcePath, source_path, updatedAt, updated_at }) {
+  async replaceStudioDocumentFile({
+    id,
+    sourcePath,
+    source_path,
+    updatedAt,
+    updated_at,
+  }) {
+    validatePageIdValue("document id", id);
+    const current = this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(id);
+    if (!current) throw new Error("document not found");
     const source = fs.realpathSync(sourcePath ?? source_path);
     validatedPdfFile(source);
-    const destination = this.studioPdfDestination(id);
-    const shouldCopy = fs.existsSync(destination) ? fs.realpathSync(destination) !== source : true;
-    if (shouldCopy) await fs.promises.copyFile(source, destination);
-    const result = this.db.prepare("UPDATE studio_documents SET original_filename = ?, stored_file_path = ?, updated_at = ? WHERE id = ?")
+    const destination = validateManagedStudioDocumentPath(
+      current.stored_file_path,
+      this.studioDocumentsRoot(),
+    );
+    const shouldCopy = fs.realpathSync(destination) !== source;
+    if (shouldCopy) {
+      const tempDestination = path.join(
+        path.dirname(destination),
+        `.source.${process.pid}.${Date.now()}.tmp`,
+      );
+      try {
+        await fs.promises.copyFile(
+          source,
+          tempDestination,
+          fs.constants.COPYFILE_EXCL,
+        );
+        fs.renameSync(tempDestination, destination);
+      } catch (error) {
+        fs.rmSync(tempDestination, { force: true });
+        throw error;
+      }
+    }
+    this.db
+      .prepare(
+        "UPDATE studio_documents SET original_filename = ?, stored_file_path = ?, updated_at = ? WHERE id = ?",
+      )
       .run(path.basename(source), destination, updatedAt ?? updated_at, id);
-    if (result.changes === 0) throw new Error("document not found");
-    return this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(id);
+    return this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(id);
   }
 
   updateStudioDocumentViewerState({ id, updates, updatedAt, updated_at }) {
-    const current = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(id);
+    const current = this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(id);
     if (!current) throw new Error("document not found");
-    const viewerZoom = Math.max(25, Math.min(300, updates.viewer_zoom ?? current.viewer_zoom));
+    const viewerZoom = Math.max(
+      25,
+      Math.min(300, updates.viewer_zoom ?? current.viewer_zoom),
+    );
     const viewerPage = Math.max(1, updates.viewer_page ?? current.viewer_page);
-    const panelLayout = updates.panel_layout === "note-left" || updates.panel_layout === "pdf-left" ? updates.panel_layout : current.panel_layout;
+    const panelLayout =
+      updates.panel_layout === "note-left" ||
+      updates.panel_layout === "pdf-left"
+        ? updates.panel_layout
+        : current.panel_layout;
     const lastOpenedAt = updates.last_opened_at ?? current.last_opened_at;
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       UPDATE studio_documents
       SET viewer_zoom = ?, viewer_page = ?, panel_layout = ?, last_opened_at = ?, updated_at = ?
       WHERE id = ?
-    `).run(viewerZoom, viewerPage, panelLayout, lastOpenedAt, updatedAt ?? updated_at, id);
+    `,
+      )
+      .run(
+        viewerZoom,
+        viewerPage,
+        panelLayout,
+        lastOpenedAt,
+        updatedAt ?? updated_at,
+        id,
+      );
   }
 
   renameStudioDocument({ id, title, updatedAt, updated_at }) {
     const trimmed = String(title ?? "").trim();
     if (!trimmed) throw new Error("title cannot be empty");
-    const current = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(id);
+    const current = this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(id);
     if (!current) throw new Error("document not found");
     const updated = updatedAt ?? updated_at;
     this.withTransaction(() => {
-      this.db.prepare("UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ?").run(trimmed, updated, id);
-      const pageTitle = current.id === current.note_page_id ? trimmed : `${trimmed} Notes`;
-      this.db.prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?").run(pageTitle, updated, current.note_page_id);
+      this.db
+        .prepare(
+          "UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(trimmed, updated, id);
+      const pageTitle =
+        current.id === current.note_page_id ? trimmed : `${trimmed} Notes`;
+      this.db
+        .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
+        .run(pageTitle, updated, current.note_page_id);
     });
   }
 
   getStudioDocumentStoredFilePath(id) {
-    const row = this.db.prepare("SELECT stored_file_path FROM studio_documents WHERE id = ?").get(id);
+    const row = this.db
+      .prepare("SELECT stored_file_path FROM studio_documents WHERE id = ?")
+      .get(id);
     if (!row) throw new Error("document not found");
     return row.stored_file_path;
   }
@@ -1898,7 +1922,10 @@ class ShelfBackend {
   }
 
   resolveStudioDocumentPdfPath(id) {
-    return validateManagedStudioDocumentPath(this.getStudioDocumentStoredFilePath(id), this.studioDocumentsRoot());
+    return validateManagedStudioDocumentPath(
+      this.getStudioDocumentStoredFilePath(id),
+      this.studioDocumentsRoot(),
+    );
   }
 
   async openStudioDocumentFile({ id }) {
@@ -1913,12 +1940,20 @@ class ShelfBackend {
   }
 
   deleteStudioDocument({ id }) {
-    const current = this.db.prepare(`SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`).get(id);
+    const current = this.db
+      .prepare(
+        `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+      )
+      .get(id);
     if (!current) throw new Error("document not found");
     this.withTransaction(() => {
-      this.db.prepare("DELETE FROM studio_document_page_links WHERE document_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM studio_document_page_links WHERE document_id = ?")
+        .run(id);
       this.db.prepare("DELETE FROM studio_documents WHERE id = ?").run(id);
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         WITH RECURSIVE descendants(id) AS (
           SELECT id FROM pages WHERE id = ?
           UNION ALL
@@ -1927,48 +1962,80 @@ class ShelfBackend {
         )
         DELETE FROM pages
         WHERE id IN (SELECT id FROM descendants)
-      `).run(current.note_page_id);
+      `,
+        )
+        .run(current.note_page_id);
     });
-    removeStoredStudioDocumentFile(current.stored_file_path, this.studioDocumentsRoot());
+    removeStoredStudioDocumentFile(
+      current.stored_file_path,
+      this.studioDocumentsRoot(),
+    );
   }
 
   toggleFavorite({ id, isFavorite, is_favorite }) {
-    this.db.prepare("UPDATE pages SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(isFavorite ?? is_favorite ? 1 : 0, id);
+    this.db
+      .prepare(
+        "UPDATE pages SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      )
+      .run((isFavorite ?? is_favorite) ? 1 : 0, id);
   }
 
   toggleTemplate({ id, isTemplate, is_template }) {
-    this.db.prepare("UPDATE pages SET is_template = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(isTemplate ?? is_template ? 1 : 0, id);
+    this.db
+      .prepare(
+        "UPDATE pages SET is_template = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      )
+      .run((isTemplate ?? is_template) ? 1 : 0, id);
   }
 
-  createPageFromTemplate({ id, templateId, template_id, parentId, parent_id, createdAt, created_at }) {
+  createPageFromTemplate({
+    id,
+    templateId,
+    template_id,
+    parentId,
+    parent_id,
+    createdAt,
+    created_at,
+  }) {
     const template = this.getPage({ id: templateId ?? template_id });
     if (!template) throw new Error("template not found");
     const parent = parentId ?? parent_id ?? null;
     const created = createdAt ?? created_at;
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
       FROM pages
       WHERE is_deleted = 0
         AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
-    `).get(parent, parent), "value");
-    this.db.prepare(`
+    `,
+        )
+        .get(parent, parent),
+      "value",
+    );
+    this.db
+      .prepare(
+        `
       INSERT INTO pages (${PAGE_COLUMNS})
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, 'note', ?, ?)
-    `).run(
-      id,
-      template.title,
-      parent,
-      template.content,
-      template.search_text,
-      template.icon,
-      template.cover_url,
-      template.is_database,
-      template.database_schema,
-      template.properties,
-      sortOrder,
-      created,
-      created
-    );
+    `,
+      )
+      .run(
+        id,
+        template.title,
+        parent,
+        template.content,
+        template.search_text,
+        template.icon,
+        template.cover_url,
+        template.is_database,
+        template.database_schema,
+        template.properties,
+        sortOrder,
+        created,
+        created,
+      );
     return this.getPage({ id });
   }
 
@@ -1977,35 +2044,48 @@ class ShelfBackend {
     if (!source) throw new Error("source page not found");
     const created = createdAt ?? created_at;
     const title = `Copy of ${source.title}`;
-    const sortOrder = rowValue(this.db.prepare(`
+    const sortOrder = rowValue(
+      this.db
+        .prepare(
+          `
       SELECT COALESCE(MIN(sort_order), 0) - 1 AS value
       FROM pages
       WHERE is_deleted = 0
         AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
-    `).get(source.parent_id, source.parent_id), "value");
-    this.db.prepare(`
+    `,
+        )
+        .get(source.parent_id, source.parent_id),
+      "value",
+    );
+    this.db
+      .prepare(
+        `
       INSERT INTO pages (${PAGE_COLUMNS})
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, 'note', ?, ?)
-    `).run(
-      id,
-      title,
-      source.parent_id,
-      source.content,
-      source.search_text,
-      source.icon,
-      source.cover_url,
-      source.is_database,
-      source.database_schema,
-      source.properties,
-      sortOrder,
-      created,
-      created
-    );
+    `,
+      )
+      .run(
+        id,
+        title,
+        source.parent_id,
+        source.content,
+        source.search_text,
+        source.icon,
+        source.cover_url,
+        source.is_database,
+        source.database_schema,
+        source.properties,
+        sortOrder,
+        created,
+        created,
+      );
     return this.getPage({ id });
   }
 
   readMetadataValue(key) {
-    const row = this.db.prepare("SELECT value FROM app_metadata WHERE key = ?").get(key);
+    const row = this.db
+      .prepare("SELECT value FROM app_metadata WHERE key = ?")
+      .get(key);
     return row ? row.value : null;
   }
 
@@ -2015,38 +2095,55 @@ class ShelfBackend {
       return;
     }
     this.db
-      .prepare("INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .prepare(
+        "INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      )
       .run(key, value);
   }
 
   getWorkspaceProfile() {
     return {
       name: this.readMetadataValue(PROFILE_METADATA_KEYS.name) || "",
-      workspaceName: this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "Shelf",
+      workspaceName:
+        this.readMetadataValue(PROFILE_METADATA_KEYS.workspaceName) || "Shelf",
       avatarPath: this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath),
     };
   }
 
   updateWorkspaceProfile(args = {}) {
     if (args.name !== undefined) {
-      if (typeof args.name !== "string" || args.name.length > PROFILE_TEXT_MAX_LENGTH) {
+      if (
+        typeof args.name !== "string" ||
+        args.name.length > PROFILE_TEXT_MAX_LENGTH
+      ) {
         throw new Error("profile name too long or invalid");
       }
       this.writeMetadataValue(PROFILE_METADATA_KEYS.name, args.name);
     }
     if (args.workspaceName !== undefined) {
-      if (typeof args.workspaceName !== "string" || args.workspaceName.length > PROFILE_TEXT_MAX_LENGTH) {
+      if (
+        typeof args.workspaceName !== "string" ||
+        args.workspaceName.length > PROFILE_TEXT_MAX_LENGTH
+      ) {
         throw new Error("workspace name too long or invalid");
       }
-      this.writeMetadataValue(PROFILE_METADATA_KEYS.workspaceName, args.workspaceName);
+      this.writeMetadataValue(
+        PROFILE_METADATA_KEYS.workspaceName,
+        args.workspaceName,
+      );
     }
     if (args.avatarPath === null) {
       const avatarsDir = path.join(this.appConfigDir, "avatars");
-      const existingPath = this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath);
+      const existingPath = this.readMetadataValue(
+        PROFILE_METADATA_KEYS.avatarPath,
+      );
       if (existingPath) {
         try {
           const resolved = path.resolve(existingPath);
-          if (resolved.startsWith(avatarsDir + path.sep) || resolved === avatarsDir) {
+          if (
+            resolved.startsWith(avatarsDir + path.sep) ||
+            resolved === avatarsDir
+          ) {
             fs.rmSync(resolved, { force: true });
           }
         } catch {
@@ -2063,14 +2160,22 @@ class ShelfBackend {
     const avatarsDir = path.join(this.appConfigDir, "avatars");
     ensurePrivateDirectory(avatarsDir);
     const extension = validatedCoverExtension(source, COVER_IMAGE_MAX_BYTES);
-    const destination = path.join(avatarsDir, `profile-${Date.now()}.${extension}`);
-    const previousPath = this.readMetadataValue(PROFILE_METADATA_KEYS.avatarPath);
+    const destination = path.join(
+      avatarsDir,
+      `profile-${Date.now()}.${extension}`,
+    );
+    const previousPath = this.readMetadataValue(
+      PROFILE_METADATA_KEYS.avatarPath,
+    );
     fs.copyFileSync(source, destination);
     this.writeMetadataValue(PROFILE_METADATA_KEYS.avatarPath, destination);
     if (previousPath && previousPath !== destination) {
       try {
         const resolved = path.resolve(previousPath);
-        if (resolved.startsWith(avatarsDir + path.sep) || resolved === avatarsDir) {
+        if (
+          resolved.startsWith(avatarsDir + path.sep) ||
+          resolved === avatarsDir
+        ) {
           fs.rmSync(resolved, { force: true });
         }
       } catch {
@@ -2087,42 +2192,81 @@ class ShelfBackend {
     ensurePrivateDirectory(coversDir);
     const extension = validatedCoverExtension(source, COVER_IMAGE_MAX_BYTES);
     const safePageId = String(pageIdValue ?? "").replace(/[^a-zA-Z0-9-]/g, "");
-    const destination = path.join(coversDir, `${safePageId}-${Date.now()}.${extension}`);
+    const destination = path.join(
+      coversDir,
+      `${safePageId}-${Date.now()}.${extension}`,
+    );
     fs.copyFileSync(source, destination);
     return destination;
   }
 
-  importEditorImage({ pageId, page_id, fileName, file_name, sourcePath, source_path, bytes }) {
+  importEditorImage({
+    pageId,
+    page_id,
+    fileName,
+    file_name,
+    sourcePath,
+    source_path,
+    bytes,
+  }) {
     const pageIdValue = pageId ?? page_id;
     const source = sourcePath ?? source_path;
     const sourceValue = source ? String(source) : null;
     const fileNameValue = fileName ?? file_name ?? "image";
-    const imagesDir = path.join(this.appConfigDir, "editor-images", safeStorageId(pageIdValue));
+    const imagesDir = path.join(
+      this.appConfigDir,
+      "editor-images",
+      safeStorageId(pageIdValue),
+    );
     ensurePrivateDirectory(imagesDir);
     const extension = sourceValue
       ? validatedEditorImageSource(sourceValue)
-      : validatedEditorImageExtension(fileNameValue, Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []));
-    const destination = path.join(imagesDir, `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`);
+      : validatedEditorImageExtension(
+          fileNameValue,
+          Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []),
+        );
+    const destination = path.join(
+      imagesDir,
+      `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`,
+    );
     if (sourceValue) {
       fs.copyFileSync(sourceValue, destination);
     } else {
-      fs.writeFileSync(destination, Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []));
+      fs.writeFileSync(
+        destination,
+        Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []),
+      );
     }
     return destination;
   }
 
-  importEditorVideo({ pageId, page_id, fileName, file_name, sourcePath, source_path, bytes }) {
+  importEditorVideo({
+    pageId,
+    page_id,
+    fileName,
+    file_name,
+    sourcePath,
+    source_path,
+    bytes,
+  }) {
     const pageIdValue = pageId ?? page_id;
     const source = sourcePath ?? source_path;
     const sourceValue = source ? String(source) : null;
     const fileNameValue = fileName ?? file_name ?? "video";
-    const videosDir = path.join(this.appConfigDir, "editor-videos", safeStorageId(pageIdValue));
+    const videosDir = path.join(
+      this.appConfigDir,
+      "editor-videos",
+      safeStorageId(pageIdValue),
+    );
     ensurePrivateDirectory(videosDir);
     const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
     const extension = sourceValue
       ? validatedEditorVideoSource(sourceValue)
       : validatedEditorVideoExtension(fileNameValue, buffer);
-    const destination = path.join(videosDir, `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`);
+    const destination = path.join(
+      videosDir,
+      `${Date.now()}-${safeFileStem(sourceValue ? path.basename(sourceValue) : fileNameValue)}.${extension}`,
+    );
     if (sourceValue) {
       fs.copyFileSync(sourceValue, destination);
     } else {

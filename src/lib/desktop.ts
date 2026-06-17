@@ -85,6 +85,15 @@ function bridge(): ShelfDesktopBridge {
   return window.openNotion;
 }
 
+function requireBridgeMethod<K extends keyof ShelfDesktopBridge>(
+  method: K,
+  unavailableMessage: string,
+): NonNullable<ShelfDesktopBridge[K]> {
+  const fn = bridge()[method];
+  if (!fn) throw new Error(unavailableMessage);
+  return fn as NonNullable<ShelfDesktopBridge[K]>;
+}
+
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return await bridge().invoke<T>(command, args);
 }
@@ -98,45 +107,33 @@ export async function saveDialog(options?: SaveDialogOptions): Promise<string | 
 }
 
 export async function exportBackupWithDialog(options?: { defaultPath?: string; exportedAt?: string }): Promise<number | null> {
-  const desktop = bridge();
-  if (!desktop.exportBackup) throw new Error("backup export is not available in this build");
-  return await desktop.exportBackup(options);
+  return await requireBridgeMethod("exportBackup", "backup export is not available in this build")(options);
 }
 
 export async function importBackupWithDialog(options?: { importedAt?: string }): Promise<number | null> {
-  const desktop = bridge();
-  if (!desktop.importBackup) throw new Error("backup import is not available in this build");
-  return await desktop.importBackup(options);
+  return await requireBridgeMethod("importBackup", "backup import is not available in this build")(options);
 }
 
 export async function importStudioDocumentWithDialog<T>(options: { documentId: string; notePageId: string; importedAt?: string }): Promise<T | null> {
-  const desktop = bridge();
-  if (!desktop.importStudioDocument) throw new Error("Studio document import is not available in this build");
-  return await desktop.importStudioDocument(options) as T | null;
+  const result = await requireBridgeMethod("importStudioDocument", "Studio document import is not available in this build")(options);
+  return result as T | null;
 }
 
 export async function replaceStudioDocumentFileWithDialog<T>(options: { id: string; updatedAt?: string }): Promise<T | null> {
-  const desktop = bridge();
-  if (!desktop.replaceStudioDocumentFile) throw new Error("Studio document file replace is not available in this build");
-  return await desktop.replaceStudioDocumentFile(options) as T | null;
+  const result = await requireBridgeMethod("replaceStudioDocumentFile", "Studio document file replace is not available in this build")(options);
+  return result as T | null;
 }
 
 export async function importCoverImageWithDialog(pageId: string): Promise<string | null> {
-  const desktop = bridge();
-  if (!desktop.importCoverImage) throw new Error("cover image import is not available in this build");
-  return await desktop.importCoverImage({ pageId });
+  return await requireBridgeMethod("importCoverImage", "cover image import is not available in this build")({ pageId });
 }
 
 export async function importProfileAvatarWithDialog(): Promise<string | null> {
-  const desktop = bridge();
-  if (!desktop.importProfileAvatar) throw new Error("profile avatar import is not available in this build");
-  return await desktop.importProfileAvatar();
+  return await requireBridgeMethod("importProfileAvatar", "profile avatar import is not available in this build")();
 }
 
 export async function importEditorMediaFilesWithDialog(kind: "image" | "video", pageId: string): Promise<ImportedMediaFile[]> {
-  const desktop = bridge();
-  if (!desktop.importEditorMediaFiles) throw new Error("editor media import is not available in this build");
-  return await desktop.importEditorMediaFiles({ kind, pageId });
+  return await requireBridgeMethod("importEditorMediaFiles", "editor media import is not available in this build")({ kind, pageId });
 }
 
 export function fileSrc(filePath: string): string {
@@ -156,15 +153,11 @@ export async function openExternalUrl(url: string): Promise<void> {
 // the renderer never hands a filesystem path over IPC. They resolve to null
 // when the user cancels the dialog.
 export async function exportFilesWithDialog(options: ExportFilesOptions): Promise<ExportFilesResult | null> {
-  const desktop = bridge();
-  if (!desktop.exportFiles) throw new Error("exporting files is not available in this build");
-  return await desktop.exportFiles(options);
+  return await requireBridgeMethod("exportFiles", "exporting files is not available in this build")(options);
 }
 
 export async function importPageFileWithDialog(options?: OpenDialogOptions): Promise<ImportedFile | null> {
-  const desktop = bridge();
-  if (!desktop.importPageFile) throw new Error("importing files is not available in this build");
-  return await desktop.importPageFile(options);
+  return await requireBridgeMethod("importPageFile", "importing files is not available in this build")(options);
 }
 
 // Reserved for legacy desktop updater events. Current builds use the signed
@@ -179,9 +172,5 @@ export function desktopAutoUpdateActive(): boolean {
 }
 
 export async function installDesktopUpdateNow(): Promise<void> {
-  const desktop = bridge();
-  if (!desktop.installUpdateNow) {
-    throw new Error("restart-to-update is not available in this build");
-  }
-  await desktop.installUpdateNow();
+  await requireBridgeMethod("installUpdateNow", "restart-to-update is not available in this build")();
 }

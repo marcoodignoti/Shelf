@@ -11,7 +11,6 @@ import {
   FormattingToolbar,
   FormattingToolbarController,
   getFormattingToolbarItems,
-  getDefaultReactSlashMenuItems,
   SideMenu,
   SideMenuController,
   SuggestionMenuController,
@@ -19,48 +18,55 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, Video, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Smile, Star, Trash2, X } from "lucide-react";
 import { RiFormula } from "react-icons/ri";
 import { createPortal } from "react-dom";
 import { clampContextMenuPosition } from "../lib/contextMenu";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
-import { blockDropPlacementFromOffset, BlockDropPlacement } from "../lib/blockDrag";
+import { blockDropTargetFromPoint, BlockDropTarget, clearBlockDropIndicator, moveEditorBlock } from "../lib/editorBlockDrag";
+import {
+  activeElementIsNativeTextInput,
+  blockElementSelector,
+  disableSpellcheck,
+  headingItemsFromBlocks,
+  HeadingRailItem,
+  isEmptyEditorBlock,
+  isNativeTextInput,
+  keepEditorCaretInView,
+  preserveEditorScroll,
+} from "../lib/editorDom";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { defaultDatabaseSchema } from "../lib/database";
 import { exportFilesWithDialog, invoke } from "../lib/desktop";
 import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
 import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
-import { coverImageSrc, importCoverImageFromDialog, importEditorImage, importEditorImageFilesFromDialog, importEditorMedia, importEditorVideo, importEditorVideoFilesFromDialog, updatePage, Page } from "../lib/db";
+import { coverImageSrc, importCoverImageFromDialog, importEditorImage, importEditorMedia, importEditorVideo, updatePage, Page } from "../lib/db";
 import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
-import { useLocale, useT, type TranslationKey, type TranslationParams } from "../lib/i18n";
-import { insertPageLinkInlineContent, OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
-import { blocksFromPastedMathText, formulaInputFromBlockContent, formulaSlashMenuItem, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
-import { editorMediaBlockProps, editorMediaKindForFile, editorMediaUserMessage, fileNameFromPath, type EditorMediaBlock, type EditorMediaKind } from "../lib/editorMedia";
+import { useLocale, useT } from "../lib/i18n";
+import { OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
+import { blocksFromPastedMathText, formulaInputFromBlockContent, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { editorMediaBlockProps, editorMediaKindForFile, editorMediaUserMessage, type EditorMediaKind } from "../lib/editorMedia";
 import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
 import { reorderedSiblingIds } from "../lib/pageOrder";
 import { subpageSectionMode } from "../lib/subpageSection";
 import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
-import { rankedSuggestionItems } from "../lib/slashSearch";
+import {
+  dataTransferFiles,
+  dataTransferHasSupportedMedia,
+  eventPathIncludesSelector,
+  insertEditorMediaBlocks,
+  openNotionPageLinkItems,
+  openNotionSlashMenuItems,
+  slashMenuElement,
+} from "../lib/editorSlashMenu";
 import { useAppStore } from "../store/useAppStore";
 import { useUIStore } from "../store/useUIStore";
 import { FloatingPopover } from "./FloatingPopover";
 
 const ICON_OPTIONS = ["📄", "✅", "💡", "📌", "🚀", "🧠", "🛠️", "📚", "🎯", "✨", "🔥", "📝"];
-
-type BlockDropTarget = {
-  blockId: string;
-  placement: BlockDropPlacement;
-  element: HTMLElement;
-};
-
-type HeadingRailItem = {
-  id: string;
-  level: number;
-  title: string;
-};
 
 type SubpageDropTarget = {
   pageId: string;
@@ -73,60 +79,6 @@ type SubpageDragSession = {
   startY: number;
   active: boolean;
 };
-
-function moveEditorBlock(editor: BlockNoteEditor, sourceId: string, targetId: string, placement: BlockDropPlacement) {
-  if (sourceId === targetId) return;
-
-  const sourceBlock = editor.getBlock(sourceId);
-  const targetBlock = editor.getBlock(targetId);
-
-  if (!sourceBlock || !targetBlock || blockContainsId(sourceBlock, targetId)) {
-    return;
-  }
-
-  editor.transact(() => {
-    editor.removeBlocks([sourceBlock]);
-    editor.insertBlocks([sourceBlock], targetBlock, placement);
-  });
-}
-
-function blockContainsId(block: Block, blockId: string): boolean {
-  return block.children.some((child) => child.id === blockId || blockContainsId(child, blockId));
-}
-
-function clearBlockDropIndicator() {
-  document
-    .querySelectorAll<HTMLElement>("[data-opennotion-block-drop]")
-    .forEach((element) => element.removeAttribute("data-opennotion-block-drop"));
-}
-
-function blockElementFromPoint(editor: BlockNoteEditor, clientX: number, clientY: number): HTMLElement | null {
-  const editorElement = editor.domElement;
-
-  if (!editorElement) return null;
-
-  const editorRect = editorElement.getBoundingClientRect();
-  const x = Math.min(Math.max(clientX, editorRect.left + 8), editorRect.right - 8);
-  const element = document
-    .elementsFromPoint(x, clientY)
-    .find((candidate) => editorElement.contains(candidate) && candidate.closest(".bn-block-outer[data-id]"));
-
-  return (element?.closest(".bn-block-outer[data-id]") as HTMLElement | null) ?? null;
-}
-
-function blockDropTargetFromPoint(editor: BlockNoteEditor, clientX: number, clientY: number, sourceId: string): BlockDropTarget | null {
-  const element = blockElementFromPoint(editor, clientX, clientY);
-  const blockId = element?.dataset.id;
-
-  if (!element || !blockId || blockId === sourceId) {
-    return null;
-  }
-
-  const rect = element.getBoundingClientRect();
-  const placement = blockDropPlacementFromOffset(clientY - rect.top, rect.height);
-
-  return { blockId, placement, element };
-}
 
 function ShelfSideMenu() {
   return (
@@ -206,164 +158,6 @@ function PageHeadingRail({
   );
 }
 
-function isNativeTextInput(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-}
-
-// Only touch elements where spellcheck is meaningful. Setting attributes on
-// non-text inputs rendered by ProseMirror node views (e.g. the checklist
-// checkbox) makes ProseMirror's DOMObserver re-create the node, which
-// re-triggers the MutationObserver below in an infinite loop that freezes
-// the app. Covered by tests/e2e/checklist.e2e.ts.
-const SPELLCHECK_TARGET_SELECTOR =
-  "[contenteditable='true'], textarea, input:not([type]), input[type='text'], input[type='search'], input[type='email'], input[type='url']";
-
-function setSpellcheckAttributes(element: HTMLElement) {
-  if (element.getAttribute("spellcheck") !== "false") element.setAttribute("spellcheck", "false");
-  if (element.getAttribute("autocorrect") !== "off") element.setAttribute("autocorrect", "off");
-  if (element.getAttribute("autocapitalize") !== "off") element.setAttribute("autocapitalize", "off");
-}
-
-function disableSpellcheck(element: HTMLElement | null) {
-  if (!element) return;
-  setSpellcheckAttributes(element);
-  element.querySelectorAll<HTMLElement>(SPELLCHECK_TARGET_SELECTOR).forEach(setSpellcheckAttributes);
-}
-
-function activeElementIsNativeTextInput() {
-  const activeElement = document.activeElement;
-  return activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
-}
-
-function preserveEditorScroll(editor: BlockNoteEditor<any, any, any>) {
-  const scrollContainer = editor.domElement?.closest(".on-scroll-fade.flex-1.w-full.overflow-y-auto");
-  if (!(scrollContainer instanceof HTMLElement)) return () => {};
-
-  const scrollTop = scrollContainer.scrollTop;
-  const restore = () => {
-    scrollContainer.scrollTop = scrollTop;
-  };
-
-  return () => {
-    restore();
-    requestAnimationFrame(() => {
-      restore();
-      requestAnimationFrame(() => {
-        restore();
-        requestAnimationFrame(restore);
-      });
-    });
-    window.setTimeout(restore, 0);
-    window.setTimeout(restore, 50);
-    window.setTimeout(restore, 150);
-    window.setTimeout(restore, 300);
-  };
-}
-
-function selectionRectInsideEditor(editor: BlockNoteEditor<any, any, any>): DOMRect | null {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return null;
-
-  const range = selection.getRangeAt(0);
-  if (!editor.domElement?.contains(range.commonAncestorContainer)) return null;
-
-  const rect = range.getBoundingClientRect();
-  if (rect.height > 0 || rect.width > 0) return rect;
-
-  const block = editor.getTextCursorPosition().block;
-  const blockElement = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(block.id));
-  return blockElement?.getBoundingClientRect() ?? null;
-}
-
-function keepEditorCaretInView(editor: BlockNoteEditor<any, any, any>, scrollContainer: HTMLElement | null) {
-  if (!scrollContainer) return;
-
-  const scroll = () => {
-    const caretRect = selectionRectInsideEditor(editor);
-    if (!caretRect) return;
-
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const bottomPadding = 96;
-    const topPadding = 72;
-    const caretBottom = caretRect.bottom;
-    const caretTop = caretRect.top;
-    const visibleBottom = containerRect.bottom - bottomPadding;
-    const visibleTop = containerRect.top + topPadding;
-
-    if (caretBottom > visibleBottom) {
-      scrollContainer.scrollTop += caretBottom - visibleBottom;
-      return;
-    }
-
-    if (caretTop < visibleTop) {
-      scrollContainer.scrollTop -= visibleTop - caretTop;
-    }
-  };
-
-  requestAnimationFrame(() => {
-    scroll();
-    requestAnimationFrame(scroll);
-  });
-}
-
-function isEmptyEditorBlock(block: Block<any, any, any>): boolean {
-  if (block.children.length > 0) return false;
-  const content = block.content as unknown;
-  if (typeof content === "string") return content.trim().length === 0;
-  if (!Array.isArray(content)) return true;
-
-  return content.every((item) => {
-    if (typeof item === "string") return item.trim().length === 0;
-    if (typeof item !== "object" || item === null || Array.isArray(item)) return true;
-    return !("text" in item) || typeof item.text !== "string" || item.text.trim().length === 0;
-  });
-}
-
-function textFromInlineContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .map((item) => {
-      if (typeof item === "string") return item;
-      if (typeof item !== "object" || item === null || Array.isArray(item)) return "";
-      if ("text" in item && typeof item.text === "string") return item.text;
-      if ("props" in item && typeof item.props === "object" && item.props !== null) {
-        const props = item.props as Record<string, unknown>;
-        return typeof props.formula === "string" ? props.formula : "";
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function headingItemsFromBlocks(blocks: Block<any, any, any>[]): HeadingRailItem[] {
-  return blocks.flatMap((block) => {
-    const children = Array.isArray(block.children) ? headingItemsFromBlocks(block.children as Block<any, any, any>[]) : [];
-
-    if (block.type !== "heading") {
-      return children;
-    }
-
-    const props = block.props as Record<string, unknown>;
-    const level = typeof props.level === "number" ? props.level : 1;
-    const title = textFromInlineContent(block.content) || "";
-
-    return [{ id: block.id, level, title }, ...children];
-  });
-}
-
-function blockElementSelector(blockId: string): string {
-  const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
-    ? CSS.escape(blockId)
-    : blockId.replace(/"/g, '\\"');
-
-  return `.bn-block-outer[data-id="${escaped}"]`;
-}
-
 function ShelfDragHandleButton() {
   const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
@@ -438,147 +232,6 @@ function ShelfDragHandleButton() {
       <GripVertical className="h-5 w-5" />
     </button>
   );
-}
-
-const urlEmbedMenuTitles = new Set(["audio", "embed", "file", "image", "video"]);
-
-function dataTransferFiles(dataTransfer: DataTransfer): File[] {
-  const files = Array.from(dataTransfer.files ?? []);
-  if (files.length > 0) return files;
-
-  return Array.from(dataTransfer.items ?? [])
-    .map((item) => item.kind === "file" ? item.getAsFile() : null)
-    .filter((file): file is File => file !== null);
-}
-
-function dataTransferHasSupportedMedia(dataTransfer: DataTransfer): boolean {
-  const files = dataTransferFiles(dataTransfer);
-  if (files.some((file) => editorMediaKindForFile(file))) return true;
-
-  return Array.from(dataTransfer.items ?? []).some((item) =>
-    item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))
-  );
-}
-
-function insertEditorMediaBlocks(editor: BlockNoteEditor<any, any, any>, media: EditorMediaBlock[]) {
-  const cursorBlock = editor.getTextCursorPosition().block;
-  if (isEmptyEditorBlock(cursorBlock)) {
-    editor.replaceBlocks([cursorBlock], media as never);
-  } else {
-    editor.insertBlocks(media as never, cursorBlock, "after");
-  }
-}
-
-function editorMediaSlashMenuItem(
-  editor: BlockNoteEditor<any, any, any>,
-  pageId: string,
-  kind: EditorMediaKind,
-  showError: (error: unknown) => void,
-  showSuccess: (key: TranslationKey, params?: TranslationParams) => void,
-  t: (key: TranslationKey, params?: TranslationParams) => string,
-) {
-  const isVideo = kind === "video";
-
-  return {
-    title: isVideo ? t("editor.slashVideo") : t("editor.slashImage"),
-    subtext: t("editor.slashFromDevice"),
-    group: t("editor.slashMediaGroup"),
-	    icon: isVideo ? <Video size={18} /> : <Image size={18} />,
-	    onItemClick: async () => {
-	      try {
-	        const imports = isVideo
-	          ? await importEditorVideoFilesFromDialog(pageId)
-	          : await importEditorImageFilesFromDialog(pageId);
-	        if (imports.length === 0) return;
-	        const media = imports.map((imported) => editorMediaBlockProps(
-	          kind,
-	          fileNameFromPath(imported.sourceName, isVideo ? "Video" : "Image"),
-	          coverImageSrc(imported.path)
-	        ));
-
-        insertEditorMediaBlocks(editor, media);
-        const count = String(media.length);
-        showSuccess(
-          media.length === 1 ? "editor.mediaImported" : "editor.mediaImportedPlural",
-          { count }
-        );
-      } catch (error) {
-        showError(editorMediaUserMessage(error));
-      }
-    },
-  };
-}
-
-function openNotionSlashMenuItems(
-  editor: BlockNoteEditor<any, any, any>,
-  pageId: string,
-  showError: (error: unknown) => void,
-  showSuccess: (key: TranslationKey, params?: TranslationParams) => void,
-  t: (key: TranslationKey, params?: TranslationParams) => string,
-) {
-  const items = [
-    ...getDefaultReactSlashMenuItems(editor).filter(
-      (item) => !urlEmbedMenuTitles.has(String(item.title ?? "").toLowerCase())
-    ),
-    editorMediaSlashMenuItem(editor, pageId, "image", showError, showSuccess, t),
-    editorMediaSlashMenuItem(editor, pageId, "video", showError, showSuccess, t),
-    {
-      ...formulaSlashMenuItem(editor),
-      icon: <Sigma size={18} />,
-    },
-  ];
-
-  return async (query: string) => rankedSuggestionItems(items, query);
-}
-
-function pageLinkKindLabel(page: Page, t: (key: TranslationKey) => string): string {
-  return page.page_kind === "studio_note" ? t("editor.pageLinkKindStudio") : t("editor.pageLinkKindNote");
-}
-
-function openNotionPageLinkItems(
-  editor: BlockNoteEditor<any, any, any>,
-  pages: Page[],
-  currentPageId: string,
-  t: (key: TranslationKey) => string,
-) {
-  return async (query: string) => {
-    const candidates = pages
-      .filter((candidate) => candidate.id !== currentPageId && candidate.is_deleted === 0)
-      .map((candidate) => ({
-        page: candidate,
-        title: candidate.title || t("sidebar.untitled"),
-        aliases: [
-          candidate.page_kind === "studio_note" ? "studio" : "note",
-          candidate.icon || "",
-        ].filter(Boolean),
-      }));
-
-    return rankedSuggestionItems(candidates, query)
-      .slice(0, 8)
-      .map(({ page, title }) => ({
-        title,
-        subtext: pageLinkKindLabel(page, t),
-        group: t("editor.slashPagesGroup"),
-        icon: page.icon ? (
-          <span className="flex h-[18px] w-[18px] items-center justify-center text-sm">{page.icon}</span>
-        ) : (
-          <FileText size={18} />
-        ),
-        onItemClick: () => {
-          insertPageLinkInlineContent(editor, page);
-        },
-      }));
-  };
-}
-
-function eventPathIncludesSelector(event: Event, selector: string): boolean {
-  return event
-    .composedPath()
-    .some((target) => target instanceof Element && (target.matches(selector) || Boolean(target.closest(selector))));
-}
-
-function slashMenuElement(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(".bn-suggestion-menu");
 }
 
 function ShelfBlockTypeSelect() {
