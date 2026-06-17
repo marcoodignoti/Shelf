@@ -8,13 +8,12 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "paths": {
-      "@blocknote/core": ["src/types/blocknote-core.d.ts"],
-      "@blocknote/core/extensions": ["src/types/blocknote-core-extensions.d.ts"],
-      "@blocknote/mantine": ["src/types/blocknote-mantine.d.ts"],
-      "@blocknote/react": ["src/types/blocknote-react.d.ts"],
-      "pdfjs-dist/legacy/build/pdf.mjs": ["src/types/pdfjs-legacy.d.ts"]
+      "@blocknote/core": ["./src/types/blocknote-core.d.ts"],
+      "@blocknote/core/extensions": ["./src/types/blocknote-core-extensions.d.ts"],
+      "@blocknote/mantine": ["./src/types/blocknote-mantine.d.ts"],
+      "@blocknote/react": ["./src/types/blocknote-react.d.ts"],
+      "pdfjs-dist/legacy/build/pdf.mjs": ["./src/types/pdfjs-legacy.d.ts"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
