@@ -1,28 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { installMockBridge } from "./helpers/mockBridge";
 
 test.beforeEach(async ({ page }) => {
+  await installMockBridge(page);
+
   await page.addInitScript(() => {
-    const profile = { name: "", workspaceName: "Shelf", avatarPath: null as string | null };
-
-    window.openNotion = {
-      invoke: async (cmd: string, args?: Record<string, unknown>) => {
-        if (cmd === "list_pages" || cmd === "list_all_pages" || cmd === "search_pages") return [];
-        if (cmd === "list_studio_documents" || cmd === "list_studio_projects" || cmd === "list_all_studio_document_page_links") return [];
-        if (cmd === "get_workspace_profile") return { ...profile };
-        if (cmd === "update_workspace_profile") {
-          if (typeof args?.name === "string") profile.name = args.name;
-          if (typeof args?.workspaceName === "string") profile.workspaceName = args.workspaceName;
-          if (args && "avatarPath" in args && args.avatarPath === null) profile.avatarPath = null;
-          return { ...profile };
-        }
-        if (cmd === "show_character_palette") return null;
-        throw new Error(`Unhandled settings e2e command: ${cmd}`);
-      },
-      open: async () => null,
-      save: async () => null,
-      fileSrc: (filePath: string) => filePath,
-    };
-
     // Clear only once per test — not on subsequent reloads — so that
     // preference values written before a reload survive it.
     if (!window.sessionStorage.getItem("__settings-e2e-init__")) {
