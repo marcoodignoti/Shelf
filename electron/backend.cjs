@@ -1163,32 +1163,60 @@ class ShelfBackend {
   updatePage({ id, updates, updatedAt, updated_at }) {
     const updated = updatedAt ?? updated_at;
     this.withTransaction(() => {
-      const apply = (column, value) => {
-        this.db.prepare(`UPDATE pages SET ${column} = ?, updated_at = ? WHERE id = ?`).run(value, updated, id);
-      };
-      if (own(updates, "title")) {
-        apply("title", updates.title);
+      const setClauses = [];
+      const values = [];
+
+      const hasTitle = own(updates, "title");
+      const hasContent = own(updates, "content");
+
+      if (hasTitle) {
+        setClauses.push("title = ?");
+        values.push(updates.title);
         const studioProjectId = studioProjectIdFromPageId(id);
         if (studioProjectId) {
           this.db.prepare("UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?")
             .run(updates.title, updated, studioProjectId);
         }
       }
-      if (own(updates, "parent_id")) apply("parent_id", updates.parent_id);
-      if (own(updates, "content")) {
-        const searchText = own(updates, "search_text") ? updates.search_text : updates.content;
-        this.db.prepare("UPDATE pages SET content = ?, search_text = ?, updated_at = ? WHERE id = ?")
-          .run(updates.content, searchText, updated, id);
+
+      if (own(updates, "parent_id")) {
+        setClauses.push("parent_id = ?");
+        values.push(updates.parent_id);
       }
-      if (own(updates, "icon")) apply("icon", updates.icon);
-      if (own(updates, "cover_url")) apply("cover_url", updates.cover_url);
-      if (own(updates, "is_deleted")) apply("is_deleted", updates.is_deleted);
-      if (own(updates, "is_favorite")) apply("is_favorite", updates.is_favorite);
-      if (own(updates, "is_template")) apply("is_template", updates.is_template);
-      if (own(updates, "is_database")) apply("is_database", updates.is_database);
-      if (own(updates, "database_schema")) apply("database_schema", updates.database_schema);
-      if (own(updates, "properties")) apply("properties", updates.properties);
-      if (own(updates, "page_kind")) apply("page_kind", updates.page_kind);
+
+      if (hasContent) {
+        setClauses.push("content = ?");
+        values.push(updates.content);
+        const searchText = own(updates, "search_text") ? updates.search_text : updates.content;
+        setClauses.push("search_text = ?");
+        values.push(searchText);
+      }
+
+      const simpleFields = [
+        "icon",
+        "cover_url",
+        "is_deleted",
+        "is_favorite",
+        "is_template",
+        "is_database",
+        "database_schema",
+        "properties",
+        "page_kind"
+      ];
+      for (const field of simpleFields) {
+        if (own(updates, field)) {
+          setClauses.push(`${field} = ?`);
+          values.push(updates[field]);
+        }
+      }
+
+      if (setClauses.length > 0) {
+        setClauses.push("updated_at = ?");
+        values.push(updated);
+        values.push(id);
+
+        this.db.prepare(`UPDATE pages SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+      }
     });
   }
 
@@ -1682,8 +1710,8 @@ class ShelfBackend {
         pages.id AS page_id,
         pages.title,
         pages.parent_id,
-        pages.content,
-        pages.search_text,
+        NULL AS content,
+        NULL AS search_text,
         pages.icon,
         pages.cover_url,
         pages.is_deleted,

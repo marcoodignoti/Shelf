@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentType } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
 import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
@@ -52,7 +53,13 @@ export function CommandPalette() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore();
+  const { pages, setCurrentPageId, isCommandPaletteOpen, closeCommandPalette, addPage } = useAppStore(useShallow((s) => ({
+    pages: s.pages,
+    setCurrentPageId: s.setCurrentPageId,
+    isCommandPaletteOpen: s.isCommandPaletteOpen,
+    closeCommandPalette: s.closeCommandPalette,
+    addPage: s.addPage,
+  })));
 
   useEffect(() => {
     if (isCommandPaletteOpen) {

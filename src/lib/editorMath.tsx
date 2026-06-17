@@ -1136,50 +1136,51 @@ function isCompactMathFenceLine(value: string): boolean {
   return words.every(isCompactMathWord);
 }
 
+const ALLOWED_COMPACT_MATH_WORDS = new Set([
+  "alpha",
+  "beta",
+  "delta",
+  "gamma",
+  "omega",
+  "phi",
+  "sigma",
+  "theta",
+]);
+
+const ALLOWED_PROSE_MATH_WORDS = new Set([
+  "dt",
+  "dx",
+  "dy",
+  "dz",
+  "dl",
+  "ds",
+  "eq",
+  "sigma",
+  "gamma",
+  "delta",
+  "phi",
+  "theta",
+  "omega",
+  "alpha",
+  "beta",
+  "rho",
+  "mu",
+]);
+
 function isCompactMathWord(word: string): boolean {
   if (word.length <= 3) return true;
 
-  const allowedMathWords = new Set([
-    "alpha",
-    "beta",
-    "delta",
-    "gamma",
-    "omega",
-    "phi",
-    "sigma",
-    "theta",
-  ]);
-
-  return allowedMathWords.has(word.toLowerCase());
+  return ALLOWED_COMPACT_MATH_WORDS.has(word.toLowerCase());
 }
 
 function containsProseText(value: string): boolean {
-  const allowedMathWords = new Set([
-    "dt",
-    "dx",
-    "dy",
-    "dz",
-    "dl",
-    "ds",
-    "eq",
-    "sigma",
-    "gamma",
-    "delta",
-    "phi",
-    "theta",
-    "omega",
-    "alpha",
-    "beta",
-    "rho",
-    "mu",
-  ]);
   const withoutLatexSyntax = value
     .replace(/\\text\{[^}]*\}/g, "")
     .replace(/\\[a-zA-Z]+/g, "")
     .replace(/[{}_^\\()[\].,;:=+\-*/\d]/g, " ");
   const proseWords = withoutLatexSyntax.match(/[A-Za-zÀ-ÿ]{2,}/g) ?? [];
 
-  return proseWords.some((word) => !allowedMathWords.has(word.toLowerCase()));
+  return proseWords.some((word) => !ALLOWED_PROSE_MATH_WORDS.has(word.toLowerCase()));
 }
 
 function normalizeMathContentDeep(content: unknown): {

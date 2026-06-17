@@ -195,6 +195,11 @@ export function parsePageBlocks(content: string | null): PartialBlock[] {
 export function pageContentToSearchText(content: string | null): string {
   if (!content) return "";
 
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{") && !trimmed.startsWith('"')) {
+    return normalizeWhitespace(content);
+  }
+
   try {
     const parsed = JSON.parse(content);
 

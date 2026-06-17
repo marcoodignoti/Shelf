@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../store/useUIStore';
 import Plus from 'lucide-react/dist/esm/icons/plus.mjs';
 import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
@@ -130,7 +131,29 @@ function PageItem({
   onRenameHandled: () => void,
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void
 }) {
-  const { currentPageId, setCurrentPageId, setCurrentStudioDocumentId, addPage, duplicatePageAction, movePageAction, renamePageAction, toggleFavoriteAction, toggleTemplateAction, importStudioPdfAction } = useAppStore();
+  const {
+    currentPageId,
+    setCurrentPageId,
+    setCurrentStudioDocumentId,
+    addPage,
+    duplicatePageAction,
+    movePageAction,
+    renamePageAction,
+    toggleFavoriteAction,
+    toggleTemplateAction,
+    importStudioPdfAction
+  } = useAppStore(useShallow((s) => ({
+    currentPageId: s.currentPageId,
+    setCurrentPageId: s.setCurrentPageId,
+    setCurrentStudioDocumentId: s.setCurrentStudioDocumentId,
+    addPage: s.addPage,
+    duplicatePageAction: s.duplicatePageAction,
+    movePageAction: s.movePageAction,
+    renamePageAction: s.renamePageAction,
+    toggleFavoriteAction: s.toggleFavoriteAction,
+    toggleTemplateAction: s.toggleTemplateAction,
+    importStudioPdfAction: s.importStudioPdfAction
+  })));
   const t = useT();
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
@@ -143,20 +166,26 @@ function PageItem({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const moveMenuRef = useRef<HTMLDivElement>(null);
 
-  const childPages = allPages.filter(p => p.parent_id === page.id);
+  const childPages = useMemo(() => allPages.filter(p => p.parent_id === page.id), [allPages, page.id]);
   const hasChildren = childPages.length > 0;
-  const studioContexts = studioContextsByPageId.get(page.id) ?? [];
+  const studioContexts = useMemo(() => studioContextsByPageId.get(page.id) ?? [], [studioContextsByPageId, page.id]);
   const primaryStudioContext = studioContexts[0] ?? null;
-  const studioBadgeTitle = studioContexts.length === 1
-    ? `Open linked PDF: ${primaryStudioContext?.document.title ?? t("sidebar.untitled")}`
-    : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || t("sidebar.untitled")).join(', ')}`;
-  const moveTargets = moveTargetPages(allPages, page.id).filter(target =>
-    (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
-  );
-  const moveProjectTargets = projectMoveTargets.filter(target =>
-    target.id !== page.id &&
-    (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
-  );
+  const studioBadgeTitle = useMemo(() => {
+    return studioContexts.length === 1
+      ? `Open linked PDF: ${primaryStudioContext?.document.title ?? t("sidebar.untitled")}`
+      : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || t("sidebar.untitled")).join(', ')}`;
+  }, [studioContexts, primaryStudioContext, t]);
+  const moveTargets = useMemo(() => {
+    return moveTargetPages(allPages, page.id).filter(target =>
+      (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
+    );
+  }, [allPages, page.id, moveQuery]);
+  const moveProjectTargets = useMemo(() => {
+    return projectMoveTargets.filter(target =>
+      target.id !== page.id &&
+      (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
+    );
+  }, [projectMoveTargets, page.id, moveQuery]);
 
   const setExpanded = (expanded: boolean) => {
     storeExpandedState(page.id, expanded);
@@ -627,7 +656,12 @@ function ProjectItem({
   onRequestRenamePage: (pageId: string) => void;
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void;
 }) {
-  const { addPage, importStudioPdfAction, renamePageAction, toggleFavoriteAction } = useAppStore();
+  const { addPage, importStudioPdfAction, renamePageAction, toggleFavoriteAction } = useAppStore(useShallow((s) => ({
+    addPage: s.addPage,
+    importStudioPdfAction: s.importStudioPdfAction,
+    renamePageAction: s.renamePageAction,
+    toggleFavoriteAction: s.toggleFavoriteAction,
+  })));
   const t = useT();
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(project.id));
   const [isRenaming, setIsRenaming] = useState(false);
@@ -1068,7 +1102,27 @@ export function Sidebar() {
     deleteStudioDocumentAction,
     createProjectAction,
     removeProjectAction,
-  } = useAppStore();
+  } = useAppStore(useShallow((s) => ({
+    pages: s.pages,
+    fetchPages: s.fetchPages,
+    addPage: s.addPage,
+    addPageFromTemplate: s.addPageFromTemplate,
+    removePage: s.removePage,
+    movePageAction: s.movePageAction,
+    reorderPagesAction: s.reorderPagesAction,
+    currentPageId: s.currentPageId,
+    setCurrentPageId: s.setCurrentPageId,
+    isLoading: s.isLoading,
+    openCommandPalette: s.openCommandPalette,
+    studioDocuments: s.studioDocuments,
+    studioDocumentPageLinks: s.studioDocumentPageLinks,
+    fetchStudioDocuments: s.fetchStudioDocuments,
+    setCurrentStudioDocumentId: s.setCurrentStudioDocumentId,
+    importStudioPdfAction: s.importStudioPdfAction,
+    deleteStudioDocumentAction: s.deleteStudioDocumentAction,
+    createProjectAction: s.createProjectAction,
+    removeProjectAction: s.removeProjectAction,
+  })));
   const { sidebarWidth, setSidebarWidth } = useUIStore();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const newPageButtonRef = useRef<HTMLButtonElement>(null);

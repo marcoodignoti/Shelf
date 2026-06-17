@@ -138,7 +138,6 @@ for (const size of SIZES) {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Studio" }).click();
 
     // Parse: import click until the page counter knows the page count.
     const parseStart = Date.now();

@@ -340,10 +340,11 @@ export function sortDatabaseRows<T extends DatabaseRowLike>(rows: T[], schema: D
   if (!sort) return rows;
 
   const direction = sort.direction === "asc" ? 1 : -1;
+  const sortKeys = new Map<T, string | boolean>(rows.map(row => [row, databaseRowValue(row, sort.propertyId)]));
 
   return [...rows].sort((first, second) => {
-    const firstValue = databaseRowValue(first, sort.propertyId);
-    const secondValue = databaseRowValue(second, sort.propertyId);
+    const firstValue = sortKeys.get(first)!;
+    const secondValue = sortKeys.get(second)!;
     const comparison = String(firstValue).localeCompare(String(secondValue), undefined, {
       numeric: true,
       sensitivity: "base",

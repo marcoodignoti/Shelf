@@ -1,17 +1,31 @@
 import { Page } from "./db";
 
+function buildChildrenMap(pages: Page[]): Map<string | null, Page[]> {
+  const map = new Map<string | null, Page[]>();
+  for (const page of pages) {
+    const key = page.parent_id;
+    const list = map.get(key);
+    if (list) {
+      list.push(page);
+    } else {
+      map.set(key, [page]);
+    }
+  }
+  return map;
+}
+
 function descendantIds(pages: Page[], pageId: string): Set<string> {
+  const childrenMap = buildChildrenMap(pages);
   const descendants = new Set<string>();
   const pending = [pageId];
 
   while (pending.length > 0) {
-    const current = pending.pop();
-    if (!current) continue;
-
-    for (const page of pages) {
-      if (page.parent_id === current && !descendants.has(page.id)) {
-        descendants.add(page.id);
-        pending.push(page.id);
+    const current = pending.pop()!;
+    const children = childrenMap.get(current) ?? [];
+    for (const child of children) {
+      if (!descendants.has(child.id)) {
+        descendants.add(child.id);
+        pending.push(child.id);
       }
     }
   }
@@ -37,17 +51,23 @@ function sortForSidebar(pages: Page[]): Page[] {
 }
 
 export function childPagesForParent(pages: Page[], parentId: string): Page[] {
-  return sortForSidebar(pages).filter((page) => page.parent_id === parentId);
+  const children = pages.filter((page) => page.parent_id === parentId);
+  return sortForSidebar(children);
 }
 
 export function visiblePageIds(pages: Page[], expandedIds: Set<string>): string[] {
-  const sortedPages = sortForSidebar(pages);
+  const childrenMap = buildChildrenMap(pages);
+  const sortedChildrenMap = new Map<string | null, Page[]>();
+
+  for (const [parentId, children] of childrenMap.entries()) {
+    sortedChildrenMap.set(parentId, sortForSidebar(children));
+  }
+
   const ids: string[] = [];
 
   const appendChildren = (parentId: string | null) => {
-    for (const page of sortedPages) {
-      if (page.parent_id !== parentId) continue;
-
+    const children = sortedChildrenMap.get(parentId) ?? [];
+    for (const page of children) {
       ids.push(page.id);
 
       if (expandedIds.has(page.id)) {
