@@ -31,6 +31,7 @@ let mainWindow = null;
 let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
+let studioPdfPort = null;
 
 protocol.registerSchemesAsPrivileged([{
   scheme: APP_PROTOCOL,
@@ -311,6 +312,7 @@ function startStudioPdfServer() {
 
       studioPdfServer = server;
       studioPdfServerOrigin = `http://127.0.0.1:${address.port}`;
+      studioPdfPort = address.port;
       server.off("error", reject);
       resolve(studioPdfServerOrigin);
     });
@@ -375,8 +377,26 @@ function resolveFileUnderRoot(rootPath, requestPath) {
   return canonicalPath;
 }
 
-async function fileResponse(filePath) {
-  return await net.fetch(pathToFileURL(filePath).toString());
+// Include the actual bound port of the Studio PDF server instead of a
+// wildcard, so a compromised renderer cannot exfiltrate to an arbitrary
+// local process. ws:// is included because pdf.js worker fetches may
+// upgrade; both are loopback-only.
+function studioPdfConnectSrc() {
+  return studioPdfPort
+    ? `http://127.0.0.1:${studioPdfPort} ws://127.0.0.1:${studioPdfPort}`
+    : "";
+}
+
+async function fileResponse(filePath, contentSecurityPolicy) {
+  const response = await net.fetch(pathToFileURL(filePath).toString());
+  if (!contentSecurityPolicy) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Content-Security-Policy", contentSecurityPolicy);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function handleAppProtocolRequest(request) {
@@ -393,7 +413,21 @@ async function handleAppProtocolRequest(request) {
 
   if (parsed.hostname === APP_RENDERER_HOST) {
     const filePath = resolveFileUnderRoot(path.join(__dirname, "..", "dist"), parsed.pathname);
-    return filePath ? await fileResponse(filePath) : plainTextResponse(404, "Not found");
+    if (!filePath) return plainTextResponse(404, "Not found");
+    const loopback = studioPdfConnectSrc();
+    // This is the sole CSP for the packaged app. There is no <meta> CSP in
+    // index.html (dual policies are AND'd, which would block loopback access).
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self' data:",
+      "img-src 'self' data: opennotion-app: blob:",
+      "media-src 'self' opennotion-app: blob:",
+      loopback ? `connect-src 'self' ${loopback}` : "connect-src 'self'",
+      "worker-src 'self' blob:",
+    ].join("; ");
+    return await fileResponse(filePath, filePath.endsWith(".html") ? csp : undefined);
   }
 
   if (parsed.hostname === APP_ASSET_HOST) {
@@ -773,6 +807,7 @@ app.on("before-quit", () => {
   studioPdfServer?.close();
   studioPdfServer = null;
   studioPdfServerOrigin = null;
+  studioPdfPort = null;
   if (backend) backend.close();
   backend = null;
 });
