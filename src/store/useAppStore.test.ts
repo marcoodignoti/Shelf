@@ -431,4 +431,60 @@ describe("useAppStore characterization harness", () => {
     await useAppStore.getState().importProfileAvatarAction();
     expect(useAppStore.getState().profile?.avatarPath).toBe("/path/to/new-avatar.png");
   });
+
+  it("toggleFavoriteAction updates state and rolls back on error", async () => {
+    const page = makePage({ id: "page1", is_favorite: 0 });
+    let shouldFail = false;
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [page];
+        if (call.command === "toggle_favorite") {
+          if (shouldFail) throw new Error("Database Locked");
+          return undefined;
+        }
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    // 1. Success path
+    await useAppStore.getState().toggleFavoriteAction("page1", true);
+    expect(useAppStore.getState().pages[0].is_favorite).toBe(1);
+
+    // 2. Error path (should roll back to is_favorite: 1)
+    shouldFail = true;
+    await useAppStore.getState().toggleFavoriteAction("page1", false);
+    expect(useAppStore.getState().pages[0].is_favorite).toBe(1);
+    expect(useAppStore.getState().notice?.kind).toBe("error");
+  });
+
+  it("toggleTemplateAction updates state and rolls back on error", async () => {
+    const page = makePage({ id: "page1", is_template: 0 });
+    let shouldFail = false;
+    installFakeBridge({
+      invokeHandler: (call) => {
+        if (call.command === "list_pages") return [page];
+        if (call.command === "toggle_template") {
+          if (shouldFail) throw new Error("Disk Full");
+          return undefined;
+        }
+        return undefined;
+      },
+    });
+
+    const useAppStore = await loadStore();
+    await useAppStore.getState().fetchPages();
+
+    // 1. Success path
+    await useAppStore.getState().toggleTemplateAction("page1", true);
+    expect(useAppStore.getState().pages[0].is_template).toBe(1);
+
+    // 2. Error path (should roll back to is_template: 1)
+    shouldFail = true;
+    await useAppStore.getState().toggleTemplateAction("page1", false);
+    expect(useAppStore.getState().pages[0].is_template).toBe(1);
+    expect(useAppStore.getState().notice?.kind).toBe("error");
+  });
 });
