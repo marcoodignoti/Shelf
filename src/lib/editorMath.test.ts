@@ -1009,3 +1009,30 @@ describe("normalizeMathInlineContentInEditor", () => {
     });
   });
 });
+
+describe("renderFormulaHtml XSS regression guard", () => {
+  // SECURITY INVARIANT: KaTeX output is rendered via dangerouslySetInnerHTML
+  // in editorMath.tsx. The `trust: false` setting in renderFormulaHtml is the
+  // security boundary that prevents \href{javascript:...}, \url{data:...}, etc.
+  // from emitting executable markup. If anyone flips `trust: true`, this test
+  // fails. Do not weaken these assertions.
+  const forbidden = ["javascript:", "<script", "onerror=", "<img"];
+
+  const adversarialFormulas = [
+    "\\href{javascript:alert(1)}{click}",
+    "\\url{data:text/html,<script>alert(1)</script>}",
+    "<script>alert(1)</script>",
+    "<img src=x onerror=alert(1)>",
+    "\\includegraphics{data:image/svg+xml,<svg onload=alert(1)>}",
+  ];
+
+  for (const formula of adversarialFormulas) {
+    it(`produces no executable markup for: ${formula}`, () => {
+      const html = renderFormulaHtml(formula);
+      const lower = html.toLowerCase();
+      for (const marker of forbidden) {
+        expect(lower, `formula ${formula} produced forbidden marker ${marker}`).not.toContain(marker);
+      }
+    });
+  }
+});

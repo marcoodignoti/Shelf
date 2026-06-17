@@ -1269,6 +1269,12 @@ function isMathInlineContent(item: InlineContent): item is InlineMath {
 }
 
 export function renderFormulaHtml(formula: string, displayMode = false): string {
+  // SECURITY: The returned HTML is injected via dangerouslySetInnerHTML in
+  // KatexRenderer. The `trust: false` option below is the security boundary —
+  // it prevents \href, \url, \includegraphics, etc. from emitting javascript:,
+  // data:, or other executable markup. NEVER change to `trust: true` without
+  // sanitizing the output with a sanitizer first. The adversarial test in
+  // editorMath.test.ts ("renderFormulaHtml XSS regression guard") locks this.
   const normalizedFormula = normalizeFormulaForKatex(formula || "\\?");
   if (normalizedFormula.length > MAX_FORMULA_LENGTH) {
     return renderFormulaErrorHtml("Formula too long");
