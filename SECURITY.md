@@ -38,9 +38,30 @@ Default macOS app data path:
 ~/Library/Application Support/org.opennotion.desktop/
 ```
 
+## Verifying a release artifact
+
+Each release publishes a `SHA256SUMS` file alongside the artifacts. Verify a
+download before opening it:
+
+```sh
+# With the SHA256SUMS file in the current directory:
+node scripts/verify-release-checksums.cjs Shelf_<version>_arm64.dmg SHA256SUMS
+
+# Or with a single 64-hex hash:
+node scripts/verify-release-checksums.cjs Shelf_<version>_arm64.dmg <sha256>
+```
+
+The script exits `0` on match and `1` on mismatch.
+
 ## Current Distribution Caveats
 
-- macOS builds are unsigned/ad-hoc and not notarized.
+- macOS builds are ad-hoc signed and **not notarized**. Notarization tooling is
+  present but dormant (`scripts/electron-notarize.cjs`): it activates
+  automatically once `SHELF_APPLE_ID`, `SHELF_APPLE_APP_SPECIFIC_PASSWORD`,
+  `SHELF_APPLE_TEAM_ID`, and a real `SHELF_MAC_CODESIGN_IDENTITY` are provided
+  at packaging time. No code change is required when an Apple Developer ID is
+  obtained.
 - Windows builds are unsigned portable zips.
 - OS trust warnings are expected until Developer ID signing, notarization, and
-  Windows code signing are implemented.
+  Windows code signing are implemented. Until then, verify artifacts with
+  `SHA256SUMS` as described above.

@@ -88,4 +88,7 @@ if (lastCreateStatus !== 0) {
 
 run("hdiutil", ["verify", dmgPath]);
 
+const { notarizeApp } = require("./electron-notarize.cjs");
+notarizeApp({ appPath: appDir, dmgPath });
+
 console.log(`Packaged ${dmgPath}`);
