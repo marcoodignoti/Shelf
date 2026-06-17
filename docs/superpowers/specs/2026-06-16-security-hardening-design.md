@@ -176,6 +176,16 @@ obtained — no second pass needed. This composes with M1.
 file).** Verified by the existing `release:verify:macos` codesign-verify step in
 CI, which runs on every macOS package job.
 
+> **⚠️ POST-IMPLEMENTATION FINDING:** M2 was reverted. Removing
+> `disable-library-validation` causes a DYLD crash at launch under ad-hoc
+> signing: macOS enforces Team ID matching between the main binary and loaded
+> dylibs, and the Electron Framework is a separately-signed dylib with a
+> different (or no) Team ID. The pre-check for `.node` native modules was
+> insufficient — the real blocker is the Electron Framework itself. This
+> entitlement is only safely removable once the app is signed with a real
+> Developer ID (all binaries share one Team ID). A comment has been added to
+> the plist documenting this constraint.
+
 ## L3 — Tighten CSP `connect-src` to the actual bound port
 
 **Problem:** `index.html` CSP allows
@@ -204,6 +214,16 @@ done. If anything looks fragile, default to the narrower static meta tag only.
 **Verification for L3:** manual open of a Studio PDF document in a packaged
 build after the CSP change, confirming the PDF renders and range requests
 succeed.
+
+> **⚠️ POST-IMPLEMENTATION FINDING:** The original plan kept the `<meta>` CSP
+> in `index.html` as a "defense-in-depth fallback." This caused PDF loading to
+> fail with "failed to fetch." Per the CSP spec, when both a `<meta>` tag and a
+> `Content-Security-Policy` header are present, **both policies must
+> independently allow a resource** (they are AND'd, not OR'd). The meta tag's
+> effective `connect-src 'self'` blocked loopback access even though the runtime
+> header allowed `http://127.0.0.1:<port>`. Fix: the `<meta>` CSP was removed
+> entirely; the runtime header is now the sole CSP source. An HTML comment in
+> `index.html` documents why a `<meta>` CSP must not be re-added.
 
 ## Order of execution
 

@@ -19,6 +19,8 @@
 
 ## Task 1: M1 — Notarization tooling (dormant) + checksums + verify script
 
+> **✅ ALREADY IMPLEMENTED:** Tasks 1.1–1.5 and Steps 16–17 of Task 1.6 were completed in a prior session. The scripts, tests, and `package.json` wiring all exist. Only Step 18 (CI workflow) and Task 1.7 (SECURITY.md update) remain.
+
 **Files:**
 - Create: `scripts/electron-notarize.cjs`
 - Create: `scripts/electron-notarize.test.cjs`
@@ -32,7 +34,7 @@
 
 ### Task 1.1: Notarization module — no-op fallback test (RED)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/electron-notarize.test.cjs`:
 
@@ -93,14 +95,14 @@ describe("notarizeApp", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test scripts/electron-notarize.test.cjs`
 Expected: FAIL — `Cannot find module './electron-notarize.cjs'`
 
 ### Task 1.2: Notarization module — minimal implementation (GREEN)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `scripts/electron-notarize.cjs`:
 
@@ -169,12 +171,12 @@ function notarizeApp({ appPath, dmgPath }) {
 module.exports = { notarizeApp, hasAppleCredentials, hasDeveloperIdIdentity };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test scripts/electron-notarize.test.cjs`
 Expected: PASS (1 test, 0 failures)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/electron-notarize.cjs scripts/electron-notarize.test.cjs
@@ -183,7 +185,7 @@ git commit -m "feat(release): add dormant macOS notarization module (M1)"
 
 ### Task 1.3: Wire notarizeApp into the DMG packager
 
-- [ ] **Step 6: Wire the call into electron-package-dmg.cjs**
+- [x] **Step 6: Wire the call into electron-package-dmg.cjs**
 
 Modify `scripts/electron-package-dmg.cjs`. The script is fully synchronous and `notarizeApp` is synchronous too (it only uses `spawnSync`), so the call drops in exactly like the other `run(...)` steps. After the `run("hdiutil", ["verify", dmgPath]);` line (line 89), add a require at the top of the file (with the other requires, lines 1-4) is not needed since it's only used once — require it inline. Replace the tail:
 
@@ -206,12 +208,12 @@ console.log(`Packaged ${dmgPath}`);
 
 A notarization failure (when active) throws from `run()` inside `notarizeApp`, which propagates as an uncaught error and sets the Node process exit code to 1 — matching how the existing `run("hdiutil", ...)` failures are already handled. In the dormant no-op case it logs and returns without error.
 
-- [ ] **Step 7: Verify the packager still parses**
+- [x] **Step 7: Verify the packager still parses**
 
 Run: `node -c scripts/electron-package-dmg.cjs`
 Expected: no output (syntax OK). (We cannot fully run it here without a packaged app; the CI macOS job exercises it.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scripts/electron-package-dmg.cjs
@@ -220,7 +222,7 @@ git commit -m "feat(release): invoke dormant notarization from DMG packager (M1)
 
 ### Task 1.4: Checksum writer + verifier (RED)
 
-- [ ] **Step 9: Write the failing test for the verifier**
+- [x] **Step 9: Write the failing test for the verifier**
 
 Create `scripts/verify-release-checksums.test.cjs`:
 
@@ -273,14 +275,14 @@ describe("verify-release-checksums", () => {
 });
 ```
 
-- [ ] **Step 10: Run test to verify it fails**
+- [x] **Step 10: Run test to verify it fails**
 
 Run: `node --test scripts/verify-release-checksums.test.cjs`
 Expected: FAIL — `Cannot find module './verify-release-checksums.cjs'`
 
 ### Task 1.5: Checksum writer + verifier (GREEN)
 
-- [ ] **Step 11: Implement the verifier**
+- [x] **Step 11: Implement the verifier**
 
 Create `scripts/verify-release-checksums.cjs`:
 
@@ -349,7 +351,7 @@ module.exports = { sha256OfFile, findHashInSums, verifyFileAgainstHash, main };
 if (require.main === module) main();
 ```
 
-- [ ] **Step 12: Implement the checksum writer**
+- [x] **Step 12: Implement the checksum writer**
 
 Create `scripts/write-release-checksums.cjs`:
 
@@ -400,12 +402,12 @@ module.exports = { writeChecksums, listArtifacts, sha256OfFile };
 if (require.main === module) writeChecksums();
 ```
 
-- [ ] **Step 13: Run the verifier test to verify it passes**
+- [x] **Step 13: Run the verifier test to verify it passes**
 
 Run: `node --test scripts/verify-release-checksums.test.cjs`
 Expected: PASS (3 tests)
 
-- [ ] **Step 14: Smoke-test the writer + verifier end-to-end**
+- [x] **Step 14: Smoke-test the writer + verifier end-to-end**
 
 Run:
 ```bash
@@ -413,7 +415,7 @@ mkdir -p dist-electron && printf 'fake mac' > dist-electron/Shelf_9.9.9_arm64.dm
 ```
 Expected: writer logs `Wrote ... (2 entries)`; `cat` shows two lines; the matching lookups exit `0`; the tampered case exits `1`.
 
-- [ ] **Step 15: Commit**
+- [x] **Step 15: Commit**
 
 ```bash
 git add scripts/write-release-checksums.cjs scripts/verify-release-checksums.cjs scripts/verify-release-checksums.test.cjs
@@ -422,7 +424,7 @@ git commit -m "feat(release): add SHA256SUMS writer + verifier for release artif
 
 ### Task 1.6: Wire checksums into npm scripts and CI
 
-- [ ] **Step 16: Add npm scripts**
+- [x] **Step 16: Add npm scripts**
 
 In `package.json`, in the `"scripts"` object, add (next to the other `release:*` scripts):
 
@@ -441,7 +443,7 @@ to:
 "check:electron": "npm run build && npm run test && npm run test:scripts && npm run electron:smoke && ...
 ```
 
-- [ ] **Step 17: Verify the new scripts run**
+- [x] **Step 17: Verify the new scripts run**
 
 Run: `npm run test:scripts`
 Expected: PASS — both `electron-notarize.test.cjs` and `verify-release-checksums.test.cjs` (and the existing `audit-release-bundle.test.cjs`) pass.
@@ -557,7 +559,7 @@ import path from "node:path";
 // electron/backend.cjs is CommonJS and uses node:sqlite. Vitest's node
 // environment can require it directly.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { openDatabase } = require("../../../electron/backend.cjs");
+const { openDatabase } = require("../../electron/backend.cjs");
 
 describe("openDatabase file permissions", () => {
   let dataDir: string;
@@ -658,7 +660,7 @@ git commit -m "fix(backend): restrict opennotion.db and WAL sidecars to 0o600 (L
 - Modify: `src/lib/editorMath.tsx` (comment at `renderFormulaHtml`)
 - Modify: `src/lib/editorMath.test.ts` (add adversarial-output test)
 
-### Task 3.1: Failing test for adversarial KaTeX output (RED)
+### Task 3.1: Regression-lock test for adversarial KaTeX output (LOCK)
 
 - [ ] **Step 1: Add the adversarial test**
 
@@ -696,7 +698,7 @@ describe("renderFormulaHtml XSS regression guard", () => {
 - [ ] **Step 2: Run test to verify current behavior**
 
 Run: `npx vitest run src/lib/editorMath.test.ts`
-Expected: PASS — current `trust: false` config already keeps output clean. (This is a regression lock, so it should pass immediately. If any case fails, investigate before proceeding — that would indicate the current config is less safe than assumed.)
+Expected: PASS — current `trust: false` config already keeps output clean. This is a regression lock (not a TDD "red" step), so it should pass immediately. If any case fails, investigate before proceeding — that would indicate the current config is less safe than assumed.
 
 If all pass, the guard is locked. Proceed to add the code comment.
 
@@ -883,6 +885,8 @@ Change it to compute a CSP and pass it for HTML files:
     const filePath = resolveFileUnderRoot(path.join(__dirname, "..", "dist"), parsed.pathname);
     if (!filePath) return plainTextResponse(404, "Not found");
     const loopback = studioPdfConnectSrc();
+    // SYNC: Keep these directives in sync with the fallback <meta> CSP in
+    // index.html. If you add a directive here, update the meta tag too.
     const csp = [
       "default-src 'self'",
       "script-src 'self'",
