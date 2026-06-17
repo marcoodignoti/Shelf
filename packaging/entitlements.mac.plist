@@ -6,6 +6,13 @@
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
+  <!--
+    Required: Electron Framework is a separately-signed dylib. Without this
+    entitlement, macOS enforces Team ID matching between the main binary and
+    loaded libraries. Under ad-hoc signing (no real Team ID) this causes a
+    DYLD crash at launch ("different Team IDs"). Only removable once the app
+    is signed with a Developer ID so all binaries share one Team ID.
+  -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
 </dict>
