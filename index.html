@@ -2,10 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: opennotion-app: blob:; media-src 'self' opennotion-app: blob:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; worker-src 'self' blob:"
-    />
+    <!-- CSP is enforced via Content-Security-Policy header injected by
+         electron/main.cjs (handleAppProtocolRequest). Do NOT add a <meta>
+         CSP here — dual policies are AND'd per the CSP spec, so a restrictive
+         meta tag would block resources the header explicitly allows. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shelf</title>
   </head>

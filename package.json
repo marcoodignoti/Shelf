@@ -27,7 +27,7 @@
     "perf:frontend": "playwright test --config playwright.perf.config.ts --reporter=list",
     "perf:native": "bash perf/profile-macos.sh",
     "check": "npm run check:electron",
-    "check:electron": "npm run build && npm run test && npm run electron:smoke && npm run electron:smoke:runtime && npm audit --audit-level=moderate && npm run electron:package:dir && npm run electron:smoke:visual && npm run electron:smoke:parity && npm run electron:smoke:stability",
+    "check:electron": "npm run build && npm run test && npm run test:scripts && npm run electron:smoke && npm run electron:smoke:runtime && npm audit --audit-level=moderate && npm run electron:package:dir && npm run electron:smoke:visual && npm run electron:smoke:parity && npm run electron:smoke:stability",
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "node scripts/electron-dev.cjs",
@@ -50,7 +50,9 @@
     "release:update-keypair": "node scripts/generate-update-keypair.cjs",
     "release:update-manifest": "node scripts/write-beta-update-manifest.cjs",
     "release:update-manifest:compat": "node scripts/write-beta-compat-manifest.cjs",
-    "release:verify:macos": "node scripts/electron-verify-macos.cjs"
+    "release:verify:macos": "node scripts/electron-verify-macos.cjs",
+    "release:checksums": "node scripts/write-release-checksums.cjs",
+    "test:scripts": "node --test scripts/*.test.cjs"
   },
   "build": {
     "appId": "com.marcodignoti.shelf",

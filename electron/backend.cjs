@@ -78,6 +78,17 @@ function ensurePrivateDirectory(directoryPath) {
   }
 }
 
+function restrictDatabaseFilePermissions(dbPath) {
+  if (process.platform === "win32") return;
+  for (const candidate of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    try {
+      if (fs.existsSync(candidate)) fs.chmodSync(candidate, 0o600);
+    } catch {
+      // A missing sidecar on a fresh DB, or a chmod race, must not fail startup.
+    }
+  }
+}
+
 function hasColumn(db, table, column) {
   return db.prepare(`SELECT name FROM pragma_table_info(?)`).all(table).some((row) => row.name === column);
 }
@@ -285,6 +296,7 @@ function openDatabase(appConfigDir, appVersion = CURRENT_APP_VERSION) {
   const db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
+  restrictDatabaseFilePermissions(dbPath);
   // Wait instead of failing with SQLITE_BUSY when another connection (e.g. a
   // lingering process from a previous run) briefly holds the write lock.
   db.exec("PRAGMA busy_timeout = 5000");
@@ -320,6 +332,7 @@ function openDatabase(appConfigDir, appVersion = CURRENT_APP_VERSION) {
     db.exec("ROLLBACK");
     throw error;
   }
+  restrictDatabaseFilePermissions(dbPath);
   return db;
 }
 
@@ -2096,4 +2109,5 @@ module.exports = {
   openDatabase,
   runMigrations,
   ensurePrivateDirectory,
+  restrictDatabaseFilePermissions,
 };

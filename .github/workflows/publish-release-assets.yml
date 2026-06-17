@@ -61,6 +61,15 @@ jobs:
       - name: Download CI artifacts
         run: gh run download "${{ inputs.run_id }}" --repo "${{ github.repository }}" --dir artifacts
 
+      - name: Write release checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist-electron
+          cp artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg dist-electron/
+          cp artifacts/Shelf_win-x64/Shelf_*_win-x64.zip dist-electron/
+          cp artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe dist-electron/
+          node scripts/write-release-checksums.cjs
+
       - name: Build signed beta update manifest
         env:
           SHELF_UPDATE_PRIVATE_KEY_PEM: ${{ secrets.SHELF_UPDATE_PRIVATE_KEY_PEM || secrets.OPENNOTION_UPDATE_PRIVATE_KEY_PEM }}
@@ -85,7 +94,8 @@ jobs:
               artifacts/Shelf_macos-arm64/Shelf_*_arm64.dmg \
               artifacts/Shelf_win-x64/Shelf_*_win-x64.zip \
               artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe \
-              artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe.blockmap
+              artifacts/Shelf_win-x64_installer/Shelf_*_setup_win-x64.exe.blockmap \
+              dist-electron/SHA256SUMS
             )
           if [ -f dist-electron/beta-update.json ]; then
             assets+=(dist-electron/beta-update.json)
