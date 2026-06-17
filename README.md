@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://marcoodignoti.github.io/Shelf/"><b>Website</b></a> ·
   <a href="#installation"><b>Download</b></a> ·
   <a href="#why-shelf">Why</a> ·
   <a href="#product-tour">Tour</a> ·
@@ -29,6 +30,22 @@
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/shelf-dark.png">
   <img alt="The Shelf editor with headings, a rendered LaTeX formula, checklists, and a page tree in the sidebar" src="docs/assets/shelf-editor.png">
 </picture>
+
+> 🎬 **Demo coming soon.** A 10–15s GIF of the Studio workflow is in progress
+> (see [`scripts/make-demo-gif.sh`](scripts/make-demo-gif.sh)). Until then, the
+> screenshot above shows the editor; see
+> [Studio: read and write in one place](#studio-read-and-write-in-one-place)
+> for the PDF side.
+
+## Who is this for?
+
+Shelf is for:
+
+- **students** managing lecture notes and PDFs;
+- **researchers** reading papers and writing linked notes;
+- **people who want a Notion-like writing experience** without cloud lock-in;
+- **anyone who wants their notes, PDFs, and annotations stored locally** in an open,
+  exportable format.
 
 ## Why Shelf
 

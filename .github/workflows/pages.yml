@@ -1,0 +1,60 @@
+name: Deploy landing page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/site/**'
+      - 'docs/assets/**'
+      - 'assets/app-icon.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage site
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/assets
+          # Landing page
+          cp -v docs/site/index.html deploy/index.html
+          # Screenshots used by the page
+          cp -v docs/assets/shelf-dark.png          deploy/assets/
+          cp -v docs/assets/shelf-editor.png         deploy/assets/
+          cp -v docs/assets/shelf-studio-pdf.png     deploy/assets/
+          cp -v docs/assets/shelf-slash-menu.png     deploy/assets/
+          cp -v docs/assets/shelf-search.png         deploy/assets/
+          cp -v docs/assets/shelf-home.png           deploy/assets/
+          cp -v docs/assets/shelf-social-preview.png deploy/assets/
+          # App icon (favicon / brand)
+          cp -v assets/app-icon.png deploy/assets/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: deploy
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
