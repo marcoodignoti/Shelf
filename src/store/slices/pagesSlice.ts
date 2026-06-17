@@ -152,6 +152,7 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
     }
   },
   toggleFavoriteAction: async (id, isFavorite) => {
+    const previousPages = get().pages;
     try {
       set((state) => ({
         pages: state.pages.map(p => p.id === id ? { ...p, is_favorite: isFavorite ? 1 : 0 } : p)
@@ -159,10 +160,12 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
       await toggleFavorite(id, isFavorite);
     } catch (error: unknown) {
       logStoreError(error);
+      set({ pages: previousPages });
       get().showError(error);
     }
   },
   toggleTemplateAction: async (id, isTemplate) => {
+    const previousPages = get().pages;
     try {
       set((state) => ({
         pages: state.pages.map(p => p.id === id ? { ...p, is_template: isTemplate ? 1 : 0 } : p)
@@ -170,6 +173,7 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
       await toggleTemplate(id, isTemplate);
     } catch (error: unknown) {
       logStoreError(error);
+      set({ pages: previousPages });
       get().showError(error);
     }
   },
