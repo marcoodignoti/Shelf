@@ -5,6 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { AboutSection } from "./AboutSection";
 import { openExternalUrl } from "../../lib/desktop";
 import { afterEach } from "vitest";
+import { CURRENT_APP_VERSION } from "../../lib/betaUpdates";
 
 const mockShowSuccess = vi.fn();
 const mockShowError = vi.fn();
@@ -52,7 +53,7 @@ describe("AboutSection Component", () => {
 
     // Check titles/labels are present (keys or translated values depending on setup, but resolve to english translations here)
     expect(screen.getByRole("heading", { name: /About Shelf/i })).toBeInTheDocument();
-    expect(screen.getByText(/0.4.1/)).toBeInTheDocument(); // CURRENT_APP_VERSION from betaUpdates is 0.4.1 in package.json/dev contexts
+    expect(screen.getByText(CURRENT_APP_VERSION)).toBeInTheDocument();
   });
 
   it("triggers external URL opening when buttons are clicked", async () => {
