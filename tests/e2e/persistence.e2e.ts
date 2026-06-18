@@ -838,19 +838,21 @@ test("shows a clear media import error notice", async ({ page }) => {
 });
 
 test("centers a block that contains inline math from the formatting toolbar", async ({ page }) => {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-
-  await page.getByText("New page").click();
-  await page.getByText("Blank page").click();
-  await expect(page.locator("textarea[placeholder='Untitled']")).toBeVisible();
-
-  await page.locator("textarea[placeholder='Untitled']").fill("Inline Math Alignment");
-  await page.getByRole("textbox").last().click();
+  await createPageAndFocusEditor(page, "Inline Math Alignment");
   await page.keyboard.type("Maxwell $\\nabla \\cdot \\vec{E}$ equation");
   await expect(page.getByLabel("Formula: \\nabla \\cdot \\vec{E}")).toBeVisible();
 
-  await page.keyboard.press("Meta+A");
-  await page.getByRole("button", { name: "Align text center" }).click();
+  const paragraph = page.locator(".bn-inline-content", { hasText: "Maxwell" }).first();
+  const box = await paragraph.boundingBox();
+  if (!box) throw new Error("paragraph not visible");
+  await page.mouse.click(box.x + 2, box.y + box.height / 2);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+  await page.keyboard.up("Shift");
+
+  const centerButton = page.getByRole("button", { name: "Align text center" });
+  await expect(centerButton).toBeVisible();
+  await centerButton.click();
 
   await page.waitForFunction(
     ({ key }) => {
