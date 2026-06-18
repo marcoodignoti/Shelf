@@ -42,3 +42,7 @@ src-tauri/gen/schemas
 *.njsproj
 *.sln
 *.sw?
+
+# Landing preview staging + raw demo recording
+docs/.stage-landing/
+docs/assets/shelf-demo.mov

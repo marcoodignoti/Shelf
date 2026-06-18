@@ -31,11 +31,13 @@
   <img alt="The Shelf editor with headings, a rendered LaTeX formula, checklists, and a page tree in the sidebar" src="docs/assets/shelf-editor.png">
 </picture>
 
-> 🎬 **Demo coming soon.** A 10–15s GIF of the Studio workflow is in progress
-> (see [`scripts/make-demo-gif.sh`](scripts/make-demo-gif.sh)). Until then, the
-> screenshot above shows the editor; see
-> [Studio: read and write in one place](#studio-read-and-write-in-one-place)
-> for the PDF side.
+<p align="center">
+  <img src="docs/assets/shelf-demo.gif" alt="Shelf Studio demo: paginating a PDF while writing a linked note side by side">
+</p>
+
+> A short screen recording of the Studio workflow — real app, real PDF, real
+> linked note. The GIF above is a trimmed version of `shelf-demo.mov`; the source
+> recording lives in `docs/assets/`.
 
 ## Who is this for?
 
@@ -72,7 +74,7 @@ account.
 Type `/` for structured blocks. Paste LaTeX from anywhere — ChatGPT-style
 `\[ ... \]` fences included — and it becomes a rendered formula block.
 
-![Shelf slash command menu](docs/assets/shelf-slash-menu.png)
+![The Shelf editor](docs/assets/shelf-editor.png)
 
 ### Studio: read and write in one place
 
@@ -82,6 +84,13 @@ single, and two-page modes, and pick up exactly where you left off — even in
 800-page documents, with flat memory use.
 
 ![Shelf Studio: PDF and linked note side by side](docs/assets/shelf-studio-pdf.png)
+
+### Slash commands
+
+`/` opens the block menu — headings, checklists, code, tables, formulas,
+quotes, images, and more.
+
+![Shelf slash command menu](docs/assets/shelf-slash-menu.png)
 
 ### Find anything fast
 
@@ -95,7 +104,7 @@ pages.
 Recents and favorites on the Home dashboard; pages, subpages, Studio projects
 and folders in the sidebar, all reorderable by drag and drop.
 
-![Shelf home dashboard](docs/assets/shelf-home.png)
+![Shelf home favorites](docs/assets/shelf-detail-home.png)
 
 ### Dark mode included
 
@@ -191,10 +200,23 @@ npm run perf           # performance suite (see perf/README.md)
 Release notes live in [`docs/release/notes`](docs/release/notes), performance
 baselines in [`docs/perf`](docs/perf).
 
-Regenerate README screenshots from a built preview:
+Screenshots and the demo video live in [`docs/assets`](docs/assets). There are
+helpers for regenerating them, but the current set was captured by hand from a
+real install:
 
 ```sh
-npm run screenshots:readme
+npm run screenshots:readme            # regenerate showcase screenshots from the mock renderer
+# For a demo GIF/WebM from a screen recording (docs/assets/shelf-demo.mov):
+#   ffmpeg -y -i docs/assets/shelf-demo.mov -t 13 -vf "scale=1280:-2" -c:v libvpx -crf 34 -b:v 0 -an docs/assets/shelf-demo.webm
+```
+
+A static landing page lives in [`docs/site`](docs/site) and deploys to GitHub
+Pages via [`.github/workflows/pages.yml`](.github/workflows/pages.yml). It uses
+GSAP for scroll animations; the minified library is vendored under
+`docs/site/vendor` so there is no build step. Preview it locally:
+
+```sh
+node scripts/serve-preview.mjs        # http://localhost:4399 (landing + asset gallery)
 ```
 
 ## License

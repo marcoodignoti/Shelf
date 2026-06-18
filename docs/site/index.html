@@ -3,372 +3,333 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shelf — A private, local-first workspace for notes and PDFs</title>
-  <meta name="description" content="Read PDFs, write linked notes, search your workspace, and keep everything on your machine. No account. No cloud. No telemetry.">
+  <title>Shelf — Notes and PDFs, kept on your machine</title>
+  <meta name="description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
   <meta name="color-scheme" content="light dark">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Shelf — A private, local-first workspace for notes and PDFs">
-  <meta property="og:description" content="Notion-style writing and a split-screen PDF Studio — everything stays on your machine. No account. No cloud. No telemetry.">
+  <meta property="og:title" content="Shelf — Notes and PDFs, kept on your machine">
+  <meta property="og:description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
   <meta property="og:image" content="assets/shelf-social-preview.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Shelf — A private, local-first workspace for notes and PDFs">
-  <meta name="twitter:description" content="Notion-style writing and a split-screen PDF Studio — everything stays on your machine. No account. No cloud. No telemetry.">
   <meta name="twitter:image" content="assets/shelf-social-preview.png">
   <link rel="icon" href="assets/app-icon.png">
   <style>
+    /* App design system — mirrored from src/index.css (shadcn-style HSL tokens). */
     :root {
-      --bg: #0d1117;
-      --panel: #161b22;
-      --panel-2: #1c232c;
-      --border: rgba(255,255,255,0.08);
-      --text: #e6edf3;
-      --muted: #9aa4b2;
-      --accent: #2ea043;
-      --accent-hover: #46c75a;
-      --maxw: 1080px;
+      --background: 210 20% 97%;
+      --foreground: 222 32% 10%;
+      --card: 0 0% 100%;
+      --primary: 222 32% 10%;
+      --primary-foreground: 210 20% 98%;
+      --secondary: 214 24% 92%;
+      --muted: 214 22% 92%;
+      --muted-foreground: 215 15% 34%;
+      --accent: 214 30% 86%;
+      --border: 214 18% 78%;
+      --ring: 217 82% 42%;
+      --radius: 0.7rem;
+      --bg: hsl(var(--background));
+      --ink: hsl(var(--foreground));
+      --soft: hsl(215 15% 34%);
+      --muted-c: hsl(var(--muted-foreground));
+      --line: hsl(var(--border));
+      --accent-c: hsl(var(--ring));
+      --card-c: hsl(var(--card));
+      --max: 1120px;
+      --serif: "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif;
+      --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
-    @media (prefers-color-scheme: light) {
+    @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #ffffff;
-        --panel: #f6f8fa;
-        --panel-2: #eaeef2;
-        --border: rgba(0,0,0,0.08);
-        --text: #1f2328;
-        --muted: #59636e;
+        --background: 222 20% 7%;
+        --foreground: 214 26% 94%;
+        --card: 222 18% 11%;
+        --primary: 214 26% 94%;
+        --primary-foreground: 222 20% 7%;
+        --secondary: 222 16% 14%;
+        --muted: 222 15% 17%;
+        --muted-foreground: 215 14% 72%;
+        --accent: 220 16% 23%;
+        --border: 220 13% 30%;
+        --ring: 210 90% 70%;
+        --soft: hsl(215 14% 72%);
       }
     }
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
     body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
+      margin: 0; background: var(--bg); color: var(--ink);
+      font-family: var(--sans); font-size: 17px; line-height: 1.65;
+      -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     }
     a { color: inherit; }
-    img { max-width: 100%; display: block; }
-    .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px; }
+    img, video { max-width: 100%; display: block; }
+    :where(a, button):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+    ::selection { background: hsl(var(--ring)); color: #fff; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 32px; }
 
-    /* Header */
-    header.top {
-      position: sticky; top: 0; z-index: 10;
-      background: color-mix(in srgb, var(--bg) 85%, transparent);
-      backdrop-filter: saturate(160%) blur(10px);
-      border-bottom: 1px solid var(--border);
+    /* ---------- Nav ---------- */
+    nav.bar {
+      position: sticky; top: 0; z-index: 50;
+      background: color-mix(in srgb, var(--bg) 78%, transparent);
+      backdrop-filter: blur(14px) saturate(160%);
+      border-bottom: 1px solid transparent;
+      transition: border-color .3s ease;
     }
-    .top-row { display: flex; align-items: center; gap: 12px; height: 60px; }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; }
-    .brand img { width: 28px; height: 28px; border-radius: 7px; }
-    nav.spacer { flex: 1; }
-    .nav-links { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 6px 10px; border-radius: 8px; }
-    .nav-links a:hover { color: var(--text); background: var(--panel); }
+    nav.bar.scrolled { border-bottom-color: var(--line); }
+    nav.bar .row { display: flex; align-items: center; gap: 18px; height: 60px; }
+    .mark { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -0.015em; font-size: 15px; text-decoration: none; }
+    .mark img { width: 22px; height: 22px; border-radius: 6px; }
+    .grow { flex: 1; }
+    .links { display: flex; align-items: center; gap: 2px; }
+    .links a { text-decoration: none; color: var(--soft); font-size: 14px; font-weight: 500; padding: 8px 14px; border-radius: 8px; transition: color .2s, background .2s; }
+    .links a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+    .links .get { color: hsl(var(--primary-foreground)); background: hsl(var(--primary)); padding: 9px 17px; font-weight: 600; margin-left: 8px; border-radius: 9px; transition: opacity .2s; }
+    .links .get:hover { opacity: .85; color: hsl(var(--primary-foreground)); }
 
-    /* Hero */
-    .hero { padding: 72px 0 32px; text-align: center; }
-    .hero h1 {
-      font-size: clamp(32px, 5.5vw, 56px);
-      line-height: 1.08;
-      margin: 0 0 16px;
-      letter-spacing: -0.02em;
-      font-weight: 750;
-    }
-    .hero h1 .grad {
-      background: linear-gradient(90deg, #2ea043, #58a6ff);
-      -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .hero p.sub {
-      font-size: clamp(17px, 2vw, 21px);
-      color: var(--muted);
-      max-width: 720px;
-      margin: 0 auto 28px;
-    }
-    .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 12px 20px; border-radius: 10px; text-decoration: none;
-      font-weight: 600; font-size: 15px; border: 1px solid transparent;
-      transition: transform .05s ease, background .15s ease, border-color .15s ease;
-    }
+    /* ---------- Hero ---------- */
+    header.hero { padding: 140px 0 72px; text-align: center; }
+    .headline { font-family: var(--serif); font-weight: 600; margin: 0;
+      letter-spacing: -0.03em; font-size: clamp(44px, 8vw, 88px); line-height: 1.0; }
+    .headline .line { display: block; overflow: hidden; }
+    .headline .line > span { display: block; will-change: transform; }
+    .headline .em { color: var(--accent-c); font-style: italic; font-weight: 600; }
+    .lede { max-width: 560px; color: var(--soft); font-size: clamp(18px, 2vw, 22px); line-height: 1.45; margin: 28px auto 0; opacity: 0; }
+    .cta { margin-top: 36px; opacity: 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+      font-size: 15px; font-weight: 600; padding: 13px 24px; border-radius: calc(var(--radius) + 4px);
+      border: 1px solid transparent; transition: background .2s, transform .08s, opacity .2s; }
     .btn:active { transform: translateY(1px); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: var(--accent-hover); }
-    .btn-ghost { background: var(--panel); color: var(--text); border-color: var(--border); }
-    .btn-ghost:hover { background: var(--panel-2); }
+    .btn-fill { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+    .btn-fill:hover { opacity: .88; }
+    .btn-line { color: var(--ink); border-color: var(--line); }
+    .btn-line:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); border-color: var(--soft); }
 
-    .hero-meta {
-      margin-top: 22px; color: var(--muted); font-size: 13px;
-      display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+    /* Hero video */
+    .hero-media { margin: 80px auto 0; max-width: 1040px; opacity: 0; transform: translateY(14px); }
+    .hero-media video { width: 100%; border-radius: 12px; box-shadow: 0 20px 60px -15px rgba(0,0,0,.18); }
+
+    /* ---------- Feature rooms (Notion-style tall sections) ---------- */
+    section.room { padding: 120px 0; }
+    .room-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: center; }
+    .room-inner.flip { direction: rtl; }
+    .room-inner.flip > * { direction: ltr; }
+    .room-text { max-width: 460px; }
+    .eyebrow { font-size: 14px; font-weight: 600; color: var(--accent-c); margin: 0 0 16px; letter-spacing: 0; }
+    h2.title { font-family: var(--serif); font-weight: 600; letter-spacing: -0.025em;
+      font-size: clamp(30px, 4.6vw, 50px); line-height: 1.05; margin: 0 0 18px; }
+    .room-text p { color: var(--soft); font-size: 19px; line-height: 1.5; margin: 0; }
+    .room-text .more { margin-top: 18px; font-size: 15px; color: var(--muted-c); line-height: 1.7; }
+    .room-media img { width: 100%; border-radius: 12px; box-shadow: 0 20px 60px -20px rgba(0,0,0,.16); }
+    @media (max-width: 880px) {
+      .room-inner, .room-inner.flip { grid-template-columns: 1fr; gap: 40px; direction: ltr; }
     }
-    .hero-meta .dot { opacity: .4; }
+    .reveal { opacity: 0; transform: translateY(18px); }
 
-    /* Hero shot */
-    .hero-shot { margin: 40px auto 0; max-width: 980px; }
-    .hero-shot img {
-      width: 100%; border-radius: 14px; border: 1px solid var(--border);
-      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
-    }
+    /* ---------- Editor detail strip ---------- */
+    .detail-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .detail-strip img { width: 100%; border-radius: 10px; }
+    @media (max-width: 680px) { .detail-strip { grid-template-columns: 1fr; } }
 
-    /* Sections */
-    section.block { padding: 64px 0; border-top: 1px solid var(--border); }
-    .eyebrow { color: var(--accent); font-weight: 650; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin: 0 0 8px; }
-    h2.section-title { font-size: clamp(26px, 3.4vw, 36px); margin: 0 0 14px; letter-spacing: -0.01em; font-weight: 700; }
-    p.section-lede { color: var(--muted); font-size: 17px; max-width: 640px; margin: 0 0 36px; }
+    /* ---------- Privacy — quiet room ---------- */
+    .privacy-rows { max-width: 640px; margin: 0 auto; }
+    .privacy-row { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: baseline;
+      padding: 22px 0; border-bottom: 1px solid var(--line); }
+    .privacy-row:first-child { border-top: 1px solid var(--line); }
+    .privacy-row .q { font-family: var(--serif); font-size: clamp(20px, 2.5vw, 26px); font-weight: 500; letter-spacing: -0.01em; }
+    .privacy-row .a { color: var(--accent-c); font-weight: 600; font-size: 15px; white-space: nowrap; }
 
-    /* Feature grid */
-    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .card {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
-    }
-    .card .ico { font-size: 22px; margin-bottom: 8px; }
-    .card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 650; }
-    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+    /* ---------- Final CTA room ---------- */
+    .finale { text-align: center; padding: 140px 0 120px; }
+    .finale h2 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.03em;
+      font-size: clamp(36px, 6vw, 64px); line-height: 1.0; margin: 0 auto 28px; max-width: 720px; }
+    .finale .sub { color: var(--soft); font-size: 19px; margin: 0 auto 36px; max-width: 480px; }
 
-    /* Split feature (Studio) */
-    .split { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 32px; align-items: center; }
-    @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
-    .split img { border-radius: 12px; border: 1px solid var(--border); width: 100%; }
-    .split ul { margin: 16px 0 0; padding-left: 18px; color: var(--text); }
-    .split ul li { margin: 8px 0; }
-    .split ul li .muted { color: var(--muted); }
+    /* Download list (inside or near finale) */
+    .dl-wrap { max-width: 640px; margin: 0 auto; }
+    .dl-item { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 16px 24px;
+      padding: 20px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; transition: transform .2s ease; }
+    .dl-item:first-child { border-top: 1px solid var(--line); }
+    .dl-item:hover { transform: translateX(6px); }
+    .dl-item .name { font-weight: 600; font-size: 17px; }
+    .dl-item .note { color: var(--muted-c); font-size: 14px; margin-top: 3px; max-width: 420px; }
+    .dl-item .ext { font-family: var(--mono); font-size: 13px; color: var(--muted-c); }
+    .dl-item .arrow { color: var(--accent-c); font-size: 18px; transition: transform .2s ease; }
+    .dl-item:hover .arrow { transform: translateX(3px); }
 
-    /* Gallery */
-    .gallery { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    .gallery figure { margin: 0; }
-    .gallery img { border-radius: 12px; border: 1px solid var(--border); width: 100%; }
-    .gallery figcaption { margin-top: 8px; color: var(--muted); font-size: 14px; }
+    footer { padding: 56px 0 72px; border-top: 1px solid var(--line); }
+    footer .frow { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    footer .small { color: var(--muted-c); font-size: 14px; }
+    footer .links a { text-decoration: none; color: var(--muted-c); font-size: 14px; padding: 8px 0; margin-left: 16px; }
+    footer .links a:first-child { margin-left: 0; }
+    footer .links a:hover { color: var(--ink); }
 
-    /* Privacy strip */
-    .privacy {
-      background: linear-gradient(180deg, var(--panel), var(--bg));
-      border: 1px solid var(--border); border-radius: 16px; padding: 28px;
-    }
-    .privacy .row { display: flex; gap: 24px; flex-wrap: wrap; }
-    .privacy .pitem { flex: 1 1 200px; }
-    .privacy .pitem strong { display: block; font-size: 22px; font-weight: 750; }
-    .privacy .pitem span { color: var(--muted); font-size: 14px; }
-
-    /* Download */
-    .dl-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .dl-table th, .dl-table td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border); font-size: 15px; }
-    .dl-table th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; }
-    .dl-table td.os { font-weight: 600; }
-    .dl-note { color: var(--muted); font-size: 13px; margin-top: 10px; }
-
-    /* Footer */
-    footer { border-top: 1px solid var(--border); padding: 36px 0 60px; color: var(--muted); font-size: 14px; }
-    footer .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
-
-    code.kbd {
-      background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 6px; padding: 1px 6px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    @media (prefers-reduced-motion: reduce) {
+      .headline .line > span, .lede, .cta, .hero-media, .reveal { opacity: 1 !important; transform: none !important; }
+      html { scroll-behavior: auto !important; }
+      * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
   </style>
 </head>
 <body>
 
-<header class="top">
-  <div class="wrap top-row">
-    <div class="brand">
-      <img src="assets/app-icon.png" alt="Shelf icon">
-      <span>Shelf</span>
-    </div>
-    <nav class="spacer"></nav>
-    <nav class="nav-links">
-      <a href="#why">Why</a>
+<nav class="bar" id="bar">
+  <div class="wrap row">
+    <a class="mark" href="#"><img src="assets/app-icon.png" alt=""> Shelf</a>
+    <span class="grow"></span>
+    <span class="links">
       <a href="#studio">Studio</a>
+      <a href="#editor">Editor</a>
       <a href="#privacy">Privacy</a>
-      <a href="#download">Download</a>
       <a href="https://github.com/marcoodignoti/Shelf">GitHub</a>
-    </nav>
+      <a class="get" href="https://github.com/marcoodignoti/Shelf/releases/latest">Get Shelf</a>
+    </span>
   </div>
-</header>
+</nav>
 
 <main>
 
   <!-- HERO -->
-  <section class="hero wrap">
-    <h1>A private, local-first workspace<br>for <span class="grad">notes and PDFs</span></h1>
-    <p class="sub">
-      Notion-style writing and a split-screen PDF Studio — read sources, write linked
-      notes, and keep everything on your machine. No account. No cloud. No telemetry.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/marcoodignoti/Shelf/releases/latest">Download Shelf</a>
-      <a class="btn btn-ghost" href="https://github.com/marcoodignoti/Shelf">View on GitHub</a>
+  <header class="hero wrap">
+    <h1 class="headline">
+      <span class="line"><span>Your notes.</span></span>
+      <span class="line"><span>Your <em class="em">PDFs.</em></span></span>
+      <span class="line"><span>Your machine.</span></span>
+    </h1>
+    <p class="lede">A calm writing surface and a split-screen PDF reader. Read sources, write linked notes — nothing leaves your computer.</p>
+    <div class="cta">
+      <a class="btn btn-fill" href="https://github.com/marcoodignoti/Shelf/releases/latest">Download for macOS &amp; Windows</a>
+      <a class="btn btn-line" href="https://github.com/marcoodignoti/Shelf">View source</a>
     </div>
-    <div class="hero-meta">
-      <span>macOS · Windows</span>
-      <span class="dot">•</span>
-      <span>Open source, MIT</span>
-      <span class="dot">•</span>
-      <span>SQLite on your disk</span>
-      <span class="dot">•</span>
-      <span>Beta</span>
-    </div>
-    <div class="hero-shot">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="assets/shelf-dark.png">
-        <img src="assets/shelf-editor.png" alt="The Shelf editor: headings, a rendered LaTeX formula, checklists, and a page tree in the sidebar">
-      </picture>
-    </div>
-  </section>
 
-  <!-- WHY -->
-  <section class="block wrap" id="why">
-    <p class="eyebrow">Why Shelf</p>
-    <h2 class="section-title">A polished writing surface — without the cloud lock-in</h2>
-    <p class="section-lede">
-      Shelf is for students, researchers, and anyone who reads a lot of PDFs and wants
-      their notes, sources, and annotations stored locally in an open, exportable format.
-    </p>
-    <div class="grid">
-      <div class="card">
-        <div class="ico">📝</div>
-        <h3>A real editor</h3>
-        <p>Slash commands, headings, checklists, code blocks, KaTeX formulas, quotes, tables, images, video, and drag-and-drop blocks.</p>
-      </div>
-      <div class="card">
-        <div class="ico">📚</div>
-        <h3>A real PDF workflow</h3>
-        <p>Read a source and write the linked note side by side. Position, zoom, and layout are remembered per document.</p>
-      </div>
-      <div class="card">
-        <div class="ico">🔎</div>
-        <h3>Find anything fast</h3>
-        <p>Press <code class="kbd">⌘K</code> to search titles and full page content, and jump straight to recent pages.</p>
-      </div>
-      <div class="card">
-        <div class="ico">📦</div>
-        <h3>Portable by default</h3>
-        <p>Export any page or page tree as Markdown or JSON. Your database is backed up automatically before every update.</p>
-      </div>
+    <div class="hero-media">
+      <video autoplay muted loop playsinline poster="assets/shelf-studio-pdf.png">
+        <source src="assets/shelf-demo.webm" type="video/webm">
+      </video>
     </div>
-  </section>
+  </header>
 
-  <!-- STUDIO -->
-  <section class="block wrap" id="studio">
-    <div class="split">
-      <div>
-        <img src="assets/shelf-studio-pdf.png" alt="Shelf Studio: a PDF on the left and a linked note on the right">
+  <!-- ROOM: Studio -->
+  <section class="room" id="studio">
+    <div class="wrap room-inner reveal">
+      <div class="room-media">
+        <img src="assets/shelf-studio-pdf.png" alt="Shelf Studio: PDF on the left, linked note on the right">
       </div>
-      <div>
+      <div class="room-text">
         <p class="eyebrow">Studio</p>
-        <h2 class="section-title">Read and write in one place</h2>
-        <p style="color: var(--muted); margin: 0 0 8px;">
-          Import a PDF and Shelf pairs it with a linked note in a split workspace.
-          Everything you read and everything you write stays together — and stays local.
-        </p>
-        <ul>
-          <li>Page through with arrow keys or trackpad swipes.</li>
-          <li>Continuous, single, and two-page reading modes.</li>
-          <li>Viewer state — position, zoom, layout — is remembered per document.</li>
-          <li><span class="muted">Flat memory use, even in 800-page documents.</span></li>
-        </ul>
+        <h2 class="title">Read and write in one place.</h2>
+        <p>Import a PDF and Shelf pairs it with a linked note. Page through the source, write beside it, and pick up exactly where you left off.</p>
+        <p class="more">Position, zoom, and layout are remembered per document. Continuous, single, and two-page reading modes. Flat memory, even in 800-page documents.</p>
       </div>
     </div>
   </section>
 
-  <!-- GALLERY -->
-  <section class="block wrap" id="tour">
-    <p class="eyebrow">Tour</p>
-    <h2 class="section-title">The whole workspace</h2>
-    <p class="section-lede">Editor, Studio, search, and home dashboard — Shelf follows your system theme or your explicit choice.</p>
-    <div class="gallery">
-      <figure>
-        <img src="assets/shelf-slash-menu.png" alt="Slash command menu">
-        <figcaption>Structured blocks from a single keystroke.</figcaption>
-      </figure>
-      <figure>
-        <img src="assets/shelf-search.png" alt="Command palette search">
-        <figcaption>⌘K searches titles and full page content.</figcaption>
-      </figure>
-      <figure>
-        <img src="assets/shelf-home.png" alt="Home dashboard with recents and favorites">
-        <figcaption>Recents, favorites, and a tidy sidebar.</figcaption>
-      </figure>
-    </div>
-  </section>
-
-  <!-- PRIVACY -->
-  <section class="block wrap" id="privacy">
-    <p class="eyebrow">Privacy model</p>
-    <h2 class="section-title">No account. No cloud. No telemetry.</h2>
-    <p class="section-lede">
-      Shelf has no account system and no cloud backend. Everything lives in SQLite on
-      your machine, in formats you can export at any time.
-    </p>
-    <div class="privacy">
-      <div class="row">
-        <div class="pitem"><strong>0</strong><span>accounts required</span></div>
-        <div class="pitem"><strong>0</strong><span>cloud servers</span></div>
-        <div class="pitem"><strong>0</strong><span>telemetry requests</span></div>
-        <div class="pitem"><strong>100%</strong><span>local-first by design</span></div>
+  <!-- ROOM: Editor (flipped) -->
+  <section class="room" id="editor">
+    <div class="wrap room-inner flip reveal">
+      <div class="room-media">
+        <img src="assets/shelf-editor.png" alt="The Shelf editor">
+        <div class="detail-strip">
+          <img src="assets/shelf-detail-formula.png" alt="Rendered formula">
+          <img src="assets/shelf-detail-table.png" alt="Table">
+          <img src="assets/shelf-detail-code.png" alt="Code block">
+        </div>
       </div>
-      <p class="dl-note" style="margin-top:20px;">
-        Build artifacts never include your personal database — an installed build starts
-        from that computer's own empty workspace. Signed update manifests and SHA-256
-        checks keep assisted updates tied to official Shelf releases.
-      </p>
+      <div class="room-text">
+        <p class="eyebrow">Editor</p>
+        <h2 class="title">A surface that gets out of the way.</h2>
+        <p>Slash commands, headings, checklists, tables, code, and rendered formulas — the blocks you actually use, without the cloud.</p>
+        <p class="more">Paste LaTeX from anywhere — ChatGPT-style `\[ ... \]` fences included — and it becomes a rendered formula block. Export any page or tree as Markdown or JSON.</p>
+      </div>
     </div>
   </section>
 
-  <!-- DOWNLOAD -->
-  <section class="block wrap" id="download">
-    <p class="eyebrow">Download</p>
-    <h2 class="section-title">Get the latest beta</h2>
-    <p class="section-lede">
-      Grab the build for your platform from the GitHub releases page.
-    </p>
-    <table class="dl-table">
-      <thead>
-        <tr><th>Platform</th><th>File</th><th>Notes</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="os">macOS (Apple Silicon)</td>
-          <td><code>Shelf_&lt;version&gt;_arm64.dmg</code></td>
-          <td>Ad-hoc signed; first launch needs one extra step (right-click → Open).</td>
-        </tr>
-        <tr>
-          <td class="os">Windows 10/11 (x64)</td>
-          <td><code>Shelf_&lt;version&gt;_setup_win-x64.exe</code></td>
-          <td>Installer with signed in-app update notice. Not yet Authenticode-signed.</td>
-        </tr>
-        <tr>
-          <td class="os">Windows portable</td>
-          <td><code>Shelf_&lt;version&gt;_win-x64.zip</code></td>
-          <td>Extract and run <code>Shelf.exe</code>.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="dl-note">
-      On macOS, Gatekeeper may warn about an unidentified developer — the build is
-      hardened-runtime but not notarized yet. On Windows, SmartScreen may warn on first
-      run — choose <strong>More info → Run anyway</strong>. Signing and notarization are
-      tracked openly in the repository.
-    </p>
-    <div class="cta-row" style="justify-content:flex-start; margin-top:22px;">
-      <a class="btn btn-primary" href="https://github.com/marcoodignoti/Shelf/releases/latest">Go to releases</a>
-      <a class="btn btn-ghost" href="https://github.com/marcoodignoti/Shelf#installation">Install guide</a>
+  <!-- ROOM: Privacy (centered, quiet) -->
+  <section class="room" id="privacy">
+    <div class="wrap reveal">
+      <div class="room-text" style="margin:0 auto 56px;text-align:center">
+        <p class="eyebrow">Privacy</p>
+        <h2 class="title">Private by design.</h2>
+        <p style="margin:0 auto">Everything lives in SQLite on your disk, in formats you can export any time. No account, no cloud, no telemetry.</p>
+      </div>
+      <div class="privacy-rows">
+        <div class="privacy-row"><span class="q">Accounts you need to create</span><span class="a">None</span></div>
+        <div class="privacy-row"><span class="q">Cloud servers holding your notes</span><span class="a">Zero</span></div>
+        <div class="privacy-row"><span class="q">Telemetry or analytics requests</span><span class="a">Zero</span></div>
+        <div class="privacy-row"><span class="q">Where your data actually lives</span><span class="a">On your machine</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINALE: CTA + download -->
+  <section class="finale">
+    <div class="wrap">
+      <h2>Shelf is yours.</h2>
+      <p class="sub">Free, MIT-licensed. Pick your platform and start writing.</p>
+      <div class="dl-wrap reveal">
+        <a class="dl-item" href="https://github.com/marcoodignoti/Shelf/releases/latest">
+          <div><div class="name">macOS · Apple Silicon</div><div class="note">Ad-hoc signed — right-click → Open on first launch.</div></div>
+          <span class="ext">.dmg</span><span class="arrow">→</span>
+        </a>
+        <a class="dl-item" href="https://github.com/marcoodignoti/Shelf/releases/latest">
+          <div><div class="name">Windows 10/11 · x64</div><div class="note">Installer with signed in-app updates — SmartScreen warns.</div></div>
+          <span class="ext">.exe</span><span class="arrow">→</span>
+        </a>
+        <a class="dl-item" href="https://github.com/marcoodignoti/Shelf/releases/latest">
+          <div><div class="name">Windows · portable</div><div class="note">No installer — extract and run.</div></div>
+          <span class="ext">.zip</span><span class="arrow">→</span>
+        </a>
+      </div>
+      <div class="cta reveal" style="margin-top:40px">
+        <a class="btn btn-fill" href="https://github.com/marcoodignoti/Shelf/releases/latest">Download Shelf</a>
+      </div>
     </div>
   </section>
 
 </main>
 
 <footer>
-  <div class="wrap row">
-    <div>Shelf is open source under the MIT license.</div>
-    <div class="nav-links">
+  <div class="wrap frow">
+    <span class="small">Shelf — open source, MIT.</span>
+    <span class="links">
       <a href="https://github.com/marcoodignoti/Shelf">GitHub</a>
       <a href="https://github.com/marcoodignoti/Shelf/releases">Releases</a>
       <a href="https://github.com/marcoodignoti/Shelf/issues">Issues</a>
-    </div>
+    </span>
   </div>
 </footer>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script>
+  gsap.registerPlugin(ScrollTrigger);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (!reduce) {
+    const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
+    // Signature: three headline lines rise from behind a mask, in sequence.
+    tl.from(".headline .line > span", { yPercent: 110, duration: 1.0, stagger: 0.11 }, 0.1)
+      .from(".lede", { opacity: 0, y: 12, duration: 0.7, ease: "power2.out" }, "-=0.45")
+      .from(".cta", { opacity: 0, y: 12, duration: 0.7, ease: "power2.out" }, "-=0.55")
+      .from(".hero-media", { opacity: 0, y: 18, duration: 1.1, ease: "power3.out" }, "-=0.4");
+
+    // Each feature room fades in as it enters the viewport.
+    gsap.utils.toArray(".reveal").forEach((el) => {
+      gsap.to(el, {
+        opacity: 1, y: 0, duration: 0.9, ease: "power2.out",
+        scrollTrigger: { trigger: el, start: "top 82%" },
+      });
+    });
+
+    // Nav hairline appears once scrolled past the hero.
+    const bar = document.getElementById("bar");
+    ScrollTrigger.create({ start: "top -80", onToggle: (s) => bar.classList.toggle("scrolled", s.isActive) });
+  } else {
+    gsap.set([".lede", ".cta", ".hero-media", ".reveal"], { opacity: 1, y: 0 });
+  }
+</script>
 
 </body>
 </html>

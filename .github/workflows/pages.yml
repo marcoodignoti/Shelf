@@ -29,17 +29,21 @@ jobs:
       - name: Stage site
         run: |
           set -euo pipefail
-          mkdir -p deploy/assets
-          # Landing page
-          cp -v docs/site/index.html deploy/index.html
-          # Screenshots used by the page
-          cp -v docs/assets/shelf-dark.png          deploy/assets/
-          cp -v docs/assets/shelf-editor.png         deploy/assets/
-          cp -v docs/assets/shelf-studio-pdf.png     deploy/assets/
-          cp -v docs/assets/shelf-slash-menu.png     deploy/assets/
-          cp -v docs/assets/shelf-search.png         deploy/assets/
-          cp -v docs/assets/shelf-home.png           deploy/assets/
-          cp -v docs/assets/shelf-social-preview.png deploy/assets/
+          mkdir -p deploy/assets deploy/vendor
+          # Landing page + vendored JS (GSAP, no build step)
+          cp -v docs/site/index.html              deploy/index.html
+          cp -v docs/site/vendor/gsap.min.js      deploy/vendor/
+          cp -v docs/site/vendor/ScrollTrigger.min.js deploy/vendor/
+          # Screenshots actually referenced by the landing
+          cp -v docs/assets/shelf-editor.png          deploy/assets/
+          cp -v docs/assets/shelf-studio-pdf.png      deploy/assets/
+          cp -v docs/assets/shelf-detail-formula.png  deploy/assets/
+          cp -v docs/assets/shelf-detail-table.png    deploy/assets/
+          cp -v docs/assets/shelf-detail-code.png     deploy/assets/
+          cp -v docs/assets/shelf-social-preview.png  deploy/assets/
+          # Demo video (WebM for <video>, GIF as fallback)
+          cp -v docs/assets/shelf-demo.webm deploy/assets/
+          cp -v docs/assets/shelf-demo.gif  deploy/assets/
           # App icon (favicon / brand)
           cp -v assets/app-icon.png deploy/assets/
 
