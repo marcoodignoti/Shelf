@@ -13,7 +13,7 @@ import {
   updateStudioDocumentViewerState,
 } from '../../lib/studio';
 import { HOME_PAGE_ID, resolveCurrentPageIdAfterDeletion } from '../../lib/navigation';
-import { pageTreeIds } from './helpers';
+import { logStoreError, mergePageMetadataWithHydratedContent, pageTreeIds } from './helpers';
 import type { AppState } from '../useAppStore';
 
 export interface StudioSlice {
@@ -62,6 +62,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
         return { studioDocuments, studioDocumentPageLinks, currentStudioDocumentId, pages, error: null };
       });
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
     }
   },
@@ -81,13 +82,14 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
       set((state) => ({
         studioDocuments: [document, ...state.studioDocuments.filter((candidate) => candidate.id !== document.id)],
         studioDocumentPageLinks,
-        pages,
+        pages: mergePageMetadataWithHydratedContent(pages, state.pages),
         currentStudioDocumentId: opensInPageTree ? null : document.id,
         currentPageId: opensInPageTree ? document.id : state.currentPageId,
         error: null
       }));
       return document;
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
       return null;
     }
@@ -106,6 +108,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
       }));
       return document;
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
       return null;
     }
@@ -120,6 +123,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
     try {
       await updateStudioDocumentViewerState(id, { ...updates, last_opened_at });
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
       await get().fetchStudioDocuments();
     }
@@ -138,6 +142,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
       }));
       return note;
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
       await get().fetchStudioDocuments();
       return null;
@@ -167,6 +172,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
     try {
       await renameStudioDocument(id, nextTitle);
     } catch (error: unknown) {
+      logStoreError(error);
       set({ studioDocuments: previousDocuments, pages: previousPages });
       get().showError(error);
     }
@@ -199,6 +205,7 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
       });
       localStorage.setItem('opennotion-current-page-id', nextCurrentPageId || HOME_PAGE_ID);
     } catch (error: unknown) {
+      logStoreError(error);
       get().showError(error);
       await get().fetchStudioDocuments();
     }

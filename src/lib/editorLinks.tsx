@@ -6,7 +6,7 @@ import type { MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "../components/FloatingPopover";
 import type { Page } from "./db";
-import { invoke } from "./desktop";
+import { showCharacterPalette } from "./desktop";
 import { useT, type TranslationKey } from "./i18n";
 import { normalizePageIcon } from "./pageMetadata";
 
@@ -113,7 +113,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
         const input = iconInputRef.current;
         input?.focus();
         input?.setSelectionRange(0, input.value.length);
-        void invoke("show_character_palette").catch((error: unknown) => {
+        void showCharacterPalette().catch((error: unknown) => {
           console.error("Failed to open character palette:", error);
         });
       };

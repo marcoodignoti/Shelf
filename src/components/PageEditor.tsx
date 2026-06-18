@@ -18,11 +18,9 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Smile, Star, Trash2, X } from "lucide-react";
-import { RiFormula } from "react-icons/ri";
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
-import { clampContextMenuPosition } from "../lib/contextMenu";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropTargetFromPoint, BlockDropTarget, clearBlockDropIndicator, moveEditorBlock } from "../lib/editorBlockDrag";
 import {
@@ -31,33 +29,25 @@ import {
   disableSpellcheck,
   headingItemsFromBlocks,
   HeadingRailItem,
-  isEmptyEditorBlock,
   isNativeTextInput,
   keepEditorCaretInView,
   preserveEditorScroll,
 } from "../lib/editorDom";
 import { pageBreadcrumb } from "../lib/breadcrumb";
-import { defaultDatabaseSchema } from "../lib/database";
-import { exportFilesWithDialog, invoke } from "../lib/desktop";
-import { createPageMarkdownRenderer } from "../lib/exportMarkdown";
-import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from "../lib/exportPages";
-import { coverImageSrc, importCoverImageFromDialog, importEditorImage, importEditorMedia, importEditorVideo, updatePage, Page } from "../lib/db";
-import { editorSaveReducer, errorMessage, saveStatusLabel } from "../lib/editorSaveState";
+import { showCharacterPalette } from "../lib/desktop";
+import { coverImageSrc, getPage, importCoverImageFromDialog, Page } from "../lib/db";
+import { databaseParentPageForEditor, templatePagesForEditor } from "../lib/editorPageCollections";
+import { saveStatusLabel } from "../lib/editorSaveState";
 import { useLocale, useT } from "../lib/i18n";
 import { OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
-import { blocksFromPastedMathText, formulaInputFromBlockContent, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
-import { editorMediaBlockProps, editorMediaKindForFile, editorMediaUserMessage, type EditorMediaKind } from "../lib/editorMedia";
-import { pageContentToSearchText, parsePageBlocks } from "../lib/pageContent";
+import { formulaInputFromBlockContent, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
-import { childPagesForParent, moveTargetPages } from "../lib/pageTree";
-import { reorderedSiblingIds } from "../lib/pageOrder";
+import { titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
+import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
-import { CLOSE_OPEN_OVERLAYS_EVENT, closeOpenOverlays } from "../lib/overlay";
 import {
-  dataTransferFiles,
-  dataTransferHasSupportedMedia,
   eventPathIncludesSelector,
-  insertEditorMediaBlocks,
   openNotionPageLinkItems,
   openNotionSlashMenuItems,
   slashMenuElement,
@@ -65,20 +55,14 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { useUIStore } from "../store/useUIStore";
 import { FloatingPopover } from "./FloatingPopover";
+import { SubpageActionsMenu } from "./SubpageActionsMenu";
+import { useEditorAutosave } from "./useEditorAutosave";
+import { handleEditorPasteWithMedia, uploadEditorMediaFile, useEditorMediaDrop } from "./useEditorMediaImport";
+import { usePageActions } from "./usePageActions";
+import { useSubpageActions } from "./useSubpageActions";
+import { useSubpageDrag } from "./useSubpageDrag";
 
 const ICON_OPTIONS = ["📄", "✅", "💡", "📌", "🚀", "🧠", "🛠️", "📚", "🎯", "✨", "🔥", "📝"];
-
-type SubpageDropTarget = {
-  pageId: string;
-  position: "before" | "after";
-};
-
-type SubpageDragSession = {
-  pageId: string;
-  startX: number;
-  startY: number;
-  active: boolean;
-};
 
 function ShelfSideMenu() {
   return (
@@ -254,7 +238,7 @@ function ShelfBlockTypeSelect() {
       {
         name: "Formula",
         type: "formula",
-        icon: RiFormula,
+        icon: Sigma,
       },
     ],
     [editor]
@@ -543,7 +527,46 @@ function SubpageCreateMenu({
   );
 }
 
-export function Editor({
+export function Editor(props: {
+  page: Page;
+  pages: Page[];
+  onSelectPage: (id: string) => void;
+  variant?: "page" | "studio";
+}) {
+  const { page } = props;
+  const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
+  const showError = useAppStore((state) => state.showError);
+  const t = useT();
+
+  useEffect(() => {
+    if (page.content_loaded !== 0) return;
+    let cancelled = false;
+    getPage(page.id)
+      .then((fullPage) => {
+        if (cancelled || !fullPage) return;
+        updatePageOptimistically(fullPage.id, fullPage);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) showError(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page.content_loaded, page.id, showError, updatePageOptimistically]);
+
+  if (page.content_loaded === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        {t("common.loadingWorkspace")}
+      </div>
+    );
+  }
+
+  return <EditorSurface {...props} />;
+}
+
+function EditorSurface({
   page,
   pages,
   onSelectPage,
@@ -554,13 +577,6 @@ export function Editor({
   onSelectPage: (id: string) => void;
   variant?: "page" | "studio";
 }) {
-  const saveTimeoutRef = useRef<number | null>(null);
-  const pendingUpdatesRef = useRef<Partial<Page>>({});
-  // Content edits only mark this flag; serialization of the whole document is
-  // deferred to the debounced flush so typing never pays JSON.stringify +
-  // search-text extraction per keystroke.
-  const contentDirtyRef = useRef(false);
-  const isSavingRef = useRef(false);
   const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const slashMenuLockedScrollTopRef = useRef<number | null>(null);
@@ -577,26 +593,7 @@ export function Editor({
   const [isCoverInputOpen, setIsCoverInputOpen] = useState(false);
   const [subpageMenuOpen, setSubpageMenuOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
-  const [moveMenuOpen, setMoveMenuOpen] = useState(false);
-  const [moveQuery, setMoveQuery] = useState("");
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
-  const [draggedSubpageId, setDraggedSubpageId] = useState<string | null>(null);
-  const [subpageDropTarget, setSubpageDropTarget] = useState<SubpageDropTarget | null>(null);
-  const [isMediaDropActive, setIsMediaDropActive] = useState(false);
-  const [saveState, dispatchSaveState] = useReducer(editorSaveReducer, { status: "saved" });
-  const [subpageActionsMenu, setSubpageActionsMenu] = useState<{
-    page: Page;
-    anchorElement: HTMLElement;
-  } | null>(null);
-  const [subpageContextMenu, setSubpageContextMenu] = useState<{
-    page: Page;
-    left: number;
-    top: number;
-  } | null>(null);
-  const subpageContextMenuRef = useRef<HTMLDivElement>(null);
-  const subpageDragSessionRef = useRef<SubpageDragSession | null>(null);
-  const subpageDropTargetRef = useRef<SubpageDropTarget | null>(null);
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const addPage = useAppStore((state) => state.addPage);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
@@ -624,21 +621,19 @@ export function Editor({
   // document to the snapshot taken when the page was opened.
   const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id, locale]);
   const breadcrumbs = useMemo(() => pageBreadcrumb(pages, page.id), [page.id, pages]);
-  const databaseParentPage = useMemo(
-    () => pages.find((candidate) => candidate.id === page.parent_id && candidate.is_database === 1) ?? null,
-    [page.parent_id, pages]
-  );
+  const databaseParentPage = useMemo(() => databaseParentPageForEditor(pages, page), [page, pages]);
   const childPages = useMemo(() => childPagesForParent(pages, page.id), [page.id, pages]);
-  const templatePages = useMemo(() => pages.filter((candidate) => candidate.is_template === 1), [pages]);
-  const movablePages = useMemo(() => {
-    const query = moveQuery.trim().toLowerCase();
-    const targets = moveTargetPages(pages, page.id);
-
-    if (!query) return targets;
-
-    return targets.filter((candidate) => (candidate.title || "Untitled").toLowerCase().includes(query));
-  }, [moveQuery, page.id, pages]);
+  const templatePages = useMemo(() => templatePagesForEditor(pages), [pages]);
   const subpageMode = subpageSectionMode(childPages.length);
+  const {
+    draggedSubpageId,
+    handleSubpagePointerDown,
+    subpageDropTarget,
+  } = useSubpageDrag({
+    childPages,
+    pageId: page.id,
+    reorderPagesAction,
+  });
   const editor = useMemo(
     () =>
       BlockNoteEditor.create({
@@ -647,65 +642,83 @@ export function Editor({
         dictionary: locale === "it" ? blockNoteLocaleIt : blockNoteLocaleEn,
         tabBehavior: "prefer-indent",
         uploadFile: async (file) => {
-          try {
-            const kind = editorMediaKindForFile(file);
-            if (!kind) {
-              throw new Error("Only image and video uploads are supported");
-            }
-            const importedPath = kind === "video"
-              ? await importEditorVideo(file, page.id)
-              : await importEditorImage(file, page.id);
-            return coverImageSrc(importedPath);
-          } catch (error) {
-            showError(editorMediaUserMessage(error));
-            throw error;
-          }
+          return await uploadEditorMediaFile(file, page.id, showError);
         },
-        pasteHandler: ({ event, editor, defaultPasteHandler }) => {
-          const mediaFiles = Array.from(event.clipboardData?.files ?? []).filter((file) => editorMediaKindForFile(file));
-          const pastedText = event.clipboardData?.getData("text/plain") ?? "";
-          const mathBlocks = mediaFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
-
-          if (mathBlocks) {
-            const cursorBlock = editor.getTextCursorPosition().block;
-            if (isEmptyEditorBlock(cursorBlock)) {
-              editor.replaceBlocks([cursorBlock], mathBlocks as never);
-            } else {
-              editor.insertBlocks(mathBlocks as never, cursorBlock, "after");
-            }
-            return true;
-          }
-
-          if (mediaFiles.length === 0) {
-            return defaultPasteHandler();
-          }
-
-          void Promise.all(
-            mediaFiles.map(async (file) => {
-              const kind = editorMediaKindForFile(file);
-              if (!kind) throw new Error("Only image and video uploads are supported");
-
-              const importedPath = kind === "video"
-                ? await importEditorVideo(file, page.id)
-                : await importEditorImage(file, page.id);
-              return editorMediaBlockProps(kind, file.name, coverImageSrc(importedPath));
-            })
-          ).then((media) => {
-            insertEditorMediaBlocks(editor, media);
-          }).catch((error) => {
-            showError(editorMediaUserMessage(error));
-          });
-
-          return true;
-        },
+        pasteHandler: (args) => handleEditorPasteWithMedia(args, page.id, showError),
       }),
-    // `locale` recreates the editor on language change. The flush effect
-    // below is keyed on `editor`, so its cleanup (which serializes the old
-    // editor's pending edits to the store and DB) runs before the new
-    // instance takes over — the same mechanism used for page switches.
+    // `locale` recreates the editor on language change. useEditorAutosave is
+    // keyed on `editor`, so its cleanup serializes the old editor's pending
+    // edits before the new instance takes over.
     [page.id, showError, locale]
   );
   const blockNoteTheme = appTheme === "dark" || (appTheme === "system" && systemDark) ? "dark" : "light";
+  const {
+    flushSaveNow,
+    markSaveFailed,
+    queueContentSave,
+    queueSave,
+    saveState,
+  } = useEditorAutosave({
+    pageId: page.id,
+    editor,
+    updatePageOptimistically,
+  });
+  const closePageMenu = useCallback(() => setPageMenuOpen(false), []);
+  const {
+    handleConfirmDelete,
+    handleDuplicatePage,
+    handleExportJSON,
+    handleExportMarkdown,
+    handleMovePage,
+    handleOpenMoveMenu,
+    handleRequestDelete,
+    handleToggleFavorite,
+    handleToggleTemplate,
+    handleTurnIntoDatabase,
+    isDeleteConfirmOpen,
+    movablePages,
+    moveMenuOpen,
+    moveQuery,
+    setIsDeleteConfirmOpen,
+    setMoveMenuOpen,
+    setMoveQuery,
+  } = usePageActions({
+    childPages,
+    closePageMenu,
+    deleteStudioDocumentAction,
+    duplicatePageAction,
+    movePageAction,
+    onSelectPage,
+    page,
+    pages,
+    queueSave,
+    removePage,
+    showError,
+    showSuccess,
+    studioDocuments,
+    toggleFavoriteAction,
+    toggleTemplateAction,
+  });
+  const {
+    handleSubpageContextMenu,
+    handleSubpageDelete,
+    handleSubpageDuplicate,
+    handleSubpageToggleFavorite,
+    handleSubpageToggleTemplate,
+    setSubpageActionsMenu,
+    subpageActionsMenu,
+    subpageContextMenu,
+    subpageContextMenuRef,
+  } = useSubpageActions({
+    deleteStudioDocumentAction,
+    duplicatePageAction,
+    removePage,
+    showError,
+    showSuccess,
+    studioDocuments,
+    toggleFavoriteAction,
+    toggleTemplateAction,
+  });
   const isStudioVariant = variant === "studio";
   const slashMenuItems = useMemo(
     () => openNotionSlashMenuItems(editor, page.id, showError, showSuccess, t),
@@ -720,67 +733,18 @@ export function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [editor, page.id, pages, t]
   );
-  const importDroppedMediaFiles = useCallback(
-    async (files: File[]) => {
-      const mediaFiles = files
-        .map((file) => ({ file, kind: editorMediaKindForFile(file) }))
-        .filter((item): item is { file: File; kind: EditorMediaKind } => item.kind !== null);
-
-      if (mediaFiles.length === 0) {
-        showError(t("editor.dropMediaHint"));
-        return;
-      }
-
-      try {
-        const media = await Promise.all(
-          mediaFiles.map(async ({ file, kind }) => {
-            const importedPath = await importEditorMedia(file, page.id);
-            return editorMediaBlockProps(
-              kind,
-              file.name || (kind === "video" ? "Video" : "Image"),
-              coverImageSrc(importedPath)
-            );
-          })
-        );
-
-        insertEditorMediaBlocks(editor, media);
-        const count = String(media.length);
-        showSuccess(
-          media.length === 1 ? "editor.mediaImported" : "editor.mediaImportedPlural",
-          { count }
-        );
-      } catch (error) {
-        showError(editorMediaUserMessage(error));
-      }
-    },
-    // t changes only with locale; locale already recreates editor, so adding t
-    // does not introduce a new recreation trigger for this callback.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editor, page.id, showError, showSuccess, t]
-  );
-  const handleMediaDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-    if (!dataTransferHasSupportedMedia(event.dataTransfer)) return;
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    setIsMediaDropActive(true);
-  }, []);
-  const handleMediaDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
-    const relatedTarget = event.relatedTarget;
-    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
-    setIsMediaDropActive(false);
-  }, []);
-  const handleMediaDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      const files = dataTransferFiles(event.dataTransfer);
-      if (files.length === 0) return;
-
-      event.preventDefault();
-      setIsMediaDropActive(false);
-      void importDroppedMediaFiles(files);
-    },
-    [importDroppedMediaFiles]
-  );
+  const {
+    handleMediaDragLeave,
+    handleMediaDragOver,
+    handleMediaDrop,
+    isMediaDropActive,
+  } = useEditorMediaDrop({
+    editor,
+    pageId: page.id,
+    showError,
+    showSuccess,
+    t,
+  });
   const slashMenuFloatingOptions = useMemo(
     () => ({
       useFloatingOptions: {
@@ -832,46 +796,7 @@ export function Editor({
     setIsCoverInputOpen(false);
     setSubpageMenuOpen(false);
     setPageMenuOpen(false);
-    setMoveMenuOpen(false);
-    setMoveQuery("");
-    setIsDeleteConfirmOpen(false);
-    pendingUpdatesRef.current = {};
-    contentDirtyRef.current = false;
-    isSavingRef.current = false;
-    dispatchSaveState({ type: "saved" });
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-      // Flush pending edits before the editor unmounts or re-keys to another
-      // page. This cleanup closure still holds the previous page.id and the
-      // previous editor instance, so a debounced edit made <300ms before
-      // navigation is persisted, not lost.
-      if (contentDirtyRef.current) {
-        contentDirtyRef.current = false;
-        const content = JSON.stringify(editor.document as Block[]);
-        pendingUpdatesRef.current = {
-          ...pendingUpdatesRef.current,
-          content,
-          search_text: pageContentToSearchText(content),
-        };
-      }
-      const pending = pendingUpdatesRef.current;
-      if (Object.keys(pending).length > 0) {
-        pendingUpdatesRef.current = {};
-        // Keep the store in sync so navigating back to this page renders the
-        // final edit instead of the last flushed snapshot.
-        updatePageOptimistically(page.id, pending);
-        // Fire-and-forget on unmount: there is no UI left to roll back to, so
-        // at least log a failed final write instead of dropping it silently
-        // (and avoid an unhandled promise rejection).
-        void updatePage(page.id, pending).catch((error) => {
-          console.error("Failed to flush pending edits on page switch:", error);
-        });
-      }
-    };
-  }, [page.id, editor, updatePageOptimistically]);
+  }, [page.id]);
 
   useEffect(() => {
     if (!isIconMenuOpen) return;
@@ -880,85 +805,6 @@ export function Editor({
       iconInputRef.current?.focus();
     });
   }, [isIconMenuOpen]);
-
-  useEffect(() => {
-    if (!isDeleteConfirmOpen) return;
-
-    closeOpenOverlays();
-    const closeDialog = () => setIsDeleteConfirmOpen(false);
-    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
-    return () => window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeDialog);
-  }, [isDeleteConfirmOpen]);
-
-  const saveNow = useCallback(async () => {
-    if (isSavingRef.current) return;
-
-    if (contentDirtyRef.current) {
-      contentDirtyRef.current = false;
-      const content = JSON.stringify(editor.document as Block[]);
-      const search_text = pageContentToSearchText(content);
-      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, content, search_text };
-      updatePageOptimistically(page.id, { content, search_text });
-    }
-
-    const updates = pendingUpdatesRef.current;
-    if (Object.keys(updates).length === 0) return;
-
-    pendingUpdatesRef.current = {};
-    isSavingRef.current = true;
-    dispatchSaveState({ type: "saving" });
-
-    try {
-      await updatePage(page.id, updates);
-      isSavingRef.current = false;
-
-      if (Object.keys(pendingUpdatesRef.current).length > 0 || contentDirtyRef.current) {
-        dispatchSaveState({ type: "edit" });
-        if (saveTimeoutRef.current) {
-          window.clearTimeout(saveTimeoutRef.current);
-        }
-        saveTimeoutRef.current = window.setTimeout(() => {
-          void saveNow();
-        }, 300);
-      } else {
-        dispatchSaveState({ type: "saved" });
-      }
-    } catch (error: unknown) {
-      isSavingRef.current = false;
-      dispatchSaveState({ type: "failed", message: errorMessage(error) });
-      console.error("Failed to save page:", error);
-    }
-  }, [page.id, editor, updatePageOptimistically]);
-
-  const queueSave = useCallback((updates: Partial<Page>) => {
-    pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
-    updatePageOptimistically(page.id, updates);
-    dispatchSaveState({ type: "edit" });
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      void saveNow();
-    }, 300);
-  }, [page.id, saveNow, updatePageOptimistically]);
-
-  // Debounced save for document edits. Unlike queueSave it does not snapshot
-  // the content eagerly: serialization happens once in saveNow when the
-  // debounce settles, so per-keystroke work stays O(1).
-  const queueContentSave = useCallback(() => {
-    contentDirtyRef.current = true;
-    dispatchSaveState({ type: "edit" });
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      void saveNow();
-    }, 300);
-  }, [saveNow]);
 
   const handleTitleChange = (value: string) => {
     const nextTitle = value;
@@ -994,10 +840,7 @@ export function Editor({
   const handleTitleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter") return;
 
-    const insertsNewline =
-      titleEnterBehavior === "newline"
-        ? !event.altKey
-        : event.altKey || event.shiftKey;
+    const insertsNewline = titleEnterShouldInsertNewline(titleEnterBehavior, event);
     titleEnterModifierRef.current = insertsNewline;
 
     if (insertsNewline) {
@@ -1250,16 +1093,16 @@ export function Editor({
     queueSave({ cover_url: null });
   };
 
-	  const handlePickCoverImage = async () => {
-	    try {
-	      const importedPath = await importCoverImageFromDialog(page.id);
-	      if (!importedPath) return;
-	      setCoverUrl(importedPath);
+  const handlePickCoverImage = async () => {
+    try {
+      const importedPath = await importCoverImageFromDialog(page.id);
+      if (!importedPath) return;
+      setCoverUrl(importedPath);
       setIsCoverInputOpen(false);
       queueSave({ cover_url: importedPath });
     } catch (error: unknown) {
       console.error("Failed to import cover image:", error);
-      dispatchSaveState({ type: "failed", message: errorMessage(error) });
+      markSaveFailed(error);
     }
   };
 
@@ -1273,7 +1116,7 @@ export function Editor({
     const input = iconInputRef.current;
     input?.focus();
     input?.setSelectionRange(0, input.value.length);
-    void invoke("show_character_palette").catch((error: unknown) => {
+    void showCharacterPalette().catch((error: unknown) => {
       console.error("Failed to open character palette:", error);
     });
   };
@@ -1292,272 +1135,6 @@ export function Editor({
     if (newPage) {
       onSelectPage(newPage.id);
     }
-  };
-
-  const handleSubpageContextMenu = (event: React.MouseEvent, childPage: Page) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const position = clampContextMenuPosition(
-      event.clientX,
-      event.clientY,
-      window.innerWidth,
-      window.innerHeight,
-      180,
-      150
-    );
-    setSubpageContextMenu({
-      page: childPage,
-      left: position.left,
-      top: position.top,
-    });
-  };
-
-  const handleSubpageDelete = async (childPage: Page) => {
-    setSubpageActionsMenu(null);
-    setSubpageContextMenu(null);
-    try {
-      const doc = studioDocuments.find(d => d.note_page_id === childPage.id);
-      if (doc) {
-        await deleteStudioDocumentAction(doc.id);
-      } else {
-        await removePage(childPage.id);
-      }
-      showSuccess("editor.pageDeleted", { title: childPage.title || t("sidebar.untitled") });
-    } catch (err) {
-      showError(err);
-    }
-  };
-
-  const handleSubpageDuplicate = async (childPage: Page) => {
-    setSubpageActionsMenu(null);
-    setSubpageContextMenu(null);
-    try {
-      const duplicated = await duplicatePageAction(childPage.id, { select: false });
-      if (duplicated) {
-        showSuccess("editor.pageDuplicated", { title: childPage.title || t("sidebar.untitled") });
-      }
-    } catch (err) {
-      showError(err);
-    }
-  };
-
-  const handleSubpageToggleFavorite = async (childPage: Page) => {
-    setSubpageActionsMenu(null);
-    setSubpageContextMenu(null);
-    try {
-      await toggleFavoriteAction(childPage.id, childPage.is_favorite !== 1);
-    } catch (err) {
-      showError(err);
-    }
-  };
-
-  const handleSubpageToggleTemplate = async (childPage: Page) => {
-    setSubpageActionsMenu(null);
-    setSubpageContextMenu(null);
-    try {
-      await toggleTemplateAction(childPage.id, childPage.is_template !== 1);
-    } catch (err) {
-      showError(err);
-    }
-  };
-
-  useEffect(() => {
-    if (!subpageContextMenu) return;
-    const closeMenu = () => setSubpageContextMenu(null);
-    const handleScroll = () => setSubpageContextMenu(null);
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSubpageContextMenu(null);
-    };
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target;
-      if (target instanceof Node && subpageContextMenuRef.current?.contains(target)) return;
-      setSubpageContextMenu(null);
-    };
-
-    window.addEventListener("click", handleOutsideClick);
-    window.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
-
-    return () => {
-      window.removeEventListener("click", handleOutsideClick);
-      window.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeMenu);
-    };
-  }, [subpageContextMenu]);
-
-  const clearSubpageDragState = useCallback(() => {
-    setDraggedSubpageId(null);
-    setSubpageDropTarget(null);
-    subpageDropTargetRef.current = null;
-  }, []);
-
-  const reorderSubpagesFromDropTarget = useCallback(async (sourceId: string, target: SubpageDropTarget) => {
-    const siblingIds = childPages.map((childPage) => childPage.id);
-    const orderedIds = reorderedSiblingIds(siblingIds, sourceId, target.pageId, target.position);
-    if (orderedIds.join("\0") === siblingIds.join("\0")) return;
-
-    await reorderPagesAction(page.id, orderedIds);
-  }, [childPages, page.id, reorderPagesAction]);
-
-  const updateSubpageDropTarget = useCallback((sourceId: string, clientX: number, clientY: number) => {
-    const row = window.document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-subpage-row-id]");
-    const targetId = row?.dataset.subpageRowId;
-    if (!row || !targetId || targetId === sourceId) {
-      subpageDropTargetRef.current = null;
-      setSubpageDropTarget(null);
-      return;
-    }
-
-    const rect = row.getBoundingClientRect();
-    const position: SubpageDropTarget["position"] = clientY - rect.top < rect.height / 2 ? "before" : "after";
-    const nextTarget = { pageId: targetId, position };
-    subpageDropTargetRef.current = nextTarget;
-    setSubpageDropTarget(nextTarget);
-  }, []);
-
-  const handleSubpagePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, subpageId: string) => {
-    if (event.button !== 0 || event.pointerType === "touch") return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    subpageDragSessionRef.current = {
-      pageId: subpageId,
-      startX: event.clientX,
-      startY: event.clientY,
-      active: false,
-    };
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const session = subpageDragSessionRef.current;
-      if (!session) return;
-
-      const distance = Math.hypot(moveEvent.clientX - session.startX, moveEvent.clientY - session.startY);
-      if (!session.active && distance < 4) return;
-
-      if (!session.active) {
-        subpageDragSessionRef.current = { ...session, active: true };
-        setDraggedSubpageId(session.pageId);
-        window.document.body.style.cursor = "grabbing";
-        window.document.body.style.userSelect = "none";
-      }
-
-      moveEvent.preventDefault();
-      updateSubpageDropTarget(session.pageId, moveEvent.clientX, moveEvent.clientY);
-    };
-
-    const handlePointerUp = () => {
-      const session = subpageDragSessionRef.current;
-      const target = subpageDropTargetRef.current;
-      subpageDragSessionRef.current = null;
-      window.document.body.style.cursor = "";
-      window.document.body.style.userSelect = "";
-      clearSubpageDragState();
-
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-
-      if (session?.active && target) {
-        void reorderSubpagesFromDropTarget(session.pageId, target);
-      }
-    };
-
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-  }, [clearSubpageDragState, reorderSubpagesFromDropTarget, updateSubpageDropTarget]);
-
-  const handleToggleFavorite = async () => {
-    setPageMenuOpen(false);
-    await toggleFavoriteAction(page.id, page.is_favorite !== 1);
-  };
-
-  const handleToggleTemplate = async () => {
-    setPageMenuOpen(false);
-    await toggleTemplateAction(page.id, page.is_template !== 1);
-  };
-
-  const handleTurnIntoDatabase = () => {
-    setPageMenuOpen(false);
-    queueSave({
-      is_database: 1,
-      database_schema: JSON.stringify(defaultDatabaseSchema()),
-    });
-  };
-
-  const handleExportMarkdown = async () => {
-    setPageMenuOpen(false);
-    try {
-      const isFolderExport = childPagesForParent(pages, page.id).length > 0;
-      const renderPageMarkdown = await createPageMarkdownRenderer();
-      const files = await buildMarkdownTreeFiles(pages, [page], renderPageMarkdown, { flattenSingleRoot: true });
-      const result = await exportFilesWithDialog({
-        defaultPath: `${sanitizeExportFilename(page.title || "Untitled")}.md`,
-        filters: [{ name: isFolderExport ? "Markdown Folder Structure" : "Markdown Document", extensions: ["md"] }],
-        files,
-      });
-      if (!result) return;
-      showSuccess(
-        isFolderExport ? "editor.exportedMarkdownFolder" : "editor.exportedMarkdownFile",
-        { path: result.path }
-      );
-    } catch (error: unknown) {
-      showError(error);
-    }
-  };
-
-  const handleExportJSON = async () => {
-    setPageMenuOpen(false);
-    try {
-      const exportData = buildPageTreeExport(pages, [page.id], new Date().toISOString());
-      const fileName = `${sanitizeExportFilename(page.title || "Untitled")}.json`;
-      const result = await exportFilesWithDialog({
-        defaultPath: fileName,
-        filters: [{ name: "Shelf Page Tree", extensions: ["json"] }],
-        files: [{ relativePath: fileName, content: JSON.stringify(exportData, null, 2) }],
-      });
-      if (!result) return;
-      showSuccess("editor.exportedJSON", { path: result.path });
-    } catch (error: unknown) {
-      showError(error);
-    }
-  };
-
-  const handleDuplicatePage = async () => {
-    setPageMenuOpen(false);
-    const duplicated = await duplicatePageAction(page.id);
-    if (duplicated) {
-      onSelectPage(duplicated.id);
-    }
-  };
-
-  const handleOpenMoveMenu = () => {
-    setPageMenuOpen(false);
-    setMoveMenuOpen(true);
-    setMoveQuery("");
-  };
-
-  const handleMovePage = async (parentId: string | null) => {
-    await movePageAction(page.id, parentId);
-    setMoveMenuOpen(false);
-    setMoveQuery("");
-  };
-
-  const handleRequestDelete = () => {
-    setPageMenuOpen(false);
-    setIsDeleteConfirmOpen(true);
-  };
-
-  const handleConfirmDelete = async () => {
-    const doc = studioDocuments.find(d => d.note_page_id === page.id);
-    if (doc) {
-      await deleteStudioDocumentAction(doc.id);
-    } else {
-      await removePage(page.id);
-    }
-    setIsDeleteConfirmOpen(false);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -1586,10 +1163,7 @@ export function Editor({
 
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-      void saveNow();
+      flushSaveNow();
     }
   };
 
@@ -2091,44 +1665,13 @@ export function Editor({
                 }}
                 className="on-popover on-page-action-popover p-1"
               >
-                <button
-                  type="button"
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageDuplicate(subpageActionsMenu.page)}
-                >
-                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t("editor.duplicate")}
-                </button>
-                <div className="on-menu-separator" />
-                <button
-                  type="button"
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageToggleFavorite(subpageActionsMenu.page)}
-                >
-                  <Star
-                    className={`h-3.5 w-3.5 text-muted-foreground ${
-                      subpageActionsMenu.page.is_favorite === 1 ? "fill-current" : ""
-                    }`}
-                  />
-                  {subpageActionsMenu.page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
-                </button>
-                <button
-                  type="button"
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageToggleTemplate(subpageActionsMenu.page)}
-                >
-                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {subpageActionsMenu.page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
-                </button>
-                <div className="on-menu-separator" />
-                <button
-                  type="button"
-                  className="on-menu-item on-menu-item-danger"
-                  onClick={() => void handleSubpageDelete(subpageActionsMenu.page)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t("sidebar.contextDelete")}
-                </button>
+                <SubpageActionsMenu
+                  page={subpageActionsMenu.page}
+                  onDuplicate={(childPage) => void handleSubpageDuplicate(childPage)}
+                  onToggleFavorite={(childPage) => void handleSubpageToggleFavorite(childPage)}
+                  onToggleTemplate={(childPage) => void handleSubpageToggleTemplate(childPage)}
+                  onDelete={(childPage) => void handleSubpageDelete(childPage)}
+                />
               </FloatingPopover>
             )}
             {subpageContextMenu && createPortal(
@@ -2144,40 +1687,13 @@ export function Editor({
                 }}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageDuplicate(subpageContextMenu.page)}
-                >
-                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t("editor.duplicate")}
-                </button>
-                <div className="on-menu-separator" />
-                <button
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageToggleFavorite(subpageContextMenu.page)}
-                >
-                  <Star
-                    className={`h-3.5 w-3.5 text-muted-foreground ${
-                      subpageContextMenu.page.is_favorite === 1 ? "fill-current" : ""
-                    }`}
-                  />
-                  {subpageContextMenu.page.is_favorite === 1 ? t("sidebar.contextRemoveFromFavorites") : t("sidebar.contextAddToFavorites")}
-                </button>
-                <button
-                  className="on-menu-item"
-                  onClick={() => void handleSubpageToggleTemplate(subpageContextMenu.page)}
-                >
-                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  {subpageContextMenu.page.is_template === 1 ? t("sidebar.contextRemoveFromTemplates") : t("sidebar.contextUseAsTemplate")}
-                </button>
-                <div className="on-menu-separator" />
-                <button
-                  className="on-menu-item on-menu-item-danger"
-                  onClick={() => void handleSubpageDelete(subpageContextMenu.page)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t("sidebar.contextDelete")}
-                </button>
+                <SubpageActionsMenu
+                  page={subpageContextMenu.page}
+                  onDuplicate={(childPage) => void handleSubpageDuplicate(childPage)}
+                  onToggleFavorite={(childPage) => void handleSubpageToggleFavorite(childPage)}
+                  onToggleTemplate={(childPage) => void handleSubpageToggleTemplate(childPage)}
+                  onDelete={(childPage) => void handleSubpageDelete(childPage)}
+                />
               </div>,
               document.body
             )}

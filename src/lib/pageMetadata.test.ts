@@ -13,8 +13,14 @@ describe("normalizePageIcon", () => {
 });
 
 describe("normalizeCoverUrl", () => {
-  it("trims cover URL", () => {
-    expect(normalizeCoverUrl("  https://example.com/cover.png  ")).toBe("https://example.com/cover.png");
+  it("keeps local inline cover sources", () => {
+    expect(normalizeCoverUrl("  blob:shelf-cover  ")).toBe("blob:shelf-cover");
+    expect(normalizeCoverUrl("  data:image/png;base64,abc  ")).toBe("data:image/png;base64,abc");
+  });
+
+  it("rejects remote cover URLs", () => {
+    expect(normalizeCoverUrl("  https://example.com/cover.png  ")).toBeNull();
+    expect(normalizeCoverUrl("http://example.com/cover.png")).toBeNull();
   });
 
   it("stores empty cover as null", () => {

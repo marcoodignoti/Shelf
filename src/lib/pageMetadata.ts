@@ -16,7 +16,6 @@ export function normalizePageIcon(value: string): string | null {
 export function normalizeCoverUrl(value: string): string | null {
   const coverUrl = value.trim();
   if (!coverUrl) return null;
-  if (/^https:\/\//i.test(coverUrl)) return coverUrl;
   if (/^blob:/i.test(coverUrl)) return coverUrl;
   if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) return coverUrl;
   return null;

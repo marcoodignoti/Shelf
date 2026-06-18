@@ -1,7 +1,17 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
-const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require("electron");
+const crypto = require("node:crypto");
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  protocol,
+  shell,
+} = require("electron");
 const { pathToFileURL } = require("node:url");
 const { ShelfBackend } = require("./backend.cjs");
 
@@ -11,11 +21,16 @@ const APP_ASSET_HOST = "asset";
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
 const MAX_DIALOG_FILTERS = 10;
 const MAX_DIALOG_EXTENSIONS = 20;
-const IMAGE_DIALOG_FILTER = { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] };
+const IMAGE_DIALOG_FILTER = {
+  name: "Images",
+  extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+};
 const PDF_DIALOG_FILTER = { name: "PDF", extensions: ["pdf"] };
 const BACKUP_DIALOG_FILTER = { name: "Shelf Backup", extensions: ["json"] };
 const EDITOR_MEDIA_DIALOG_FILTERS = {
-  image: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+  image: [
+    { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+  ],
   video: [{ name: "Videos", extensions: ["mp4", "m4v", "mov", "webm"] }],
 };
 const RENDERER_PATH_COMMANDS = new Set([
@@ -26,27 +41,36 @@ const RENDERER_PATH_COMMANDS = new Set([
   "import_cover_image",
   "import_profile_avatar",
 ]);
-const RENDERER_SOURCE_PATH_COMMANDS = new Set(["import_editor_image", "import_editor_video"]);
+const RENDERER_SOURCE_PATH_COMMANDS = new Set([
+  "import_editor_image",
+  "import_editor_video",
+]);
 let mainWindow = null;
 let backend = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
 let studioPdfPort = null;
+let studioPdfAccessToken = null;
+let trustedDevRendererUrlResolved = false;
+let trustedDevRendererUrlValue = null;
 
-protocol.registerSchemesAsPrivileged([{
-  scheme: APP_PROTOCOL,
-  privileges: {
-    standard: true,
-    secure: true,
-    supportFetchAPI: true,
-    corsEnabled: true,
-    stream: true,
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
   },
-}]);
+]);
 
 function configureAppIdentity() {
   app.setName("Shelf");
-  const configuredUserDataPath = process.env.SHELF_USER_DATA_DIR || process.env.OPENNOTION_USER_DATA_DIR;
+  const configuredUserDataPath =
+    process.env.SHELF_USER_DATA_DIR || process.env.OPENNOTION_USER_DATA_DIR;
   const userDataPath = configuredUserDataPath
     ? path.resolve(configuredUserDataPath)
     : path.join(app.getPath("appData"), LEGACY_TAURI_CONFIG_DIR);
@@ -66,19 +90,39 @@ function createBackend() {
 }
 
 function configureApplicationMenu() {
+  const viewSubmenu = [
+    ...(app.isPackaged
+      ? []
+      : [
+          { role: "reload" },
+          { role: "forceReload" },
+          { role: "toggleDevTools" },
+          { type: "separator" },
+        ]),
+    { role: "resetZoom" },
+    { role: "zoomIn" },
+    { role: "zoomOut" },
+    { type: "separator" },
+    { role: "togglefullscreen" },
+  ];
+
   const template = [
-    ...(process.platform === "darwin" ? [{
-      label: app.name,
-      submenu: [
-        { role: "about" },
-        { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    }] : []),
+    ...(process.platform === "darwin"
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]
+      : []),
     {
       label: "Edit",
       submenu: [
@@ -93,29 +137,16 @@ function configureApplicationMenu() {
     },
     {
       label: "View",
-      submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-      ],
+      submenu: viewSubmenu,
     },
     {
       label: "Window",
       submenu: [
         { role: "minimize" },
         { role: "zoom" },
-        ...(process.platform === "darwin" ? [
-          { type: "separator" },
-          { role: "front" },
-        ] : [
-          { role: "close" },
-        ]),
+        ...(process.platform === "darwin"
+          ? [{ type: "separator" }, { role: "front" }]
+          : [{ role: "close" }]),
       ],
     },
   ];
@@ -141,11 +172,19 @@ function parseStudioPdfDocumentId(requestUrl) {
 
   let parts;
   try {
-    parts = url.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+    parts = url.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part));
   } catch {
     return null;
   }
-  if (parts.length !== 3 || parts[0] !== "studio-document" || parts[2] !== "source.pdf" || parts[1].trim() === "") {
+  if (
+    parts.length !== 3 ||
+    parts[0] !== "studio-document" ||
+    parts[2] !== "source.pdf" ||
+    parts[1].trim() === ""
+  ) {
     return null;
   }
   return parts[1];
@@ -163,7 +202,8 @@ function parseByteRange(rangeHeader, fileSize) {
   let end;
   if (!startValue) {
     const suffixLength = Number(endValue);
-    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return { invalid: true };
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0)
+      return { invalid: true };
     start = Math.max(0, fileSize - suffixLength);
     end = fileSize - 1;
   } else {
@@ -171,7 +211,13 @@ function parseByteRange(rangeHeader, fileSize) {
     end = endValue ? Number(endValue) : fileSize - 1;
   }
 
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= fileSize) {
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
     return { invalid: true };
   }
   return { start, end: Math.min(end, fileSize - 1) };
@@ -179,20 +225,55 @@ function parseByteRange(rangeHeader, fileSize) {
 
 function isPathInside(rootPath, candidatePath) {
   const relative = path.relative(rootPath, candidatePath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }
 
-function trustedRendererOrigin() {
-  if (process.env.ELECTRON_RENDERER_URL) {
-    try {
-      return new URL(process.env.ELECTRON_RENDERER_URL).origin;
-    } catch {
+function isLoopbackHostname(hostname) {
+  return (
+    hostname === "127.0.0.1" ||
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  );
+}
+
+function trustedDevRendererUrl() {
+  if (trustedDevRendererUrlResolved) return trustedDevRendererUrlValue;
+  trustedDevRendererUrlResolved = true;
+
+  const configured = process.env.ELECTRON_RENDERER_URL;
+  if (!configured) return null;
+
+  if (app.isPackaged) {
+    console.warn("Ignoring ELECTRON_RENDERER_URL in packaged builds");
+    return null;
+  }
+
+  try {
+    const parsed = new URL(configured);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      !isLoopbackHostname(parsed.hostname)
+    ) {
       console.error(
-        `Invalid ELECTRON_RENDERER_URL (${process.env.ELECTRON_RENDERER_URL}); Studio PDF requests will be refused`
+        `Ignoring untrusted ELECTRON_RENDERER_URL (${configured}); expected a loopback HTTP(S) URL`,
       );
       return null;
     }
+    trustedDevRendererUrlValue = parsed;
+    return trustedDevRendererUrlValue;
+  } catch {
+    console.error(`Ignoring invalid ELECTRON_RENDERER_URL (${configured})`);
+    return null;
   }
+}
+
+function trustedRendererOrigin() {
+  const devRendererUrl = trustedDevRendererUrl();
+  if (devRendererUrl) return devRendererUrl.origin;
   return `${APP_PROTOCOL}://${APP_RENDERER_HOST}`;
 }
 
@@ -211,17 +292,29 @@ function studioPdfHeaders(origin, extraHeaders = {}) {
     "Accept-Ranges": "bytes",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Range",
-    "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range",
+    "Access-Control-Expose-Headers":
+      "Accept-Ranges, Content-Length, Content-Range",
     ...corsHeaders,
     ...extraHeaders,
   };
 }
 
-function writeStudioPdfHeaders(response, statusCode, origin, extraHeaders = {}) {
+function writeStudioPdfHeaders(
+  response,
+  statusCode,
+  origin,
+  extraHeaders = {},
+) {
   response.writeHead(statusCode, studioPdfHeaders(origin, extraHeaders));
 }
 
-function sendStudioPdfError(response, statusCode, message, origin, extraHeaders = {}) {
+function sendStudioPdfError(
+  response,
+  statusCode,
+  message,
+  origin,
+  extraHeaders = {},
+) {
   writeStudioPdfHeaders(response, statusCode, origin, extraHeaders);
   response.end(message);
 }
@@ -240,7 +333,9 @@ function createStudioPdfResponse(response, filePath, rangeHeader, origin) {
 
   const range = parseByteRange(rangeHeader, stats.size);
   if (range?.invalid) {
-    writeStudioPdfHeaders(response, 416, origin, { "Content-Range": `bytes */${stats.size}` });
+    writeStudioPdfHeaders(response, 416, origin, {
+      "Content-Range": `bytes */${stats.size}`,
+    });
     response.end();
     return;
   }
@@ -251,15 +346,22 @@ function createStudioPdfResponse(response, filePath, rangeHeader, origin) {
 
   writeStudioPdfHeaders(response, range ? 206 : 200, origin, {
     "Content-Length": String(contentLength),
-    ...(range ? { "Content-Range": `bytes ${start}-${end}/${stats.size}` } : {}),
+    ...(range
+      ? { "Content-Range": `bytes ${start}-${end}/${stats.size}` }
+      : {}),
   });
   fs.createReadStream(filePath, { start, end }).pipe(response);
 }
 
 function handleStudioPdfRequest(request, response) {
-  const origin = Array.isArray(request.headers.origin) ? request.headers.origin[0] : request.headers.origin;
+  const origin = Array.isArray(request.headers.origin)
+    ? request.headers.origin[0]
+    : request.headers.origin;
   if (request.method === "OPTIONS") {
-    if (!isTrustedPdfRequestOrigin(origin)) {
+    if (
+      !isTrustedPdfRequestOrigin(origin) ||
+      !hasTrustedStudioPdfAccessToken(request.url || "")
+    ) {
       sendStudioPdfError(response, 403, "Forbidden", origin);
       return;
     }
@@ -276,7 +378,10 @@ function handleStudioPdfRequest(request, response) {
   // an Origin header. Reject anything else (e.g. other local processes)
   // explicitly instead of relying on the browser dropping the CORS-less
   // response.
-  if (!isTrustedPdfRequestOrigin(origin)) {
+  if (
+    !isTrustedPdfRequestOrigin(origin) ||
+    !hasTrustedStudioPdfAccessToken(request.url || "")
+  ) {
     sendStudioPdfError(response, 403, "Forbidden", origin);
     return;
   }
@@ -289,7 +394,9 @@ function handleStudioPdfRequest(request, response) {
 
   try {
     const filePath = createBackend().resolveStudioDocumentPdfPath(documentId);
-    const rangeHeader = Array.isArray(request.headers.range) ? request.headers.range[0] : request.headers.range;
+    const rangeHeader = Array.isArray(request.headers.range)
+      ? request.headers.range[0]
+      : request.headers.range;
     createStudioPdfResponse(response, filePath, rangeHeader, origin);
   } catch {
     sendStudioPdfError(response, 404, "Studio PDF not found", origin);
@@ -313,15 +420,30 @@ function startStudioPdfServer() {
       studioPdfServer = server;
       studioPdfServerOrigin = `http://127.0.0.1:${address.port}`;
       studioPdfPort = address.port;
+      studioPdfAccessToken = crypto.randomBytes(32).toString("base64url");
       server.off("error", reject);
       resolve(studioPdfServerOrigin);
     });
   });
 }
 
+function hasTrustedStudioPdfAccessToken(requestUrl) {
+  if (!studioPdfAccessToken) return false;
+  try {
+    const parsed = new URL(
+      requestUrl,
+      studioPdfServerOrigin || "http://127.0.0.1",
+    );
+    return parsed.searchParams.get("token") === studioPdfAccessToken;
+  } catch {
+    return false;
+  }
+}
+
 function studioPdfUrl(documentId) {
-  if (!studioPdfServerOrigin) throw new Error("Studio PDF server is not ready");
-  return `${studioPdfServerOrigin}/studio-document/${encodeURIComponent(documentId)}/source.pdf`;
+  if (!studioPdfServerOrigin || !studioPdfAccessToken)
+    throw new Error("Studio PDF server is not ready");
+  return `${studioPdfServerOrigin}/studio-document/${encodeURIComponent(documentId)}/source.pdf?token=${encodeURIComponent(studioPdfAccessToken)}`;
 }
 
 function packagedRendererUrl() {
@@ -329,9 +451,10 @@ function packagedRendererUrl() {
 }
 
 function isTrustedRendererUrl(targetUrl) {
-  if (process.env.ELECTRON_RENDERER_URL) {
+  const devRendererUrl = trustedDevRendererUrl();
+  if (devRendererUrl) {
     try {
-      return new URL(targetUrl).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+      return new URL(targetUrl).origin === devRendererUrl.origin;
     } catch {
       return false;
     }
@@ -339,7 +462,10 @@ function isTrustedRendererUrl(targetUrl) {
 
   try {
     const parsed = new URL(targetUrl);
-    return parsed.protocol === `${APP_PROTOCOL}:` && parsed.hostname === APP_RENDERER_HOST;
+    return (
+      parsed.protocol === `${APP_PROTOCOL}:` &&
+      parsed.hostname === APP_RENDERER_HOST
+    );
   } catch {
     return false;
   }
@@ -360,7 +486,8 @@ function resolveFileUnderRoot(rootPath, requestPath) {
     return null;
   }
 
-  const relativePath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
+  const relativePath =
+    decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
   if (!relativePath || relativePath.includes("\0")) return null;
 
   let canonicalRoot;
@@ -400,7 +527,8 @@ async function fileResponse(filePath, contentSecurityPolicy) {
 }
 
 async function handleAppProtocolRequest(request) {
-  if (request.method !== "GET") return plainTextResponse(405, "Method not allowed");
+  if (request.method !== "GET")
+    return plainTextResponse(405, "Method not allowed");
 
   let parsed;
   try {
@@ -409,10 +537,14 @@ async function handleAppProtocolRequest(request) {
     return plainTextResponse(400, "Bad request");
   }
 
-  if (parsed.protocol !== `${APP_PROTOCOL}:`) return plainTextResponse(400, "Bad request");
+  if (parsed.protocol !== `${APP_PROTOCOL}:`)
+    return plainTextResponse(400, "Bad request");
 
   if (parsed.hostname === APP_RENDERER_HOST) {
-    const filePath = resolveFileUnderRoot(path.join(__dirname, "..", "dist"), parsed.pathname);
+    const filePath = resolveFileUnderRoot(
+      path.join(__dirname, "..", "dist"),
+      parsed.pathname,
+    );
     if (!filePath) return plainTextResponse(404, "Not found");
     const loopback = studioPdfConnectSrc();
     // This is the sole CSP for the packaged app. There is no <meta> CSP in
@@ -426,14 +558,24 @@ async function handleAppProtocolRequest(request) {
       "media-src 'self' opennotion-app: blob:",
       loopback ? `connect-src 'self' ${loopback}` : "connect-src 'self'",
       "worker-src 'self' blob:",
+      "object-src 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+      "frame-src 'none'",
     ].join("; ");
-    return await fileResponse(filePath, filePath.endsWith(".html") ? csp : undefined);
+    return await fileResponse(
+      filePath,
+      filePath.endsWith(".html") ? csp : undefined,
+    );
   }
 
   if (parsed.hostname === APP_ASSET_HOST) {
     try {
       const assetToken = parsed.pathname.replace(/^\/+/, "");
-      return await fileResponse(createBackend().resolveManagedAssetPath(assetToken));
+      return await fileResponse(
+        createBackend().resolveManagedAssetPath(assetToken),
+      );
     } catch {
       return plainTextResponse(404, "Not found");
     }
@@ -478,8 +620,9 @@ function createMainWindow() {
     },
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  const devRendererUrl = trustedDevRendererUrl();
+  if (devRendererUrl) {
+    mainWindow.loadURL(devRendererUrl.toString());
     if (process.env.ELECTRON_OPEN_DEVTOOLS === "1") {
       mainWindow.webContents.openDevTools({ mode: "detach" });
     }
@@ -532,15 +675,29 @@ function requireTrustedSender(event) {
 
 function normalizeFilters(filters) {
   if (!Array.isArray(filters)) return undefined;
-  return filters.slice(0, MAX_DIALOG_FILTERS).flatMap((filter) => {
-    if (!isRecord(filter) || typeof filter.name !== "string" || !Array.isArray(filter.extensions)) return [];
-    return [{
-      name: filter.name.slice(0, 80),
-      extensions: filter.extensions
-        .filter((extension) => typeof extension === "string" && /^[a-zA-Z0-9]+$/.test(extension))
-        .slice(0, MAX_DIALOG_EXTENSIONS),
-    }];
-  }).filter((filter) => filter.extensions.length > 0);
+  return filters
+    .slice(0, MAX_DIALOG_FILTERS)
+    .flatMap((filter) => {
+      if (
+        !isRecord(filter) ||
+        typeof filter.name !== "string" ||
+        !Array.isArray(filter.extensions)
+      )
+        return [];
+      return [
+        {
+          name: filter.name.slice(0, 80),
+          extensions: filter.extensions
+            .filter(
+              (extension) =>
+                typeof extension === "string" &&
+                /^[a-zA-Z0-9]+$/.test(extension),
+            )
+            .slice(0, MAX_DIALOG_EXTENSIONS),
+        },
+      ];
+    })
+    .filter((filter) => filter.extensions.length > 0);
 }
 
 function normalizeOpenDialogOptions(options = {}) {
@@ -556,15 +713,19 @@ function normalizeOpenDialogOptions(options = {}) {
 function normalizeSaveDialogOptions(options = {}) {
   const safeOptions = isRecord(options) ? options : {};
   return {
-    defaultPath: typeof safeOptions.defaultPath === "string" ? safeOptions.defaultPath : undefined,
+    defaultPath:
+      typeof safeOptions.defaultPath === "string"
+        ? safeOptions.defaultPath
+        : undefined,
     filters: normalizeFilters(safeOptions.filters),
   };
 }
 
 function hasRendererSourcePath(args) {
-  return isRecord(args) && (
-    typeof args.sourcePath === "string" ||
-    typeof args.source_path === "string"
+  return (
+    isRecord(args) &&
+    (typeof args.sourcePath === "string" ||
+      typeof args.source_path === "string")
   );
 }
 
@@ -572,7 +733,10 @@ function assertRendererInvokeAllowed(command, args) {
   if (RENDERER_PATH_COMMANDS.has(command)) {
     throw new Error(`${command} requires a trusted file dialog`);
   }
-  if (RENDERER_SOURCE_PATH_COMMANDS.has(command) && hasRendererSourcePath(args)) {
+  if (
+    RENDERER_SOURCE_PATH_COMMANDS.has(command) &&
+    hasRendererSourcePath(args)
+  ) {
     throw new Error(`${command} sourcePath requires a trusted file dialog`);
   }
 }
@@ -592,7 +756,10 @@ function registerIpc() {
     } catch (error) {
       event.returnValue = {
         ok: false,
-        error: error instanceof Error ? error.message : "failed to create Studio PDF URL",
+        error:
+          error instanceof Error
+            ? error.message
+            : "failed to create Studio PDF URL",
       };
     }
   });
@@ -603,148 +770,226 @@ function registerIpc() {
       if (typeof filePath !== "string" || filePath.trim() === "") {
         throw new Error("file path must be a string");
       }
-      event.returnValue = { ok: true, value: createBackend().fileSrc(filePath) };
+      event.returnValue = {
+        ok: true,
+        value: createBackend().fileSrc(filePath),
+      };
     } catch (error) {
       event.returnValue = {
         ok: false,
-        error: error instanceof Error ? error.message : "failed to create file URL",
+        error:
+          error instanceof Error ? error.message : "failed to create file URL",
       };
     }
   });
 
-    ipcMain.handle("opennotion:invoke", async (event, payload = {}) => {
-      requireTrustedSender(event);
-      if (!isRecord(payload) || typeof payload.command !== "string") {
-        throw new Error("invalid invoke payload");
-      }
+  ipcMain.handle("opennotion:invoke", async (event, payload = {}) => {
+    requireTrustedSender(event);
+    if (!isRecord(payload) || typeof payload.command !== "string") {
+      throw new Error("invalid invoke payload");
+    }
     if (payload.command === "show_character_palette") {
-        if (typeof app.showEmojiPanel === "function") app.showEmojiPanel();
-        return null;
-      }
-      const args = isRecord(payload.args) ? payload.args : {};
-      assertRendererInvokeAllowed(payload.command, args);
-      return await createBackend().invoke(payload.command, args);
-    });
+      if (typeof app.showEmojiPanel === "function") app.showEmojiPanel();
+      return null;
+    }
+    const args = isRecord(payload.args) ? payload.args : {};
+    assertRendererInvokeAllowed(payload.command, args);
+    return await createBackend().invoke(payload.command, args);
+  });
 
-    ipcMain.handle("opennotion:dialog-open", async (event, options = {}) => {
-      requireTrustedSender(event);
-      const parent = parentWindowForEvent(event);
-      const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
-      if (result.canceled) return null;
-      return isRecord(options) && options.multiple === true ? result.filePaths : result.filePaths[0] || null;
-    });
+  ipcMain.handle("opennotion:dialog-open", async (event, options = {}) => {
+    requireTrustedSender(event);
+    const parent = parentWindowForEvent(event);
+    const result = await dialog.showOpenDialog(
+      parent,
+      normalizeOpenDialogOptions(options),
+    );
+    if (result.canceled) return null;
+    return isRecord(options) && options.multiple === true
+      ? result.filePaths
+      : result.filePaths[0] || null;
+  });
 
-    ipcMain.handle("opennotion:dialog-save", async (event, options = {}) => {
-      requireTrustedSender(event);
-      const parent = parentWindowForEvent(event);
-      const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
-      if (result.canceled) return null;
-      return result.filePath || null;
-    });
+  ipcMain.handle("opennotion:dialog-save", async (event, options = {}) => {
+    requireTrustedSender(event);
+    const parent = parentWindowForEvent(event);
+    const result = await dialog.showSaveDialog(
+      parent,
+      normalizeSaveDialogOptions(options),
+    );
+    if (result.canceled) return null;
+    return result.filePath || null;
+  });
 
-    ipcMain.handle("opennotion:backup-export", async (event, options = {}) => {
-      requireTrustedSender(event);
-      const safeOptions = isRecord(options) ? options : {};
-      const result = await dialog.showSaveDialog(parentWindowForEvent(event), normalizeSaveDialogOptions({
-        defaultPath: typeof safeOptions.defaultPath === "string" ? safeOptions.defaultPath : undefined,
+  ipcMain.handle("opennotion:backup-export", async (event, options = {}) => {
+    requireTrustedSender(event);
+    const safeOptions = isRecord(options) ? options : {};
+    const result = await dialog.showSaveDialog(
+      parentWindowForEvent(event),
+      normalizeSaveDialogOptions({
+        defaultPath:
+          typeof safeOptions.defaultPath === "string"
+            ? safeOptions.defaultPath
+            : undefined,
         filters: [BACKUP_DIALOG_FILTER],
-      }));
-      if (result.canceled || !result.filePath) return null;
-      return createBackend().exportBackup({
-        path: result.filePath,
-        exportedAt: typeof safeOptions.exportedAt === "string" ? safeOptions.exportedAt : new Date().toISOString(),
-      });
+      }),
+    );
+    if (result.canceled || !result.filePath) return null;
+    return createBackend().exportBackup({
+      path: result.filePath,
+      exportedAt:
+        typeof safeOptions.exportedAt === "string"
+          ? safeOptions.exportedAt
+          : new Date().toISOString(),
     });
+  });
 
-    ipcMain.handle("opennotion:backup-import", async (event, options = {}) => {
-      requireTrustedSender(event);
-      const safeOptions = isRecord(options) ? options : {};
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+  ipcMain.handle("opennotion:backup-import", async (event, options = {}) => {
+    requireTrustedSender(event);
+    const safeOptions = isRecord(options) ? options : {};
+    const result = await dialog.showOpenDialog(
+      parentWindowForEvent(event),
+      normalizeOpenDialogOptions({
         multiple: false,
         filters: [BACKUP_DIALOG_FILTER],
-      }));
-      if (result.canceled || !result.filePaths[0]) return null;
-      return createBackend().importBackup({
-        path: result.filePaths[0],
-        importedAt: typeof safeOptions.importedAt === "string" ? safeOptions.importedAt : new Date().toISOString(),
-      });
+      }),
+    );
+    if (result.canceled || !result.filePaths[0]) return null;
+    return createBackend().importBackup({
+      path: result.filePaths[0],
+      importedAt:
+        typeof safeOptions.importedAt === "string"
+          ? safeOptions.importedAt
+          : new Date().toISOString(),
     });
+  });
 
-    ipcMain.handle("opennotion:studio-document-import", async (event, options = {}) => {
+  ipcMain.handle(
+    "opennotion:studio-document-import",
+    async (event, options = {}) => {
       requireTrustedSender(event);
       const safeOptions = isRecord(options) ? options : {};
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
-        multiple: false,
-        filters: [PDF_DIALOG_FILTER],
-      }));
+      const result = await dialog.showOpenDialog(
+        parentWindowForEvent(event),
+        normalizeOpenDialogOptions({
+          multiple: false,
+          filters: [PDF_DIALOG_FILTER],
+        }),
+      );
       if (result.canceled || !result.filePaths[0]) return null;
       return await createBackend().importStudioDocument({
         documentId: safeOptions.documentId,
         notePageId: safeOptions.notePageId,
         sourcePath: result.filePaths[0],
-        importedAt: typeof safeOptions.importedAt === "string" ? safeOptions.importedAt : new Date().toISOString(),
+        importedAt:
+          typeof safeOptions.importedAt === "string"
+            ? safeOptions.importedAt
+            : new Date().toISOString(),
       });
-    });
+    },
+  );
 
-    ipcMain.handle("opennotion:studio-document-replace-file", async (event, options = {}) => {
+  ipcMain.handle(
+    "opennotion:studio-document-replace-file",
+    async (event, options = {}) => {
       requireTrustedSender(event);
-      if (!isRecord(options) || typeof options.id !== "string" || options.id.trim() === "") {
+      if (
+        !isRecord(options) ||
+        typeof options.id !== "string" ||
+        options.id.trim() === ""
+      ) {
         throw new Error("document id is required");
       }
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
-        multiple: false,
-        filters: [PDF_DIALOG_FILTER],
-      }));
+      const result = await dialog.showOpenDialog(
+        parentWindowForEvent(event),
+        normalizeOpenDialogOptions({
+          multiple: false,
+          filters: [PDF_DIALOG_FILTER],
+        }),
+      );
       if (result.canceled || !result.filePaths[0]) return null;
       return await createBackend().replaceStudioDocumentFile({
         id: options.id,
         sourcePath: result.filePaths[0],
-        updatedAt: typeof options.updatedAt === "string" ? options.updatedAt : new Date().toISOString(),
+        updatedAt:
+          typeof options.updatedAt === "string"
+            ? options.updatedAt
+            : new Date().toISOString(),
       });
-    });
+    },
+  );
 
-    ipcMain.handle("opennotion:cover-image-import", async (event, options = {}) => {
+  ipcMain.handle(
+    "opennotion:cover-image-import",
+    async (event, options = {}) => {
       requireTrustedSender(event);
-      if (!isRecord(options) || typeof options.pageId !== "string" || options.pageId.trim() === "") {
+      if (
+        !isRecord(options) ||
+        typeof options.pageId !== "string" ||
+        options.pageId.trim() === ""
+      ) {
         throw new Error("page id is required");
       }
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
+      const result = await dialog.showOpenDialog(
+        parentWindowForEvent(event),
+        normalizeOpenDialogOptions({
+          multiple: false,
+          filters: [IMAGE_DIALOG_FILTER],
+        }),
+      );
+      if (result.canceled || !result.filePaths[0]) return null;
+      return createBackend().importCoverImage({
+        pageId: options.pageId,
+        sourcePath: result.filePaths[0],
+      });
+    },
+  );
+
+  ipcMain.handle("opennotion:profile-avatar-import", async (event) => {
+    requireTrustedSender(event);
+    const result = await dialog.showOpenDialog(
+      parentWindowForEvent(event),
+      normalizeOpenDialogOptions({
         multiple: false,
         filters: [IMAGE_DIALOG_FILTER],
-      }));
-      if (result.canceled || !result.filePaths[0]) return null;
-      return createBackend().importCoverImage({ pageId: options.pageId, sourcePath: result.filePaths[0] });
+      }),
+    );
+    if (result.canceled || !result.filePaths[0]) return null;
+    return createBackend().importProfileAvatar({
+      sourcePath: result.filePaths[0],
     });
+  });
 
-    ipcMain.handle("opennotion:profile-avatar-import", async (event) => {
+  ipcMain.handle(
+    "opennotion:editor-media-files-import",
+    async (event, options = {}) => {
       requireTrustedSender(event);
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
-        multiple: false,
-        filters: [IMAGE_DIALOG_FILTER],
-      }));
-      if (result.canceled || !result.filePaths[0]) return null;
-      return createBackend().importProfileAvatar({ sourcePath: result.filePaths[0] });
-    });
-
-    ipcMain.handle("opennotion:editor-media-files-import", async (event, options = {}) => {
-      requireTrustedSender(event);
-      if (!isRecord(options) || typeof options.pageId !== "string" || options.pageId.trim() === "") {
+      if (
+        !isRecord(options) ||
+        typeof options.pageId !== "string" ||
+        options.pageId.trim() === ""
+      ) {
         throw new Error("page id is required");
       }
       const kind = options.kind === "video" ? "video" : "image";
-      const result = await dialog.showOpenDialog(parentWindowForEvent(event), normalizeOpenDialogOptions({
-        multiple: true,
-        filters: EDITOR_MEDIA_DIALOG_FILTERS[kind],
-      }));
+      const result = await dialog.showOpenDialog(
+        parentWindowForEvent(event),
+        normalizeOpenDialogOptions({
+          multiple: true,
+          filters: EDITOR_MEDIA_DIALOG_FILTERS[kind],
+        }),
+      );
       if (result.canceled || result.filePaths.length === 0) return [];
       const backend = createBackend();
       return result.filePaths.map((sourcePath) => {
-        const importedPath = kind === "video"
-          ? backend.importEditorVideo({ pageId: options.pageId, sourcePath })
-          : backend.importEditorImage({ pageId: options.pageId, sourcePath });
+        const importedPath =
+          kind === "video"
+            ? backend.importEditorVideo({ pageId: options.pageId, sourcePath })
+            : backend.importEditorImage({ pageId: options.pageId, sourcePath });
         return { sourceName: path.basename(sourcePath), path: importedPath };
       });
-    });
+    },
+  );
 
   // Export/import run dialog + file IO in one round trip so the renderer
   // never passes filesystem paths over IPC: the only paths that reach fs are
@@ -755,15 +1000,24 @@ function registerIpc() {
       throw new Error("invalid export payload");
     }
     const parent = parentWindowForEvent(event);
-    const result = await dialog.showSaveDialog(parent, normalizeSaveDialogOptions(options));
+    const result = await dialog.showSaveDialog(
+      parent,
+      normalizeSaveDialogOptions(options),
+    );
     if (result.canceled || !result.filePath) return null;
-    return createBackend().writeExportFiles({ targetPath: result.filePath, files: options.files });
+    return createBackend().writeExportFiles({
+      targetPath: result.filePath,
+      files: options.files,
+    });
   });
 
   ipcMain.handle("opennotion:import-page-file", async (event, options = {}) => {
     requireTrustedSender(event);
     const parent = parentWindowForEvent(event);
-    const result = await dialog.showOpenDialog(parent, normalizeOpenDialogOptions(options));
+    const result = await dialog.showOpenDialog(
+      parent,
+      normalizeOpenDialogOptions(options),
+    );
     if (result.canceled || !result.filePaths[0]) return null;
     return createBackend().readImportFile({ path: result.filePaths[0] });
   });
@@ -773,13 +1027,19 @@ function registerIpc() {
       requireTrustedSender(event);
       event.returnValue = { ok: true, value: false };
     } catch (error) {
-      event.returnValue = { ok: false, error: error instanceof Error ? error.message : "untrusted renderer origin" };
+      event.returnValue = {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "untrusted renderer origin",
+      };
     }
   });
 
   ipcMain.handle("opennotion:install-update-now", (event) => {
     requireTrustedSender(event);
-    throw new Error("desktop auto update is disabled; use the signed manifest update flow");
+    throw new Error(
+      "desktop auto update is disabled; use the signed manifest update flow",
+    );
   });
 }
 
@@ -808,6 +1068,7 @@ app.on("before-quit", () => {
   studioPdfServer = null;
   studioPdfServerOrigin = null;
   studioPdfPort = null;
+  studioPdfAccessToken = null;
   if (backend) backend.close();
   backend = null;
 });

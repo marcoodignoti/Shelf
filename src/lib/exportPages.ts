@@ -13,6 +13,75 @@ export type PageTreeExport = {
   pages: Page[];
 };
 
+export function mergePagesForExport(hydratedPages: Page[], currentPages: Page[]): Page[] {
+  const currentById = new Map(currentPages.map((page) => [page.id, page]));
+  return hydratedPages.map((page) => {
+    const current = currentById.get(page.id);
+    if (!current || current.content_loaded === 0) return page;
+    return {
+      ...page,
+      content: current.content,
+      search_text: current.search_text,
+      content_loaded: current.content_loaded,
+    };
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPageLike(value: unknown): value is Page {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    (typeof value.parent_id === "string" || value.parent_id === null) &&
+    (typeof value.content === "string" || value.content === null) &&
+    (typeof value.search_text === "string" || value.search_text === null) &&
+    (typeof value.icon === "string" || value.icon === null) &&
+    (typeof value.cover_url === "string" || value.cover_url === null) &&
+    typeof value.is_deleted === "number" &&
+    typeof value.is_favorite === "number" &&
+    (typeof value.is_template === "number" || value.is_template === undefined) &&
+    (typeof value.is_database === "number" || value.is_database === undefined) &&
+    (typeof value.database_schema === "string" || value.database_schema === null || value.database_schema === undefined) &&
+    (typeof value.properties === "string" || value.properties === null || value.properties === undefined) &&
+    typeof value.sort_order === "number" &&
+    (value.page_kind === "note" || value.page_kind === "studio_note" || value.page_kind === "project") &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string"
+  );
+}
+
+export function isPageTreeExport(value: unknown): value is PageTreeExport {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    value.type === "page_tree" &&
+    typeof value.exported_at === "string" &&
+    typeof value.root_page_id === "string" &&
+    Array.isArray(value.pages) &&
+    value.pages.every(isPageLike)
+  );
+}
+
+export function parsePageTreeExport(raw: string): PageTreeExport {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid JSON file");
+  }
+
+  if (!isPageTreeExport(parsed)) {
+    throw new Error("Unsupported JSON export format");
+  }
+
+  return parsed;
+}
+
 export function sanitizeExportFilename(title: string): string {
   // eslint-disable-next-line no-control-regex
   const sanitized = title.replace(/[/\\?%*:|"<>. \u0000-\u001f]/g, "_");
@@ -21,14 +90,24 @@ export function sanitizeExportFilename(title: string): string {
 
 export function collectDescendantPageIds(pages: Page[], rootIds: Iterable<string>): Set<string> {
   const ids = new Set(rootIds);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const page of pages) {
-      if (page.parent_id && ids.has(page.parent_id) && !ids.has(page.id)) {
-        ids.add(page.id);
-        changed = true;
-      }
+  const childrenByParentId = new Map<string, Page[]>();
+  for (const page of pages) {
+    if (!page.parent_id) continue;
+    const children = childrenByParentId.get(page.parent_id);
+    if (children) {
+      children.push(page);
+    } else {
+      childrenByParentId.set(page.parent_id, [page]);
+    }
+  }
+
+  const queue = [...ids];
+  for (let index = 0; index < queue.length; index += 1) {
+    const children = childrenByParentId.get(queue[index]) ?? [];
+    for (const child of children) {
+      if (ids.has(child.id)) continue;
+      ids.add(child.id);
+      queue.push(child.id);
     }
   }
   return ids;
@@ -70,12 +149,22 @@ export async function buildMarkdownTreeFiles(
   options: { flattenSingleRoot?: boolean } = {}
 ): Promise<ExportFileEntry[]> {
   const entries: ExportFileEntry[] = [];
+  const childrenByParentId = new Map<string, Page[]>();
+  for (const page of pages) {
+    if (!page.parent_id) continue;
+    const children = childrenByParentId.get(page.parent_id);
+    if (children) {
+      children.push(page);
+    } else {
+      childrenByParentId.set(page.parent_id, [page]);
+    }
+  }
 
   const walk = async (parentPath: string, currentPage: Page, usedNames: Set<string>) => {
     const markdown = await renderPageMarkdown(currentPage);
     const content = `# ${currentPage.title || "Untitled"}\n\n${markdown}`;
     const baseName = uniqueName(sanitizeExportFilename(currentPage.title || "Untitled"), usedNames);
-    const children = pages.filter((page) => page.parent_id === currentPage.id);
+    const children = childrenByParentId.get(currentPage.id) ?? [];
 
     if (children.length > 0) {
       const directory = parentPath ? `${parentPath}/${baseName}` : baseName;

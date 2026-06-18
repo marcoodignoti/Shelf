@@ -1,6 +1,7 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const asar = require("@electron/asar");
 const { copyDirectoryFiltered, assertBundleClean } = require("./audit-release-bundle.cjs");
 
 const root = path.resolve(__dirname, "..");
@@ -64,6 +65,33 @@ function signWindowsExecutable(executablePath) {
   run(env("SHELF_SIGNTOOL_PATH", env("OPENNOTION_SIGNTOOL_PATH", "signtool.exe")), args);
 }
 
+async function createAppAsar() {
+  const appAsarPath = path.join(resourcesDir, "app.asar");
+  fs.rmSync(appResourcesDir, { recursive: true, force: true });
+  fs.rmSync(appAsarPath, { force: true });
+  fs.mkdirSync(appResourcesDir, { recursive: true });
+  copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
+  copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
+  copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
+  fs.writeFileSync(
+    path.join(appResourcesDir, "package.json"),
+    JSON.stringify(
+      {
+        name: "shelf",
+        version: packageJson.version,
+        description: packageJson.description,
+        author: packageJson.author,
+        main: "electron/main.cjs",
+      },
+      null,
+      2
+    )
+  );
+  assertBundleClean(appResourcesDir);
+  await asar.createPackage(appResourcesDir, appAsarPath);
+  fs.rmSync(appResourcesDir, { recursive: true, force: true });
+}
+
 async function main() {
   const { rcedit } = await import("rcedit");
 
@@ -91,26 +119,7 @@ async function main() {
     },
   });
 
-  fs.rmSync(appResourcesDir, { recursive: true, force: true });
-  fs.mkdirSync(appResourcesDir, { recursive: true });
-  copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
-  copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
-  copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
-  fs.writeFileSync(
-    path.join(appResourcesDir, "package.json"),
-    JSON.stringify(
-      {
-        name: "shelf",
-        version: packageJson.version,
-        description: packageJson.description,
-        author: packageJson.author,
-        main: "electron/main.cjs",
-      },
-      null,
-      2
-    )
-  );
-  assertBundleClean(appResourcesDir);
+  await createAppAsar();
 
   signWindowsExecutable(shelfExe);
   console.log(`Packaged ${outputDir}`);

@@ -7,6 +7,7 @@ const { DatabaseSync } = require("node:sqlite");
 
 const APP_SCHEMA_VERSION = "1";
 const STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION = "2";
+const PAGE_SEARCH_INDEX_VERSION = "1";
 const APP_ASSET_PROTOCOL = "opennotion-app";
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const PROFILE_TEXT_MAX_LENGTH = 120;
@@ -72,6 +73,9 @@ const INVOKE_SOURCE_PATH_COMMANDS = new Set([
 
 const PAGE_COLUMNS =
   "id, title, parent_id, content, search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at";
+const PAGE_SELECT_COLUMNS = `${PAGE_COLUMNS}, 1 AS content_loaded`;
+const PAGE_METADATA_SELECT_COLUMNS =
+  "id, title, parent_id, NULL AS content, NULL AS search_text, icon, cover_url, is_deleted, is_favorite, is_template, is_database, database_schema, properties, sort_order, page_kind, created_at, updated_at, 0 AS content_loaded";
 const STUDIO_DOCUMENT_COLUMNS =
   "id, title, original_filename, stored_file_path, note_page_id, project_id, last_opened_at, viewer_zoom, viewer_page, panel_layout, created_at, updated_at";
 const STUDIO_PROJECT_COLUMNS =
@@ -199,8 +203,10 @@ function runMigrations(db) {
       title TEXT NOT NULL,
       original_filename TEXT NOT NULL,
       stored_file_path TEXT NOT NULL,
-      note_page_id TEXT NOT NULL UNIQUE,
-      project_id TEXT,
+      note_page_id TEXT NOT NULL UNIQUE
+        REFERENCES pages(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      project_id TEXT
+        REFERENCES studio_projects(id) ON UPDATE CASCADE ON DELETE SET NULL,
       last_opened_at TEXT NOT NULL,
       viewer_zoom INTEGER NOT NULL DEFAULT 100,
       viewer_page INTEGER NOT NULL DEFAULT 1,
@@ -212,7 +218,8 @@ function runMigrations(db) {
     CREATE TABLE IF NOT EXISTS studio_projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      parent_id TEXT,
+      parent_id TEXT
+        REFERENCES studio_projects(id) ON UPDATE CASCADE ON DELETE SET NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -220,8 +227,10 @@ function runMigrations(db) {
 
     CREATE TABLE IF NOT EXISTS studio_document_page_links (
       id TEXT PRIMARY KEY,
-      document_id TEXT NOT NULL,
-      page_id TEXT NOT NULL,
+      document_id TEXT NOT NULL
+        REFERENCES studio_documents(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      page_id TEXT NOT NULL
+        REFERENCES pages(id) ON UPDATE CASCADE ON DELETE CASCADE,
       pdf_page INTEGER,
       label TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
@@ -280,6 +289,39 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_pages_active_updated_at
       ON pages (is_deleted, updated_at);
   `);
+
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS page_search_fts USING fts5(
+        page_id UNINDEXED,
+        title,
+        search_text
+      );
+    `);
+    const storedSearchIndexVersion = rowValue(
+      db
+        .prepare(
+          "SELECT value FROM app_metadata WHERE key = 'page_search_index_version'",
+        )
+        .get(),
+      "value",
+      null,
+    );
+    if (storedSearchIndexVersion !== PAGE_SEARCH_INDEX_VERSION) {
+      rebuildPageSearchIndex(db);
+      db.prepare(
+        `
+        INSERT INTO app_metadata (key, value)
+        VALUES ('page_search_index_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `,
+      ).run(PAGE_SEARCH_INDEX_VERSION);
+    }
+  } catch {
+    db.prepare(
+      "DELETE FROM app_metadata WHERE key = 'page_search_index_version'",
+    ).run();
+  }
 
   db.exec(`
     INSERT OR IGNORE INTO studio_document_page_links (
@@ -351,6 +393,7 @@ function openDatabase(appConfigDir, appVersion = CURRENT_APP_VERSION) {
   const dbPath = path.join(appConfigDir, "opennotion.db");
   const databaseExisted = fs.existsSync(dbPath);
   const db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   restrictDatabaseFilePermissions(dbPath);
@@ -429,6 +472,54 @@ function lowerLikePattern(query) {
   return `%${query.trim().toLowerCase()}%`;
 }
 
+function pageSearchIndexAvailable(db) {
+  try {
+    db.prepare("SELECT rowid FROM page_search_fts LIMIT 1").get();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rebuildPageSearchIndex(db) {
+  if (!pageSearchIndexAvailable(db)) return false;
+  db.exec("DELETE FROM page_search_fts");
+  db.prepare(
+    `
+    INSERT INTO page_search_fts(rowid, page_id, title, search_text)
+    SELECT rowid, id, coalesce(title, ''), coalesce(search_text, '')
+    FROM pages
+    WHERE is_deleted = 0
+      AND page_kind IN ('note', 'studio_note')
+  `,
+  ).run();
+  return true;
+}
+
+function syncPageSearchIndexEntry(db, id) {
+  if (!pageSearchIndexAvailable(db)) return false;
+  db.prepare("DELETE FROM page_search_fts WHERE page_id = ?").run(id);
+  db.prepare(
+    `
+    INSERT INTO page_search_fts(rowid, page_id, title, search_text)
+    SELECT rowid, id, coalesce(title, ''), coalesce(search_text, '')
+    FROM pages
+    WHERE id = ?
+      AND is_deleted = 0
+      AND page_kind IN ('note', 'studio_note')
+  `,
+  ).run(id);
+  return true;
+}
+
+function pageSearchFtsQuery(query) {
+  const terms = String(query ?? "").match(/[A-Za-z0-9_]+/g) || [];
+  return terms
+    .slice(0, 8)
+    .map((term) => `${term.toLowerCase()}*`)
+    .join(" ");
+}
+
 function validateJsonPath(filePath) {
   if (path.extname(filePath).toLowerCase() !== ".json") {
     throw new Error("backup file must be a JSON file");
@@ -502,6 +593,34 @@ function validateSizedStringField(
   if (value.length > maxLength) throw new Error(`${field} is too large`);
 }
 
+function hasUrlScheme(value) {
+  return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value);
+}
+
+function normalizeStoredCoverUrl(value, { rejectRemote = true } = {}) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") throw new Error("cover_url must be a string");
+  const coverUrl = value.trim();
+  if (!coverUrl) return null;
+  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) {
+    return coverUrl;
+  }
+  if (/^blob:/i.test(coverUrl)) return coverUrl;
+  if (/^https?:\/\//i.test(coverUrl)) {
+    if (rejectRemote) throw new Error("remote cover images are not allowed");
+    return null;
+  }
+  if (/^file:\/\//i.test(coverUrl)) {
+    if (rejectRemote) throw new Error("file URLs are not allowed for covers");
+    return null;
+  }
+  if (hasUrlScheme(coverUrl)) {
+    if (rejectRemote) throw new Error("unsupported cover URL scheme");
+    return null;
+  }
+  return coverUrl;
+}
+
 function validatePageIdValue(field, value, options = {}) {
   validateSizedStringField(field, value, BACKUP_MAX_ID_LENGTH, {
     requireNonEmpty: true,
@@ -565,7 +684,8 @@ function validatePageUpdateInput(updates) {
       validateSizedStringField(field, value, PAGE_STRING_LIMITS[field], {
         allowNull: true,
       });
-      safeUpdates[field] = value;
+      safeUpdates[field] =
+        field === "cover_url" ? normalizeStoredCoverUrl(value) : value;
       continue;
     }
     throw new Error(`unsupported page update field: ${field}`);
@@ -607,13 +727,15 @@ function validateImportedPagesArray(pages) {
 
 function normalizeImportedCoverUrl(value) {
   if (value === null || value === undefined) return null;
-  const coverUrl = String(value).trim();
-  if (!coverUrl) return null;
-  if (/^https:\/\//i.test(coverUrl)) return coverUrl;
-  if (/^blob:/i.test(coverUrl)) return coverUrl;
-  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl))
+  try {
+    const coverUrl = normalizeStoredCoverUrl(String(value), {
+      rejectRemote: false,
+    });
+    if (!coverUrl || /^blob:/i.test(coverUrl)) return null;
     return coverUrl;
-  return null;
+  } catch {
+    return null;
+  }
 }
 
 const IMPORTED_MEDIA_BLOCK_TYPES = new Set(["image", "video", "audio", "file"]);
@@ -1112,6 +1234,7 @@ function removeStoredStudioDocumentFile(storedFilePath, studioDocumentsRoot) {
 module.exports = {
   APP_SCHEMA_VERSION,
   STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION,
+  PAGE_SEARCH_INDEX_VERSION,
   APP_ASSET_PROTOCOL,
   COVER_IMAGE_MAX_BYTES,
   PROFILE_TEXT_MAX_LENGTH,
@@ -1141,6 +1264,8 @@ module.exports = {
   INVOKE_PATH_COMMANDS,
   INVOKE_SOURCE_PATH_COMMANDS,
   PAGE_COLUMNS,
+  PAGE_SELECT_COLUMNS,
+  PAGE_METADATA_SELECT_COLUMNS,
   STUDIO_DOCUMENT_COLUMNS,
   STUDIO_PROJECT_COLUMNS,
   STUDIO_DOCUMENT_PAGE_LINK_COLUMNS,
@@ -1161,6 +1286,10 @@ module.exports = {
   studioProjectIdFromPageId,
   numericSchemaVersion,
   lowerLikePattern,
+  pageSearchIndexAvailable,
+  rebuildPageSearchIndex,
+  syncPageSearchIndexEntry,
+  pageSearchFtsQuery,
   validateJsonPath,
   validateBackupImportSource,
   validateBackupExportDestination,
@@ -1171,6 +1300,7 @@ module.exports = {
   validateOptionalPageIdValue,
   validatePageCreateInput,
   validatePageUpdateInput,
+  normalizeStoredCoverUrl,
   validateImportedPagesArray,
   IMPORTED_MEDIA_BLOCK_TYPES,
   sanitizeImportedBlockMedia,

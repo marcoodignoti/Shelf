@@ -1,4 +1,5 @@
 import packageJson from "../../package.json";
+import { invoke } from "./desktop";
 
 export const CURRENT_APP_VERSION = packageJson.version;
 export const BETA_CHANNEL_MANIFEST_URL =
@@ -56,7 +57,7 @@ function manifestUrls(): string[] {
 
 async function fetchManifest(url: string): Promise<unknown> {
   if (typeof window !== "undefined" && window.openNotion) {
-    return await window.openNotion.invoke<unknown>("fetch_update_manifest", { url });
+    return await invoke("fetch_update_manifest", { url });
   }
 
   const response = await fetch(url, {
@@ -167,11 +168,11 @@ export async function downloadVerifiedUpdate(download: BetaUpdateDownload): Prom
     throw new Error("Update download is not linked to a verified manifest");
   }
 
-  return await window.openNotion.invoke<VerifiedUpdateDownload>("download_update_artifact", {
-	    url: download.url,
-	    sha256: download.sha256,
-	    downloadToken: download.downloadToken,
-	  });
+  return await invoke("download_update_artifact", {
+    url: download.url,
+    sha256: download.sha256,
+    downloadToken: download.downloadToken,
+  });
 }
 
 export async function checkForBetaUpdate(): Promise<BetaUpdateState> {

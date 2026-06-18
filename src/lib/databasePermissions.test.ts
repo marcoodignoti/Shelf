@@ -35,4 +35,19 @@ describe("openDatabase file permissions", () => {
       expect(fs.statSync(walPath).mode & 0o777).toBe(0o600);
     }
   });
+
+  it("enables foreign keys and declares core Studio relationships on fresh databases", () => {
+    const db = openDatabase(dataDir, "0.0.1-test");
+
+    expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+    expect(
+      db
+        .prepare("PRAGMA foreign_key_list('studio_document_page_links')")
+        .all()
+        .map((row: { table: string }) => row.table)
+        .sort(),
+    ).toEqual(["pages", "studio_documents"]);
+
+    db.close();
+  });
 });

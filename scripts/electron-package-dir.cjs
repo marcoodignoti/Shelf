@@ -2,6 +2,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const asar = require("@electron/asar");
 const { copyDirectoryFiltered, assertBundleClean } = require("./audit-release-bundle.cjs");
 
 const root = path.resolve(__dirname, "..");
@@ -50,52 +51,67 @@ function copyAppBundle(source, destination) {
   copyDirectory(source, destination);
 }
 
-fs.rmSync(path.join(root, "dist-electron"), { recursive: true, force: true });
-fs.mkdirSync(workingOutputDir, { recursive: true });
-copyAppBundle(electronApp, appDir);
-
-const macOsDir = path.join(appDir, "Contents", "MacOS");
-fs.renameSync(path.join(macOsDir, "Electron"), path.join(macOsDir, "Shelf"));
-
-fs.rmSync(appResourcesDir, { recursive: true, force: true });
-fs.mkdirSync(appResourcesDir, { recursive: true });
-copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
-copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
-copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
-fs.copyFileSync(appIcon, path.join(resourcesDir, "app-icon.icns"));
-assertBundleClean(appResourcesDir);
-fs.writeFileSync(
-  path.join(appResourcesDir, "package.json"),
-  JSON.stringify(
-    {
-      name: "shelf",
-      version: packageJson.version,
-      description: packageJson.description,
-      author: packageJson.author,
-      main: "electron/main.cjs",
-    },
-    null,
-    2
-  )
-);
-
-const plist = path.join(appDir, "Contents", "Info.plist");
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName Shelf", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName Shelf", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.marcodignoti.shelf", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable Shelf", plist]);
-run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleShortVersionString ${packageJson.version}`, plist]);
-run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleVersion ${packageJson.version}`, plist]);
-run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);
-
-if (process.platform === "darwin") {
-  run("xattr", ["-cr", appDir]);
-  run("codesign", macCodesignArgs(appDir));
-  run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appDir]);
-  fs.mkdirSync(path.dirname(outputDir), { recursive: true });
-  run("ditto", ["--norsrc", appDir, finalAppDir]);
-  fs.rmSync(workingOutputDir, { recursive: true, force: true });
-  run("xattr", ["-cr", finalAppDir]);
+async function createAppAsar() {
+  const appAsarPath = path.join(resourcesDir, "app.asar");
+  fs.rmSync(appResourcesDir, { recursive: true, force: true });
+  fs.rmSync(appAsarPath, { force: true });
+  fs.mkdirSync(appResourcesDir, { recursive: true });
+  copyDirectory(path.join(root, "dist"), path.join(appResourcesDir, "dist"));
+  copyDirectory(path.join(root, "electron"), path.join(appResourcesDir, "electron"));
+  copyDirectory(path.join(root, "assets"), path.join(appResourcesDir, "assets"));
+  assertBundleClean(appResourcesDir);
+  fs.writeFileSync(
+    path.join(appResourcesDir, "package.json"),
+    JSON.stringify(
+      {
+        name: "shelf",
+        version: packageJson.version,
+        description: packageJson.description,
+        author: packageJson.author,
+        main: "electron/main.cjs",
+      },
+      null,
+      2
+    )
+  );
+  await asar.createPackage(appResourcesDir, appAsarPath);
+  fs.rmSync(appResourcesDir, { recursive: true, force: true });
 }
 
-console.log(`Packaged ${finalAppDir}`);
+async function main() {
+  fs.rmSync(path.join(root, "dist-electron"), { recursive: true, force: true });
+  fs.mkdirSync(workingOutputDir, { recursive: true });
+  copyAppBundle(electronApp, appDir);
+
+  const macOsDir = path.join(appDir, "Contents", "MacOS");
+  fs.renameSync(path.join(macOsDir, "Electron"), path.join(macOsDir, "Shelf"));
+
+  await createAppAsar();
+  fs.copyFileSync(appIcon, path.join(resourcesDir, "app-icon.icns"));
+
+  const plist = path.join(appDir, "Contents", "Info.plist");
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName Shelf", plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName Shelf", plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.marcodignoti.shelf", plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable Shelf", plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleShortVersionString ${packageJson.version}`, plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", `Set :CFBundleVersion ${packageJson.version}`, plist]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIconFile app-icon", plist]);
+
+  if (process.platform === "darwin") {
+    run("xattr", ["-cr", appDir]);
+    run("codesign", macCodesignArgs(appDir));
+    run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appDir]);
+    fs.mkdirSync(path.dirname(outputDir), { recursive: true });
+    run("ditto", ["--norsrc", appDir, finalAppDir]);
+    fs.rmSync(workingOutputDir, { recursive: true, force: true });
+    run("xattr", ["-cr", finalAppDir]);
+  }
+
+  console.log(`Packaged ${finalAppDir}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

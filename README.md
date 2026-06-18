@@ -189,6 +189,9 @@ starts from that computer's own empty workspace.
 Built with Electron, React 19, TypeScript, BlockNote, and SQLite. Requires
 Node.js 22+.
 
+For setup, project structure, workflow, testing, troubleshooting, and coding
+agent role prompts, see the [developer guide](docs/developer-guide.md).
+
 ```sh
 npm ci                 # install dependencies
 npm run electron:dev   # run the desktop app against the Vite dev server

@@ -26,9 +26,9 @@ import FolderOpen from 'lucide-react/dist/esm/icons/folder-open.mjs';
 import FolderPlus from 'lucide-react/dist/esm/icons/folder-plus.mjs';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.mjs';
 import { Page } from '../lib/db';
-import type { StudioDocument, StudioDocumentPageLink } from '../lib/studio';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
 import { buildSidebarSections, sortSidebarPages } from '../lib/sidebarProjects';
+import { buildStudioNoteDocuments, type StudioNoteDocument, type StudioNoteEntry } from '../lib/sidebarStudioNotes';
 import { SettingsModal } from './SettingsModal';
 import { HOME_PAGE_ID } from '../lib/navigation';
 import { normalizePageTitle } from '../lib/pageTitle';
@@ -57,6 +57,23 @@ type DragSession = {
   startX: number;
   startY: number;
   active: boolean;
+};
+
+type SidebarModel = {
+  pinnedProjects: Page[];
+  pinnedPages: Page[];
+  projects: ReturnType<typeof buildSidebarSections>["projects"];
+  rootRegularPages: Page[];
+  unpinnedContentPages: Page[];
+  unpinnedChildrenByParentId: Map<string | null, Page[]>;
+  pagesById: Map<string, Page>;
+  projectMoveTargets: Page[];
+  pinnedProjectGroups: ReturnType<typeof buildSidebarSections>["projects"];
+  regularNotePages: Page[];
+  studioContextsByPageId: Map<string, PageStudioContext[]>;
+  studioNoteDocuments: StudioNoteDocument[];
+  ungroupedStudioNotes: Page[];
+  templatePages: Page[];
 };
 
 function sidebarPopoverStyle(left: number, top: number): CSSProperties {
@@ -91,12 +108,12 @@ function sortPages(pages: Page[]): Page[] {
   });
 }
 
-function isDescendantPage(pages: Page[], pageId: string, possibleDescendantId: string): boolean {
-  let current = pages.find(page => page.id === possibleDescendantId);
+function isDescendantPage(pagesById: Map<string, Page>, pageId: string, possibleDescendantId: string): boolean {
+  let current = pagesById.get(possibleDescendantId);
 
   while (current?.parent_id) {
     if (current.parent_id === pageId) return true;
-    current = pages.find(page => page.id === current?.parent_id);
+    current = pagesById.get(current.parent_id);
   }
 
   return false;
@@ -104,6 +121,7 @@ function isDescendantPage(pages: Page[], pageId: string, possibleDescendantId: s
 
 function PageItem({
   page,
+  childrenByParentId,
   allPages,
   projectMoveTargets,
   studioContextsByPageId,
@@ -118,6 +136,7 @@ function PageItem({
   onPointerDownPage
 }: {
   page: Page,
+  childrenByParentId: Map<string | null, Page[]>,
   allPages: Page[],
   projectMoveTargets: Page[],
   studioContextsByPageId: Map<string, PageStudioContext[]>,
@@ -166,7 +185,7 @@ function PageItem({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const moveMenuRef = useRef<HTMLDivElement>(null);
 
-  const childPages = useMemo(() => allPages.filter(p => p.parent_id === page.id), [allPages, page.id]);
+  const childPages = childrenByParentId.get(page.id) ?? [];
   const hasChildren = childPages.length > 0;
   const studioContexts = useMemo(() => studioContextsByPageId.get(page.id) ?? [], [studioContextsByPageId, page.id]);
   const primaryStudioContext = studioContexts[0] ?? null;
@@ -603,6 +622,7 @@ function PageItem({
             <PageItem
               key={child.id}
               page={child}
+              childrenByParentId={childrenByParentId}
               allPages={allPages}
               projectMoveTargets={projectMoveTargets}
               studioContextsByPageId={studioContextsByPageId}
@@ -627,6 +647,7 @@ function ProjectItem({
   project,
   children,
   contentPages,
+  childrenByParentId,
   projectMoveTargets,
   studioContextsByPageId,
   depth = 0,
@@ -643,6 +664,7 @@ function ProjectItem({
   project: Page;
   children: Page[];
   contentPages: Page[];
+  childrenByParentId: Map<string | null, Page[]>;
   projectMoveTargets: Page[];
   studioContextsByPageId: Map<string, PageStudioContext[]>;
   depth?: number;
@@ -904,6 +926,7 @@ function ProjectItem({
               <PageItem
                 key={child.id}
                 page={child}
+                childrenByParentId={childrenByParentId}
                 allPages={contentPages}
                 projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
@@ -925,58 +948,12 @@ function ProjectItem({
   );
 }
 
-type StudioNoteEntry = {
-  page: Page;
-  link: StudioDocumentPageLink | null;
-};
-
-type StudioNoteDocument = StudioDocument & {
-  noteEntries: StudioNoteEntry[];
-};
-
 function storedStudioTreeExpanded(key: string): boolean {
   return localStorage.getItem(`opennotion-${key}-expanded`) !== 'false';
 }
 
 function storeStudioTreeExpanded(key: string, expanded: boolean) {
   localStorage.setItem(`opennotion-${key}-expanded`, String(expanded));
-}
-
-function buildStudioNoteDocuments(
-  documents: StudioDocument[],
-  links: StudioDocumentPageLink[],
-  studioNotePages: Page[]
-): { documents: StudioNoteDocument[]; linkedPageIds: Set<string> } {
-  const studioNoteById = new Map(studioNotePages.map((page) => [page.id, page]));
-  const linksByDocumentId = new Map<string, StudioDocumentPageLink[]>();
-  const linkedPageIds = new Set<string>();
-
-  for (const link of links) {
-    if (link.page.page_kind !== 'studio_note') continue;
-    linkedPageIds.add(link.page_id);
-    const documentLinks = linksByDocumentId.get(link.document_id) ?? [];
-    documentLinks.push(link);
-    linksByDocumentId.set(link.document_id, documentLinks);
-  }
-
-  return {
-    linkedPageIds,
-    documents: documents
-      .map((document) => {
-        const linkedEntries = (linksByDocumentId.get(document.id) ?? [])
-          .map((link) => ({ page: link.page, link }));
-        const hasPrimaryLink = linkedEntries.some((entry) => entry.page.id === document.note_page_id);
-        const primaryNote = studioNoteById.get(document.note_page_id);
-        const entries = hasPrimaryLink || !primaryNote
-          ? linkedEntries
-          : [{ page: primaryNote, link: null }, ...linkedEntries];
-
-        if (primaryNote) linkedPageIds.add(primaryNote.id);
-        if (entries.length === 0) return null;
-        return { ...document, noteEntries: entries };
-      })
-      .filter((document): document is StudioNoteDocument => Boolean(document)),
-  };
 }
 
 function StudioNotesTree({
@@ -1138,7 +1115,7 @@ export function Sidebar() {
   const [renameRequestedPageId, setRenameRequestedPageId] = useState<string | null>(null);
   const dropTargetRef = useRef<DropTarget | null>(null);
   const dragSessionRef = useRef<DragSession | null>(null);
-  const pagesRef = useRef<Page[]>([]);
+  const sidebarModelRef = useRef<SidebarModel | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1153,30 +1130,74 @@ export function Sidebar() {
     void fetchProfile();
   }, [fetchProfile]);
 
-  useEffect(() => {
-    pagesRef.current = pages;
-  }, [pages]);
+  const sidebarModel: SidebarModel = useMemo(() => {
+    const sidebarSections = buildSidebarSections(pages);
+    const { pinnedProjects, pinnedPages, projects, rootPages, contentPages } = sidebarSections;
+    const pagesById = new Map(pages.map((page) => [page.id, page]));
+    const unpinnedContentPages = contentPages.filter((page) => page.is_favorite !== 1);
+    const unpinnedChildrenByParentId = new Map<string | null, Page[]>();
+    for (const page of unpinnedContentPages) {
+      const children = unpinnedChildrenByParentId.get(page.parent_id);
+      if (children) {
+        children.push(page);
+      } else {
+        unpinnedChildrenByParentId.set(page.parent_id, [page]);
+      }
+    }
+    const projectMoveTargets = sortSidebarPages(pages.filter((page) => page.page_kind === 'project' && page.is_deleted === 0));
+    const pinnedProjectGroups = pinnedProjects.map((project) => ({
+      project,
+      children: unpinnedChildrenByParentId.get(project.id) ?? [],
+    }));
+    const regularNotePages = contentPages.filter((page) => page.page_kind === 'note');
+    const rootRegularPages = rootPages.filter((page) => page.page_kind === 'note');
+    const studioNotePages = sortPages(rootPages.filter((page) => page.page_kind === 'studio_note'));
+    const studioContextsByPageId = buildPageStudioContexts(studioDocuments, studioDocumentPageLinks);
+    const { documents: studioNoteDocuments, linkedPageIds: groupedStudioNoteIds } = buildStudioNoteDocuments(
+      studioDocuments,
+      studioDocumentPageLinks,
+      studioNotePages
+    );
+    const ungroupedStudioNotes = studioNotePages.filter((page) => !groupedStudioNoteIds.has(page.id));
+    const sortedPages = sortPages(regularNotePages);
+    const templatePages = sortedPages.filter(p => p.is_template === 1);
 
-  const sidebarSections = buildSidebarSections(pages);
-  const { pinnedProjects, pinnedPages, projects, rootPages, contentPages } = sidebarSections;
-  const unpinnedContentPages = contentPages.filter((page) => page.is_favorite !== 1);
-  const projectMoveTargets = sortSidebarPages(pages.filter((page) => page.page_kind === 'project' && page.is_deleted === 0));
-  const pinnedProjectGroups = pinnedProjects.map((project) => ({
-    project,
-    children: unpinnedContentPages.filter((page) => page.parent_id === project.id),
-  }));
-  const regularNotePages = contentPages.filter((page) => page.page_kind === 'note');
-  const rootRegularPages = rootPages.filter((page) => page.page_kind === 'note');
-  const studioNotePages = sortPages(rootPages.filter((page) => page.page_kind === 'studio_note'));
-  const studioContextsByPageId = buildPageStudioContexts(studioDocuments, studioDocumentPageLinks);
-  const { documents: studioNoteDocuments, linkedPageIds: groupedStudioNoteIds } = buildStudioNoteDocuments(
-    studioDocuments,
-    studioDocumentPageLinks,
-    studioNotePages
-  );
-  const ungroupedStudioNotes = studioNotePages.filter((page) => !groupedStudioNoteIds.has(page.id));
-  const sortedPages = sortPages(regularNotePages);
-  const templatePages = sortedPages.filter(p => p.is_template === 1);
+    return {
+      pinnedProjects,
+      pinnedPages,
+      projects,
+      rootRegularPages,
+      unpinnedContentPages,
+      unpinnedChildrenByParentId,
+      pagesById,
+      projectMoveTargets,
+      pinnedProjectGroups,
+      regularNotePages,
+      studioContextsByPageId,
+      studioNoteDocuments,
+      ungroupedStudioNotes,
+      templatePages,
+    };
+  }, [pages, studioDocumentPageLinks, studioDocuments]);
+  const {
+    pinnedProjects,
+    pinnedPages,
+    projects,
+    rootRegularPages,
+    unpinnedContentPages,
+    unpinnedChildrenByParentId,
+    pagesById,
+    projectMoveTargets,
+    pinnedProjectGroups,
+    regularNotePages,
+    studioContextsByPageId,
+    studioNoteDocuments,
+    ungroupedStudioNotes,
+    templatePages,
+  } = sidebarModel;
+  useEffect(() => {
+    sidebarModelRef.current = sidebarModel;
+  }, [sidebarModel]);
   const pendingDeleteStudioDocument = pendingDelete
     && pendingDelete.kind !== 'project'
     ? studioDocuments.find((doc) => doc.note_page_id === pendingDelete.page.id) ?? null
@@ -1276,10 +1297,10 @@ export function Sidebar() {
     if (activeElement.closest('input,textarea,[contenteditable="true"]')) return;
     if (currentPageId === HOME_PAGE_ID) return;
 
-    const currentPage = regularNotePages.find(page => page.id === currentPageId);
+    const currentPage = currentPageId ? pagesById.get(currentPageId) : undefined;
     if (!currentPage) return;
 
-    const childPages = sortedPages.filter(page => page.parent_id === currentPage.id);
+    const childPages = unpinnedChildrenByParentId.get(currentPage.id) ?? [];
     const expandedIds = expandedPageIds(regularNotePages);
     const visibleIds = visiblePageIds(regularNotePages, expandedIds);
     const currentIndex = visibleIds.indexOf(currentPage.id);
@@ -1338,9 +1359,10 @@ export function Sidebar() {
   };
 
   const reorderFromDropTarget = async (sourceId: string, target: DropTarget) => {
-    const currentPages = pagesRef.current;
-    const draggedPage = currentPages.find(candidate => candidate.id === sourceId);
-    const targetPage = currentPages.find(candidate => candidate.id === target.pageId);
+    const currentModel = sidebarModelRef.current;
+    if (!currentModel) return;
+    const draggedPage = currentModel.pagesById.get(sourceId);
+    const targetPage = currentModel.pagesById.get(target.pageId);
     if (!draggedPage || !targetPage) return;
 
     if (target.position === 'inside') {
@@ -1349,9 +1371,7 @@ export function Sidebar() {
       return;
     }
 
-    const siblingIds = sortPages(currentPages)
-      .filter(candidate => candidate.parent_id === targetPage.parent_id)
-      .map(candidate => candidate.id);
+    const siblingIds = (currentModel.unpinnedChildrenByParentId.get(targetPage.parent_id) ?? []).map(candidate => candidate.id);
     const orderedIds = draggedPage.parent_id === targetPage.parent_id
       ? reorderedSiblingIds(siblingIds, sourceId, targetPage.id, target.position)
       : reorderedWithMovedPageId(siblingIds, sourceId, targetPage.id, target.position);
@@ -1377,9 +1397,10 @@ export function Sidebar() {
       return;
     }
 
-    const currentPages = pagesRef.current;
-    const draggedPage = currentPages.find(candidate => candidate.id === session.pageId);
-    const targetPage = currentPages.find(candidate => candidate.id === targetId);
+    const currentModel = sidebarModelRef.current;
+    if (!currentModel) return;
+    const draggedPage = currentModel.pagesById.get(session.pageId);
+    const targetPage = currentModel.pagesById.get(targetId);
 
     const rect = row.getBoundingClientRect();
     const rawPosition = dropPositionFromOffset(clientY - rect.top, rect.height);
@@ -1390,13 +1411,13 @@ export function Sidebar() {
       targetPage &&
       position !== 'inside' &&
       targetPage.parent_id !== draggedPage.id &&
-      !isDescendantPage(currentPages, session.pageId, targetPage.parent_id || '')
+      !isDescendantPage(currentModel.pagesById, session.pageId, targetPage.parent_id || '')
     );
     const isValidInsideDrop = Boolean(
       draggedPage &&
       targetPage &&
       position === 'inside' &&
-      !isDescendantPage(currentPages, session.pageId, targetId)
+      !isDescendantPage(currentModel.pagesById, session.pageId, targetId)
     );
 
     if (!draggedPage || !targetPage || (!isValidSiblingDrop && !isValidCrossParentOrderDrop && !isValidInsideDrop)) {
@@ -1639,6 +1660,7 @@ export function Sidebar() {
                 project={project}
                 children={children}
                 contentPages={unpinnedContentPages}
+                childrenByParentId={unpinnedChildrenByParentId}
                 projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
                 onRequestDelete={setPendingDelete}
@@ -1656,6 +1678,7 @@ export function Sidebar() {
               <PageItem
                 key={`pinned-${page.id}`}
                 page={page}
+                childrenByParentId={unpinnedChildrenByParentId}
                 allPages={unpinnedContentPages}
                 projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
@@ -1693,6 +1716,7 @@ export function Sidebar() {
                 project={project}
                 children={children}
                 contentPages={unpinnedContentPages}
+                childrenByParentId={unpinnedChildrenByParentId}
                 projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}
                 onRequestDelete={setPendingDelete}
@@ -1720,6 +1744,7 @@ export function Sidebar() {
               <PageItem
                 key={page.id}
                 page={page}
+                childrenByParentId={unpinnedChildrenByParentId}
                 allPages={unpinnedContentPages}
                 projectMoveTargets={projectMoveTargets}
                 studioContextsByPageId={studioContextsByPageId}

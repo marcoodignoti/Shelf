@@ -14,8 +14,8 @@ import { useAppStore } from "../store/useAppStore";
 import { useUIStore } from "../store/useUIStore";
 import {
   buildStudioPanelGridColumns,
+  buildStudioContinuousPageWindow,
   clampStudioPage,
-  clampStudioPanelRatio,
   clampStudioZoom,
   estimatedStudioPdfPageSlotHeight,
   isStudioPdfPageCountAllowed,
@@ -29,6 +29,22 @@ import {
   studioPdfSrc,
   studioPdfViewportScale,
 } from "../lib/studio";
+import {
+  getStoredPanelRatio,
+  getStoredPdfDisplayMode,
+  getStoredViewMode,
+  storePanelRatio,
+  storePdfDisplayMode,
+  storeViewMode,
+  type StudioPdfDisplayMode,
+  type StudioViewMode,
+} from "../lib/studioWorkspacePrefs";
+import {
+  buildVisibleStudioLinkedPageLinks,
+  filterExistingStudioPageCandidates,
+  preferredStudioLinkedPageId,
+  selectActiveStudioLinkedPage,
+} from "../lib/studioWorkspaceLinks";
 import { FloatingPopover } from "./FloatingPopover";
 import { Editor } from "./PageEditor";
 
@@ -60,9 +76,6 @@ class StudioPdfBinaryDataFactory {
   }
 }
 
-type StudioViewMode = "split" | "pdf" | "note";
-type StudioPdfDisplayMode = "continuous" | "single" | "two-page";
-
 type StudioWorkspaceProps = {
   document: StudioDocument;
   note: Page | null;
@@ -80,7 +93,7 @@ const PDF_DISPLAY_MODE_SHORTCUT_KEYS = ["1", "2", "3"] as const;
 const PDF_DISPLAY_MODE_VALUES: StudioPdfDisplayMode[] = ["continuous", "single", "two-page"];
 
 export function StudioWorkspace({
-  document,
+  document: studioDocument,
   note,
   pages,
   onSelectPage,
@@ -100,24 +113,24 @@ export function StudioWorkspace({
   const removePage = useAppStore((state) => state.removePage);
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
-  const pdfSrc = useMemo(() => studioPdfSrc(document).split("#")[0], [document.id, document.stored_file_path]);
-  const currentPage = clampStudioPage(document.viewer_page);
-  const persistedZoom = clampStudioZoom(document.viewer_zoom);
+  const pdfSrc = useMemo(() => studioPdfSrc(studioDocument).split("#")[0], [studioDocument.id, studioDocument.stored_file_path]);
+  const currentPage = clampStudioPage(studioDocument.viewer_page);
+  const persistedZoom = clampStudioZoom(studioDocument.viewer_zoom);
   const [localZoom, setLocalZoom] = useState(persistedZoom);
   const currentZoom = localZoom;
   const [targetPdfPage, setTargetPdfPage] = useState(currentPage);
   const [visiblePdfPage, setVisiblePdfPage] = useState(currentPage);
   const [pageDraft, setPageDraft] = useState(String(currentPage));
-  const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(document.id));
-  const [viewMode, setViewMode] = useState<StudioViewMode>(() => getStoredViewMode(document.id));
-  const [pdfDisplayMode, setPdfDisplayMode] = useState<StudioPdfDisplayMode>(() => getStoredPdfDisplayMode(document.id));
+  const [pdfPanelRatio, setPdfPanelRatio] = useState(() => getStoredPanelRatio(studioDocument.id));
+  const [viewMode, setViewMode] = useState<StudioViewMode>(() => getStoredViewMode(studioDocument.id));
+  const [pdfDisplayMode, setPdfDisplayMode] = useState<StudioPdfDisplayMode>(() => getStoredPdfDisplayMode(studioDocument.id));
   const [isPdfViewMenuOpen, setIsPdfViewMenuOpen] = useState(false);
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const [pdfLoadError, setPdfLoadError] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
   const [linkedPageLinks, setLinkedPageLinks] = useState<StudioDocumentPageLink[]>([]);
-  const [selectedLinkedPageId, setSelectedLinkedPageId] = useState<string | null>(document.note_page_id);
+  const [selectedLinkedPageId, setSelectedLinkedPageId] = useState<string | null>(studioDocument.note_page_id);
   const [isCreatingLinkedPage, setIsCreatingLinkedPage] = useState(false);
   const [isExistingPagePickerOpen, setIsExistingPagePickerOpen] = useState(false);
   const [existingPageQuery, setExistingPageQuery] = useState("");
@@ -125,47 +138,33 @@ export function StudioWorkspace({
   const splitRef = useRef<HTMLDivElement>(null);
   const existingPagePickerButtonRef = useRef<HTMLButtonElement>(null);
   const zoomPersistTimeoutRef = useRef<number | null>(null);
-  const nextLayout = document.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
-  const panelGridColumns = buildStudioPanelGridColumns(document.panel_layout, pdfPanelRatio);
-  const activeLinkedPage = useMemo(() => {
-    const selectedId = selectedLinkedPageId ?? document.note_page_id;
-    return pages.find((page) => page.id === selectedId)
-      ?? linkedPageLinks.find((link) => link.page_id === selectedId)?.page
-      ?? note;
-  }, [document.note_page_id, linkedPageLinks, note, pages, selectedLinkedPageId]);
+  const nextLayout = studioDocument.panel_layout === "pdf-left" ? "note-left" : "pdf-left";
+  const panelGridColumns = buildStudioPanelGridColumns(studioDocument.panel_layout, pdfPanelRatio);
+  const activeLinkedPage = useMemo(() => selectActiveStudioLinkedPage({
+    selectedId: selectedLinkedPageId,
+    primaryPageId: studioDocument.note_page_id,
+    pages,
+    links: linkedPageLinks,
+    note,
+  }), [studioDocument.note_page_id, linkedPageLinks, note, pages, selectedLinkedPageId]);
   const effectiveViewMode: StudioViewMode = viewMode === "note" && !activeLinkedPage ? "pdf" : viewMode;
   const showPdfPanel = effectiveViewMode === "split" || effectiveViewMode === "pdf";
   const showPdfControls = showPdfPanel;
-  const toolbarOverNoteSurface = effectiveViewMode === "note" || (effectiveViewMode === "split" && document.panel_layout === "pdf-left");
-  const visibleLinkedPageLinks = useMemo(() => {
-    if (linkedPageLinks.length > 0) return linkedPageLinks;
-    if (!note) return [];
-    return [{
-      id: `fallback-${document.id}`,
-      document_id: document.id,
-      page_id: note.id,
-      pdf_page: null,
-      label: t("studio.primaryNote"),
-      sort_order: 0,
-      created_at: note.created_at,
-      updated_at: note.updated_at,
-      page: note,
-    }];
-  }, [document.id, linkedPageLinks, note, t]);
+  const toolbarOverNoteSurface = effectiveViewMode === "note" || (effectiveViewMode === "split" && studioDocument.panel_layout === "pdf-left");
+  const visibleLinkedPageLinks = useMemo(
+    () => buildVisibleStudioLinkedPageLinks(studioDocument.id, linkedPageLinks, note, t("studio.primaryNote")),
+    [studioDocument.id, linkedPageLinks, note, t],
+  );
   const linkedPageIds = useMemo(
     () => new Set(visibleLinkedPageLinks.map((link) => link.page_id)),
     [visibleLinkedPageLinks]
   );
-  const existingPageCandidates = useMemo(() => {
-    const query = existingPageQuery.trim().toLowerCase();
-    return pages
-      .filter((candidate) => candidate.is_deleted === 0 && !linkedPageIds.has(candidate.id))
-      .filter((candidate) => {
-        if (!query) return true;
-        return (candidate.title || t("studio.untitled")).toLowerCase().includes(query);
-      })
-      .slice(0, 8);
-  }, [existingPageQuery, linkedPageIds, pages, t]);
+  const existingPageCandidates = useMemo(() => filterExistingStudioPageCandidates({
+    pages,
+    linkedPageIds,
+    query: existingPageQuery,
+    untitledLabel: t("studio.untitled"),
+  }), [existingPageQuery, linkedPageIds, pages, t]);
   const normalizePdfPage = useCallback((page: number) => {
     const viewerPage = clampStudioPage(page);
     return pdfPageCount ? Math.min(viewerPage, pdfPageCount) : viewerPage;
@@ -182,24 +181,24 @@ export function StudioWorkspace({
   }, [currentPage, normalizePdfPage, pdfSrc]);
 
   useEffect(() => {
-    setPdfPanelRatio(getStoredPanelRatio(document.id));
-    setViewMode(getStoredViewMode(document.id));
-    setPdfDisplayMode(getStoredPdfDisplayMode(document.id));
+    setPdfPanelRatio(getStoredPanelRatio(studioDocument.id));
+    setViewMode(getStoredViewMode(studioDocument.id));
+    setPdfDisplayMode(getStoredPdfDisplayMode(studioDocument.id));
     setIsPdfViewMenuOpen(false);
     setIsExistingPagePickerOpen(false);
     setExistingPageQuery("");
-    setSelectedLinkedPageId(document.note_page_id);
+    setSelectedLinkedPageId(studioDocument.note_page_id);
     setLinkedPageLinks([]);
-  }, [document.id]);
+  }, [studioDocument.id, studioDocument.note_page_id]);
 
   useEffect(() => {
     let cancelled = false;
-    listStudioDocumentPageLinks(document.id)
+    listStudioDocumentPageLinks(studioDocument.id)
       .then((links) => {
         if (cancelled) return;
         setLinkedPageLinks(links);
         setSelectedLinkedPageId((currentId) =>
-          preferredLinkedPageId(links, document.note_page_id, currentId)
+          preferredStudioLinkedPageId(links, studioDocument.note_page_id, currentId)
         );
       })
       .catch((error: unknown) => {
@@ -209,7 +208,7 @@ export function StudioWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [document.id, document.note_page_id, showError]);
+  }, [studioDocument.id, studioDocument.note_page_id, showError]);
 
   useEffect(() => {
     const livePageIds = new Set(pages.filter((page) => page.is_deleted === 0).map((page) => page.id));
@@ -223,7 +222,7 @@ export function StudioWorkspace({
 
   useEffect(() => {
     setLocalZoom(persistedZoom);
-  }, [document.id, persistedZoom]);
+  }, [studioDocument.id, persistedZoom]);
 
   useEffect(() => {
     return () => {
@@ -238,8 +237,8 @@ export function StudioWorkspace({
     setTargetPdfPage(viewerPage);
     setVisiblePdfPage(viewerPage);
     setPageDraft(String(viewerPage));
-    onUpdateViewer(document.id, { viewer_page: viewerPage });
-  }, [document.id, normalizePdfPage, onUpdateViewer]);
+    onUpdateViewer(studioDocument.id, { viewer_page: viewerPage });
+  }, [studioDocument.id, normalizePdfPage, onUpdateViewer]);
 
   const updateVisiblePdfPage = useCallback((page: number) => {
     const viewerPage = normalizePdfPage(page);
@@ -264,8 +263,8 @@ export function StudioWorkspace({
   const handleReplacePdfFile = useCallback(() => {
     setPdfLoadFailed(false);
     setPdfLoadError(null);
-    onReplacePdfFile(document.id);
-  }, [document.id, onReplacePdfFile]);
+    onReplacePdfFile(studioDocument.id);
+  }, [studioDocument.id, onReplacePdfFile]);
 
   const handleSelectLinkedPage = (link: StudioDocumentPageLink) => {
     setSelectedLinkedPageId(link.page_id);
@@ -278,10 +277,10 @@ export function StudioWorkspace({
     if (isCreatingLinkedPage) return;
     setIsCreatingLinkedPage(true);
     try {
-      const title = pdfPage ? `${document.title} p. ${pdfPage}` : `${document.title} Note`;
-      const parentId = document.id === document.note_page_id ? document.id : null;
+      const title = pdfPage ? `${studioDocument.title} p. ${pdfPage}` : `${studioDocument.title} Note`;
+      const parentId = studioDocument.id === studioDocument.note_page_id ? studioDocument.id : null;
       const page = await createPage(title, parentId);
-      const link = await linkStudioDocumentPage(document.id, page.id, {
+      const link = await linkStudioDocumentPage(studioDocument.id, page.id, {
         pdfPage,
         label: pdfPage ? `p. ${pdfPage}` : t("studio.linkedNote"),
       });
@@ -299,7 +298,7 @@ export function StudioWorkspace({
 
   const handleLinkExistingPage = async (page: Page, pdfPage: number | null) => {
     try {
-      const link = await linkStudioDocumentPage(document.id, page.id, {
+      const link = await linkStudioDocumentPage(studioDocument.id, page.id, {
         pdfPage,
         label: pdfPage ? `p. ${pdfPage}` : null,
       });
@@ -336,23 +335,23 @@ export function StudioWorkspace({
       window.clearTimeout(zoomPersistTimeoutRef.current);
     }
     zoomPersistTimeoutRef.current = window.setTimeout(() => {
-      onUpdateViewer(document.id, { viewer_zoom: nextZoom });
+      onUpdateViewer(studioDocument.id, { viewer_zoom: nextZoom });
     }, 180);
-  }, [document.id, onUpdateViewer]);
+  }, [studioDocument.id, onUpdateViewer]);
 
   const updateViewMode = (mode: StudioViewMode) => {
     setViewMode(mode);
-    storeViewMode(document.id, mode);
+    storeViewMode(studioDocument.id, mode);
   };
 
   const updatePdfDisplayMode = useCallback((mode: StudioPdfDisplayMode) => {
     setPdfDisplayMode(mode);
-    storePdfDisplayMode(document.id, mode);
+    storePdfDisplayMode(studioDocument.id, mode);
     setIsPdfViewMenuOpen(false);
     if (mode !== "continuous") {
       updatePage(activePdfPage);
     }
-  }, [activePdfPage, document.id, updatePage]);
+  }, [activePdfPage, studioDocument.id, updatePage]);
 
   useEffect(() => {
     const handlePdfDisplayModeShortcut = (event: KeyboardEvent) => {
@@ -371,7 +370,6 @@ export function StudioWorkspace({
   useEffect(() => {
     const handleArrowPageNavigation = (event: KeyboardEvent) => {
       if (!showPdfControls) return;
-      // `document` here is the StudioDocument prop; the DOM document is on window.
       if (isTextEntryElement(window.document.activeElement)) return;
 
       const nextPage = pageForNavigationIntent(arrowKeyPageIntent(event), activePdfPage);
@@ -397,9 +395,9 @@ export function StudioWorkspace({
 
     const containerRect = container.getBoundingClientRect();
     const updateRatio = (clientX: number) => {
-      const clampedRatio = studioPanelRatioFromPointer(document.panel_layout, clientX, containerRect);
+      const clampedRatio = studioPanelRatioFromPointer(studioDocument.panel_layout, clientX, containerRect);
       setPdfPanelRatio(clampedRatio);
-      storePanelRatio(document.id, clampedRatio);
+      storePanelRatio(studioDocument.id, clampedRatio);
     };
 
     updateRatio(event.clientX);
@@ -442,9 +440,9 @@ export function StudioWorkspace({
         </div>
       ) : (
         <StudioPdfViewer
-          key={`${document.id}-${document.stored_file_path}`}
+          key={`${studioDocument.id}-${studioDocument.stored_file_path}`}
           src={pdfSrc}
-          title={document.title}
+          title={studioDocument.title}
           page={targetPdfPage}
           zoom={currentZoom}
           displayMode={pdfDisplayMode}
@@ -586,7 +584,7 @@ export function StudioWorkspace({
             <div className="mt-2">{t("studio.createLinkedNotePrompt")}</div>
             <button
               className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              onClick={() => onCreateMissingNote(document.id)}
+              onClick={() => onCreateMissingNote(studioDocument.id)}
             >
               <FilePlus className="h-4 w-4" />
               {t("studio.createLinkedNote")}
@@ -601,8 +599,8 @@ export function StudioWorkspace({
     <div className="relative flex h-full min-h-0 flex-col bg-background">
       <div className={`on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-3 px-4 py-2 ${isSidebarOpen ? "" : "pl-36"}`}>
         <div className="on-studio-toolbar-title pointer-events-auto min-w-0">
-          <div className="on-studio-toolbar-title-primary truncate text-sm font-medium text-foreground">{document.title}</div>
-          <div className="on-studio-toolbar-title-secondary truncate text-xs">{document.original_filename}</div>
+          <div className="on-studio-toolbar-title-primary truncate text-sm font-medium text-foreground">{studioDocument.title}</div>
+          <div className="on-studio-toolbar-title-secondary truncate text-xs">{studioDocument.original_filename}</div>
         </div>
         <div className={`on-studio-toolbar-controls pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 ${toolbarOverNoteSurface ? "on-studio-toolbar-controls-note-surface" : ""}`}>
           {showPdfControls && (
@@ -740,7 +738,7 @@ export function StudioWorkspace({
             <button
               className="on-icon-button"
               title={t("studio.swapPdfAndNotes")}
-              onClick={() => onUpdateViewer(document.id, { panel_layout: nextLayout })}
+              onClick={() => onUpdateViewer(studioDocument.id, { panel_layout: nextLayout })}
             >
               <ArrowLeftRight className="h-4 w-4" />
             </button>
@@ -766,7 +764,7 @@ export function StudioWorkspace({
             pdfPanel
           ) : effectiveViewMode === "note" ? (
             notePanel
-          ) : document.panel_layout === "pdf-left" ? (
+          ) : studioDocument.panel_layout === "pdf-left" ? (
             <>
               {pdfPanel}
               <StudioSplitter onPointerDown={handleSplitterPointerDown} />
@@ -787,9 +785,9 @@ export function StudioWorkspace({
           onPointerMove={(event) => {
             const rect = splitRef.current?.getBoundingClientRect();
             if (!rect) return;
-            const nextRatio = studioPanelRatioFromPointer(document.panel_layout, event.clientX, rect);
+            const nextRatio = studioPanelRatioFromPointer(studioDocument.panel_layout, event.clientX, rect);
             setPdfPanelRatio(nextRatio);
-            storePanelRatio(document.id, nextRatio);
+            storePanelRatio(studioDocument.id, nextRatio);
           }}
           onPointerUp={() => setIsResizingPanels(false)}
           onPointerCancel={() => setIsResizingPanels(false)}
@@ -867,10 +865,38 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [continuousPageWindow, setContinuousPageWindow] = useState(() =>
+    buildStudioContinuousPageWindow({
+      pageCount: 1,
+      page,
+      scrollTop: 0,
+      viewportHeight: 0,
+      zoom,
+    })
+  );
 
   const updateScrollWindow = useCallback(() => {
-    // Keeps call sites explicit while continuous mode reads DOM directly.
-  }, []);
+    if (displayMode !== "continuous" || !pageCount) return;
+    const scrollElement = scrollRef.current;
+    const nextWindow = buildStudioContinuousPageWindow({
+      pageCount,
+      page,
+      scrollTop: scrollElement?.scrollTop ?? 0,
+      viewportHeight: scrollElement?.clientHeight ?? 0,
+      zoom,
+    });
+    setContinuousPageWindow((currentWindow) => {
+      if (
+        currentWindow.beforeHeight === nextWindow.beforeHeight &&
+        currentWindow.afterHeight === nextWindow.afterHeight &&
+        currentWindow.pages.length === nextWindow.pages.length &&
+        currentWindow.pages.every((pageNumber, index) => pageNumber === nextWindow.pages[index])
+      ) {
+        return currentWindow;
+      }
+      return nextWindow;
+    });
+  }, [displayMode, page, pageCount, zoom]);
 
   const updateZoomFromPoint = useCallback((nextZoom: number, clientX: number, clientY: number) => {
     const scrollElement = scrollRef.current;
@@ -959,6 +985,16 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     scrollElement.addEventListener("wheel", handleWheel, { passive: false });
     return () => scrollElement.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
+
+  useEffect(() => {
+    if (displayMode !== "continuous" || !pageCount) return;
+    const frame = requestAnimationFrame(updateScrollWindow);
+    window.addEventListener("resize", updateScrollWindow);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateScrollWindow);
+    };
+  }, [displayMode, pageCount, updateScrollWindow]);
 
   const commitVisiblePageFromScroll = useCallback(() => {
     if (displayMode !== "continuous") return;
@@ -1135,7 +1171,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
 
     const currentPage = Math.min(clampStudioPage(page), pageCount);
     if (displayMode === "continuous") {
-      return Array.from({ length: pageCount }, (_value, index) => index + 1);
+      return continuousPageWindow.pages;
     }
     if (displayMode === "single") return [currentPage];
     if (displayMode === "two-page") {
@@ -1143,7 +1179,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     }
 
     return [currentPage];
-  }, [displayMode, page, pageCount]);
+  }, [continuousPageWindow.pages, displayMode, page, pageCount]);
 
   useEffect(() => {
     if (displayMode !== "continuous" || !pageCount) return;
@@ -1205,6 +1241,9 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
         </div>
       ) : null}
       <div className={`on-studio-pdf-pages on-studio-pdf-pages-${displayMode}`}>
+        {displayMode === "continuous" && continuousPageWindow.beforeHeight > 0 ? (
+          <div aria-hidden="true" style={{ height: continuousPageWindow.beforeHeight, flexShrink: 0 }} />
+        ) : null}
         {pdfDocument ? visiblePages.map((pageNumber, slotIndex) => (
           <StudioPdfPageCanvas
             // In the paged modes the canvas is keyed by slot, not by page
@@ -1219,6 +1258,9 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
             onError={onError}
           />
         )) : null}
+        {displayMode === "continuous" && continuousPageWindow.afterHeight > 0 ? (
+          <div aria-hidden="true" style={{ height: continuousPageWindow.afterHeight, flexShrink: 0 }} />
+        ) : null}
       </div>
     </div>
   );
@@ -1417,56 +1459,4 @@ function StudioSplitter({ onPointerDown }: { onPointerDown: (event: React.Pointe
       onPointerDown={onPointerDown}
     />
   );
-}
-
-function panelRatioStorageKey(documentId: string): string {
-  return `opennotion-studio-panel-ratio-${documentId}`;
-}
-
-function viewModeStorageKey(documentId: string): string {
-  return `opennotion-studio-view-mode-${documentId}`;
-}
-
-function pdfDisplayModeStorageKey(documentId: string): string {
-  return `shelf-studio-pdf-display-mode-${documentId}`;
-}
-
-function getStoredPanelRatio(documentId: string): number {
-  const storedRatio = Number(localStorage.getItem(panelRatioStorageKey(documentId)));
-  return clampStudioPanelRatio(Number.isFinite(storedRatio) ? storedRatio : 50);
-}
-
-function storePanelRatio(documentId: string, ratio: number): void {
-  localStorage.setItem(panelRatioStorageKey(documentId), String(clampStudioPanelRatio(ratio)));
-}
-
-function getStoredViewMode(documentId: string): StudioViewMode {
-  const storedMode = localStorage.getItem(viewModeStorageKey(documentId));
-  return storedMode === "pdf" || storedMode === "note" ? storedMode : "split";
-}
-
-function storeViewMode(documentId: string, mode: StudioViewMode): void {
-  localStorage.setItem(viewModeStorageKey(documentId), mode);
-}
-
-function getStoredPdfDisplayMode(documentId: string): StudioPdfDisplayMode {
-  const storedMode = localStorage.getItem(pdfDisplayModeStorageKey(documentId));
-  return storedMode === "single" || storedMode === "two-page" ? storedMode : "continuous";
-}
-
-function storePdfDisplayMode(documentId: string, mode: StudioPdfDisplayMode): void {
-  localStorage.setItem(pdfDisplayModeStorageKey(documentId), mode);
-}
-
-function preferredLinkedPageId(
-  links: StudioDocumentPageLink[],
-  primaryPageId: string,
-  currentId: string | null
-): string {
-  const hasCurrent = currentId ? links.some((link) => link.page_id === currentId) : false;
-  const firstLinkedNote = links.find((link) => link.page_id !== primaryPageId)?.page_id ?? null;
-  if (hasCurrent && currentId && currentId !== primaryPageId) return currentId;
-  if (firstLinkedNote) return firstLinkedNote;
-  if (hasCurrent && currentId) return currentId;
-  return links[0]?.page_id ?? primaryPageId;
 }

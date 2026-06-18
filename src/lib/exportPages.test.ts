@@ -4,6 +4,8 @@ import {
   buildMarkdownTreeFiles,
   buildPageTreeExport,
   collectDescendantPageIds,
+  mergePagesForExport,
+  parsePageTreeExport,
   sanitizeExportFilename,
 } from "./exportPages";
 
@@ -68,6 +70,55 @@ describe("buildPageTreeExport", () => {
     expect(data.root_page_id).toBe("a");
     expect(data.exported_at).toBe("2026-06-10T00:00:00.000Z");
     expect(data.pages.map((page) => page.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("mergePagesForExport", () => {
+  it("uses hydrated backend content for unloaded pages", () => {
+    const hydratedPages = [
+      makePage("a", "A"),
+      makePage("b", "B", "a"),
+    ];
+    const currentPages = [
+      {
+        ...makePage("a", "A"),
+        content: null,
+        search_text: null,
+        content_loaded: 0,
+      },
+      {
+        ...makePage("b", "B", "a"),
+        content: JSON.stringify([{ type: "paragraph", content: "local edit" }]),
+        search_text: "local edit",
+        content_loaded: 1,
+      },
+    ];
+
+    expect(mergePagesForExport(hydratedPages, currentPages)).toEqual([
+      hydratedPages[0],
+      {
+        ...hydratedPages[1],
+        content: currentPages[1].content,
+        search_text: currentPages[1].search_text,
+        content_loaded: 1,
+      },
+    ]);
+  });
+});
+
+describe("parsePageTreeExport", () => {
+  it("accepts page tree export JSON", () => {
+    const data = buildPageTreeExport([makePage("a", "A")], ["a"], "2026-06-10T00:00:00.000Z");
+
+    expect(parsePageTreeExport(JSON.stringify(data))).toEqual(data);
+  });
+
+  it("rejects malformed page tree exports", () => {
+    expect(() => parsePageTreeExport("{bad")).toThrow("Invalid JSON file");
+    expect(() => parsePageTreeExport(JSON.stringify({ version: 1, pages: [] }))).toThrow("Unsupported JSON export format");
+    expect(() =>
+      parsePageTreeExport(JSON.stringify({ ...buildPageTreeExport([makePage("a", "A")], ["a"], "now"), pages: [{ id: "a" }] }))
+    ).toThrow("Unsupported JSON export format");
   });
 });
 

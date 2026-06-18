@@ -20,6 +20,7 @@
     "build": "cross-env UV_THREADPOOL_SIZE=64 npm run build:app",
     "build:app": "tsc && vite build",
     "test": "cross-env UV_THREADPOOL_SIZE=64 vitest run",
+    "test:coverage": "cross-env UV_THREADPOOL_SIZE=64 vitest run --coverage",
     "e2e:install": "playwright install chromium",
     "e2e": "npm run build && playwright test",
     "screenshots:readme": "npm run build && node scripts/capture-readme-screenshots.mjs",
@@ -52,7 +53,7 @@
     "release:update-manifest:compat": "node scripts/write-beta-compat-manifest.cjs",
     "release:verify:macos": "node scripts/electron-verify-macos.cjs",
     "release:checksums": "node scripts/write-release-checksums.cjs",
-    "test:scripts": "node --test scripts/*.test.cjs"
+    "test:scripts": "node --test scripts/*.test.cjs electron/*.test.cjs"
   },
   "build": {
     "appId": "com.marcodignoti.shelf",
@@ -60,7 +61,7 @@
     "directories": {
       "output": "dist-electron/builder"
     },
-    "asar": false,
+    "asar": true,
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -110,38 +111,32 @@
     "@blocknote/react": "0.51.4",
     "@mantine/core": "9.3.2",
     "@mantine/hooks": "9.3.2",
-    "clsx": "2.1.1",
     "katex": "0.17.0",
-    "lucide-react": "1.16.0",
-    "pdfjs-dist": "5.7.284",
+    "lucide-react": "1.21.0",
+    "pdfjs-dist": "6.0.227",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "tailwind-merge": "3.6.0",
     "zustand": "5.0.14"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@tailwindcss/postcss": "^4.3.0",
+    "@electron/asar": "^4.2.0",
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/vite": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@types/use-sync-external-store": "^1.5.0",
     "@vitejs/plugin-react": "^6.0.2",
-    "autoprefixer": "^10.5.0",
-    "concurrently": "^10.0.3",
+    "@vitest/coverage-v8": "^4.1.9",
     "cross-env": "^10.1.0",
-    "electron": "^40.10.2",
+    "electron": "^42.4.1",
     "electron-builder": "^26.8.1",
     "jsdom": "^29.1.1",
-    "postcss": "^8.5.14",
     "rcedit": "^5.0.2",
     "tailwindcss": "^4.3.0",
     "typescript": "6.0.3",
     "vite": "^8.0.16",
-    "vitest": "4.1.9",
-    "wait-on": "^9.0.10"
+    "vitest": "4.1.9"
   },
   "overrides": {
     "prosemirror-model": "1.25.4"

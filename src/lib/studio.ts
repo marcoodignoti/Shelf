@@ -76,30 +76,30 @@ export interface StudioContinuousPageWindow {
 }
 
 export async function listStudioDocuments(): Promise<StudioDocument[]> {
-  return await invoke<StudioDocument[]>("list_studio_documents");
+  return await invoke("list_studio_documents");
 }
 
 export async function listStudioProjects(): Promise<StudioProject[]> {
-  return await invoke<StudioProject[]>("list_studio_projects");
+  return await invoke("list_studio_projects");
 }
 
 export async function previewStudioPageUnification(): Promise<StudioPageUnificationPreview> {
-  return await invoke<StudioPageUnificationPreview>("preview_studio_page_unification");
+  return await invoke("preview_studio_page_unification");
 }
 
 export async function migrateStudioPageUnification(): Promise<StudioPageUnificationPreview> {
-  return await invoke<StudioPageUnificationPreview>("migrate_studio_page_unification", {
+  return await invoke("migrate_studio_page_unification", {
     migratedAt: new Date().toISOString(),
   });
 }
 
 export async function listAllStudioDocumentPageLinks(): Promise<StudioDocumentPageLink[]> {
-  return await invoke<StudioDocumentPageLink[]>("list_all_studio_document_page_links");
+  return await invoke("list_all_studio_document_page_links");
 }
 
 export async function createStudioProject(name: string, parentId: string | null = null): Promise<StudioProject> {
   const now = new Date().toISOString();
-  return await invoke<StudioProject>("create_studio_project", {
+  return await invoke("create_studio_project", {
     id: crypto.randomUUID(),
     name,
     parentId,
@@ -139,7 +139,7 @@ export async function updateStudioDocumentProject(id: string, projectId: string 
 }
 
 export async function listStudioDocumentPageLinks(documentId: string): Promise<StudioDocumentPageLink[]> {
-  return await invoke<StudioDocumentPageLink[]>("list_studio_document_page_links", { documentId });
+  return await invoke("list_studio_document_page_links", { documentId });
 }
 
 export async function linkStudioDocumentPage(
@@ -147,7 +147,7 @@ export async function linkStudioDocumentPage(
   pageId: string,
   options: { pdfPage?: number | null; label?: string | null } = {}
 ): Promise<StudioDocumentPageLink> {
-  return await invoke<StudioDocumentPageLink>("link_studio_document_page", {
+  return await invoke("link_studio_document_page", {
     id: crypto.randomUUID(),
     documentId,
     pageId,

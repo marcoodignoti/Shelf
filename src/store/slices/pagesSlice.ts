@@ -1,18 +1,18 @@
 import type { StateCreator } from 'zustand';
-import { invoke, exportFilesWithDialog, importPageFileWithDialog } from '../../lib/desktop';
+import { exportFilesWithDialog, importPageFileWithDialog } from '../../lib/desktop';
 import { prepareImportedPages } from '../../lib/backup';
-import { buildMarkdownTreeFiles, buildPageTreeExport, sanitizeExportFilename } from '../../lib/exportPages';
+import { buildMarkdownTreeFiles, buildPageTreeExport, mergePagesForExport, parsePageTreeExport, sanitizeExportFilename } from '../../lib/exportPages';
 import { createPageMarkdownRenderer } from '../../lib/exportMarkdown';
 import {
   Page,
-  getPages, createPage, createPageFromTemplate, createProject,
+  getAllPages, getPages, createPage, createPageFromTemplate, createProject,
   deletePage, deleteProject, duplicatePage, movePage, reorderPages,
-  toggleFavorite, toggleTemplate, updatePage,
+  importBackupContent, importPages, toggleFavorite, toggleTemplate, updatePage,
 } from '../../lib/db';
 import { StudioProject, listAllStudioDocumentPageLinks } from '../../lib/studio';
 import { openNotionEditorSchema } from '../../lib/editorMath';
 import { HOME_PAGE_ID, resolveCurrentPageId, resolveCurrentPageIdAfterDeletion } from '../../lib/navigation';
-import { logStoreError, pageTreeIds } from './helpers';
+import { logStoreError, mergePageMetadataWithHydratedContent, pageTreeIds } from './helpers';
 import type { AppState } from '../useAppStore';
 
 export interface PagesSlice {
@@ -35,6 +35,18 @@ export interface PagesSlice {
   exportProjectNotesJSON: (project: StudioProject) => Promise<void>;
 }
 
+function parseImportedJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid JSON file");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set, get) => ({
   pages: [],
 
@@ -42,9 +54,10 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
     try {
       const pages = await getPages();
       set((state) => {
-        const currentPageId = resolveCurrentPageId(pages, state.currentPageId);
+        const mergedPages = mergePageMetadataWithHydratedContent(pages, state.pages);
+        const currentPageId = resolveCurrentPageId(mergedPages, state.currentPageId);
         localStorage.setItem('opennotion-current-page-id', currentPageId);
-        return { pages, currentPageId, isLoading: false, error: null };
+        return { pages: mergedPages, currentPageId, isLoading: false, error: null };
       });
     } catch (error: unknown) {
       set({ isLoading: false });
@@ -70,7 +83,11 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
     }
   },
   updatePageOptimistically: (id, updates) => set((state) => ({
-    pages: state.pages.map(p => p.id === id ? { ...p, ...updates } : p)
+    pages: state.pages.map(p => p.id === id ? {
+      ...p,
+      ...updates,
+      content_loaded: Object.prototype.hasOwnProperty.call(updates, 'content') ? 1 : p.content_loaded,
+    } : p)
   })),
   renamePageAction: async (id, title) => {
     const previousPages = get().pages;
@@ -104,7 +121,7 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
         listAllStudioDocumentPageLinks(),
       ]);
       set((state) => ({
-        pages,
+        pages: mergePageMetadataWithHydratedContent(pages, state.pages),
         studioDocumentPageLinks,
         currentPageId: resolveCurrentPageIdAfterDeletion(pages, state.currentPageId, id, deletedIds, previousPages)
       }));
@@ -222,25 +239,21 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
       if (!imported) return null;
       const { path: filePath, content: raw } = imported;
       if (filePath.endsWith(".json")) {
-        let parsed: any;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          throw new Error("Invalid JSON file");
-        }
+        const parsed = parseImportedJson(raw);
 
-        if (parsed.type === "page_tree") {
-          const pages = prepareImportedPages(parsed.pages);
-          const rootPage = pages.find((p) => p.id === parsed.root_page_id || !p.parent_id);
+        if (isRecord(parsed) && parsed.type === "page_tree") {
+          const pageTreeExport = parsePageTreeExport(raw);
+          const pages = prepareImportedPages(pageTreeExport.pages);
+          const rootPage = pages.find((p) => p.id === pageTreeExport.root_page_id || !p.parent_id);
           if (rootPage) {
             rootPage.parent_id = null;
           }
-          await invoke("import_pages", { pages });
+          await importPages(pages);
           await get().fetchPages();
           get().showSuccess("notice.pageTreeImported");
           return rootPage || null;
-        } else if (parsed.version === 1 && Array.isArray(parsed.pages)) {
-          await invoke("import_backup_content", { content: raw, importedAt: new Date().toISOString() });
+        } else if (isRecord(parsed) && parsed.version === 1 && Array.isArray(parsed.pages)) {
+          await importBackupContent(raw);
           await get().fetchPages();
           get().showSuccess("notice.workspaceBackupImported");
           return null;
@@ -309,7 +322,7 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
         listAllStudioDocumentPageLinks(),
       ]);
       set((state) => ({
-        pages,
+        pages: mergePageMetadataWithHydratedContent(pages, state.pages),
         studioDocumentPageLinks,
         currentPageId: resolveCurrentPageId(pages, state.currentPageId),
       }));
@@ -332,7 +345,8 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
         return;
       }
 
-      const pages = get().pages;
+      const currentPages = get().pages;
+      const pages = mergePagesForExport(await getAllPages(), currentPages);
       const rootPages = docs
         .map((doc) => pages.find((p) => p.id === doc.note_page_id))
         .filter((page): page is Page => Boolean(page));
@@ -363,7 +377,7 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
         return;
       }
 
-      const pages = get().pages;
+      const pages = mergePagesForExport(await getAllPages(), get().pages);
       const notePageIds = docs.map((d) => d.note_page_id);
       const exportData = buildPageTreeExport(pages, notePageIds, new Date().toISOString());
       const fileName = `${sanitizeExportFilename(project.name)} Notes.json`;

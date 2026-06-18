@@ -118,10 +118,11 @@ export default function App() {
     };
   }, [showError, showErrorKey, showSuccess]);
 
-  const currentPage = useMemo(
-    () => pages.find(p => p.id === currentPageId),
-    [currentPageId, pages]
+  const pagesById = useMemo(
+    () => new Map(pages.map((page) => [page.id, page])),
+    [pages]
   );
+  const currentPage = currentPageId ? pagesById.get(currentPageId) : undefined;
   const currentStudioDocument = useMemo(
     () => studioDocuments.find((document) => document.id === currentStudioDocumentId),
     [currentStudioDocumentId, studioDocuments]
@@ -137,9 +138,9 @@ export default function App() {
   const activeStudioDocument = currentPageStudioDocument ?? (!isUnifiedStudio ? currentStudioDocument : null);
   const currentStudioNote = useMemo(
     () => activeStudioDocument
-      ? pages.find((page) => page.id === activeStudioDocument.note_page_id) ?? null
+      ? pagesById.get(activeStudioDocument.note_page_id) ?? null
       : null,
-    [activeStudioDocument, pages]
+    [activeStudioDocument, pagesById]
   );
   const handleUpdateStudioViewer = useCallback((id: string, updates: { viewer_zoom?: number; viewer_page?: number; panel_layout?: "pdf-left" | "note-left" }) => {
     void updateStudioViewerAction(id, updates);

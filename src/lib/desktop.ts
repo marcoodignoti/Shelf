@@ -1,3 +1,9 @@
+import type {
+  DesktopCommandArgs,
+  DesktopCommandName,
+  DesktopCommandResult,
+} from "./desktopCommands";
+
 export interface DialogFilter {
   name: string;
   extensions: string[];
@@ -53,18 +59,18 @@ export interface ImportedFile {
 }
 
 interface ShelfDesktopBridge {
-	  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-	  open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
-	  save(options?: SaveDialogOptions): Promise<string | null>;
-	  exportBackup?(options?: { defaultPath?: string; exportedAt?: string }): Promise<number | null>;
-	  importBackup?(options?: { importedAt?: string }): Promise<number | null>;
-	  importStudioDocument?(options: { documentId: string; notePageId: string; importedAt?: string }): Promise<unknown | null>;
-	  replaceStudioDocumentFile?(options: { id: string; updatedAt?: string }): Promise<unknown | null>;
-	  importCoverImage?(options: { pageId: string }): Promise<string | null>;
-	  importProfileAvatar?(): Promise<string | null>;
-	  importEditorMediaFiles?(options: { kind: "image" | "video"; pageId: string }): Promise<ImportedMediaFile[]>;
-	  exportFiles?(options: ExportFilesOptions): Promise<ExportFilesResult | null>;
-	  importPageFile?(options?: OpenDialogOptions): Promise<ImportedFile | null>;
+  invoke<C extends DesktopCommandName>(command: C, args?: DesktopCommandArgs<C>): Promise<DesktopCommandResult<C>>;
+  open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
+  save(options?: SaveDialogOptions): Promise<string | null>;
+  exportBackup?(options?: { defaultPath?: string; exportedAt?: string }): Promise<number | null>;
+  importBackup?(options?: { importedAt?: string }): Promise<number | null>;
+  importStudioDocument?(options: { documentId: string; notePageId: string; importedAt?: string }): Promise<unknown | null>;
+  replaceStudioDocumentFile?(options: { id: string; updatedAt?: string }): Promise<unknown | null>;
+  importCoverImage?(options: { pageId: string }): Promise<string | null>;
+  importProfileAvatar?(): Promise<string | null>;
+  importEditorMediaFiles?(options: { kind: "image" | "video"; pageId: string }): Promise<ImportedMediaFile[]>;
+  exportFiles?(options: ExportFilesOptions): Promise<ExportFilesResult | null>;
+  importPageFile?(options?: OpenDialogOptions): Promise<ImportedFile | null>;
   fileSrc(filePath: string): string;
   studioPdfSrc?(documentId: string): string;
   onDesktopUpdate?(callback: (eventName: DesktopUpdateEventName, payload: unknown) => void): () => void;
@@ -94,8 +100,11 @@ function requireBridgeMethod<K extends keyof ShelfDesktopBridge>(
   return fn as NonNullable<ShelfDesktopBridge[K]>;
 }
 
-export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  return await bridge().invoke<T>(command, args);
+export async function invoke<C extends DesktopCommandName>(
+  command: C,
+  args?: DesktopCommandArgs<C>,
+): Promise<DesktopCommandResult<C>> {
+  return await bridge().invoke(command, args);
 }
 
 export async function openDialog(options?: OpenDialogOptions): Promise<OpenDialogResult> {
@@ -147,6 +156,10 @@ export function studioDocumentPdfSrc(documentId: string, filePath: string): stri
 
 export async function openExternalUrl(url: string): Promise<void> {
   await invoke('open_external_url', { url });
+}
+
+export async function showCharacterPalette(): Promise<void> {
+  await invoke("show_character_palette");
 }
 
 // Both helpers run the native dialog and the file IO in the main process so

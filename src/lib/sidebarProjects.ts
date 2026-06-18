@@ -37,13 +37,22 @@ export function buildSidebarSections(pages: Page[]): SidebarSections {
   const pinnedProjects = projectPages.filter((page) => page.is_favorite === 1);
   const pinnedPages = contentPages.filter((page) => page.is_favorite === 1);
   const unpinnedContentPages = contentPages.filter((page) => page.is_favorite !== 1);
+  const unpinnedChildrenByParentId = new Map<string | null, Page[]>();
+  for (const page of unpinnedContentPages) {
+    const children = unpinnedChildrenByParentId.get(page.parent_id);
+    if (children) {
+      children.push(page);
+    } else {
+      unpinnedChildrenByParentId.set(page.parent_id, [page]);
+    }
+  }
   const projects = projectPages
     .filter((project) => project.is_favorite !== 1)
     .map((project) => ({
       project,
-      children: unpinnedContentPages.filter((page) => page.parent_id === project.id),
+      children: unpinnedChildrenByParentId.get(project.id) ?? [],
     }));
-  const rootPages = unpinnedContentPages.filter((page) => page.parent_id === null);
+  const rootPages = unpinnedChildrenByParentId.get(null) ?? [];
 
   return {
     pinnedProjects,

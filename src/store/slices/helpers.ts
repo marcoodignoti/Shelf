@@ -29,6 +29,21 @@ export function pageTreeIds(pages: Page[], rootId: string): Set<string> {
   return ids;
 }
 
+export function mergePageMetadataWithHydratedContent(nextPages: Page[], previousPages: Page[]): Page[] {
+  const previousById = new Map(previousPages.map((page) => [page.id, page]));
+  return nextPages.map((page) => {
+    if (page.content_loaded !== 0) return page;
+    const previous = previousById.get(page.id);
+    if (!previous || previous.content_loaded === 0) return page;
+    return {
+      ...page,
+      content: previous.content,
+      search_text: previous.search_text,
+      content_loaded: previous.content_loaded,
+    };
+  });
+}
+
 export function logStoreError(error: unknown): void {
   if (import.meta.env.DEV) {
     console.error(error);

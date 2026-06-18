@@ -8,6 +8,9 @@ unexpected network dependency for core notes or Studio documents.
 
 ## Development Setup
 
+For a fuller repository walkthrough, see the
+[developer guide](docs/developer-guide.md).
+
 ```sh
 npm ci
 npm run electron:dev

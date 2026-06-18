@@ -20,6 +20,7 @@ export interface Page {
   page_kind: PageKind;
   created_at: string;
   updated_at: string;
+  content_loaded?: number;
 }
 
 export interface SearchResult extends Page {
@@ -27,26 +28,26 @@ export interface SearchResult extends Page {
 }
 
 export async function getPages(): Promise<Page[]> {
-  return await invoke<Page[]>('list_pages');
+  return await invoke('list_pages');
 }
 
 export async function getAllPages(): Promise<Page[]> {
-  return await invoke<Page[]>('list_all_pages');
+  return await invoke('list_all_pages');
 }
 
 export async function searchPages(query: string): Promise<SearchResult[]> {
-  return await invoke<SearchResult[]>('search_pages', { query });
+  return await invoke('search_pages', { query });
 }
 
 export async function getPage(id: string): Promise<Page | null> {
-  return await invoke<Page | null>('get_page', { id });
+  return await invoke('get_page', { id });
 }
 
 export async function createPage(title: string = 'Untitled', parentId: string | null = null): Promise<Page> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  return await invoke<Page>('create_page', {
+  return await invoke('create_page', {
     id,
     title,
     parentId,
@@ -58,7 +59,7 @@ export async function createProject(title: string = 'Untitled'): Promise<Page> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  return await invoke<Page>('create_project', {
+  return await invoke('create_project', {
     id,
     title,
     createdAt: now,
@@ -67,7 +68,7 @@ export async function createProject(title: string = 'Untitled'): Promise<Page> {
 
 export async function createStudioNotePage(id: string, title: string): Promise<Page> {
   const now = new Date().toISOString();
-  const page = await invoke<Page>('create_page', {
+  const page = await invoke('create_page', {
     id,
     title,
     parentId: null,
@@ -136,7 +137,14 @@ export async function reorderPages(parentId: string | null, orderedIds: string[]
 }
 
 export async function importPages(pages: Page[]): Promise<number> {
-  return await invoke<number>('import_pages', { pages });
+  return await invoke('import_pages', { pages });
+}
+
+export async function importBackupContent(content: string): Promise<number> {
+  return await invoke('import_backup_content', {
+    content,
+    importedAt: new Date().toISOString(),
+  });
 }
 
 export async function toggleFavorite(id: string, isFavorite: boolean): Promise<void> {
@@ -154,7 +162,7 @@ export async function createPageFromTemplate(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  return await invoke<Page>('create_page_from_template', {
+  return await invoke('create_page_from_template', {
     id,
     templateId,
     parentId,
@@ -166,7 +174,7 @@ export async function duplicatePage(sourceId: string): Promise<Page> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  return await invoke<Page>('duplicate_page', {
+  return await invoke('duplicate_page', {
     id,
     sourceId,
     createdAt: now,
@@ -203,8 +211,8 @@ function assertEditorVideoSize(file: File): void {
 
 export async function importEditorImage(file: File, pageId: string): Promise<string> {
   assertEditorImageSize(file);
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  return await invoke<string>('import_editor_image', {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return await invoke('import_editor_image', {
     pageId,
     fileName: file.name || 'image',
     bytes,
@@ -217,8 +225,8 @@ export async function importEditorImageFilesFromDialog(pageId: string): Promise<
 
 export async function importEditorVideo(file: File, pageId: string): Promise<string> {
   assertEditorVideoSize(file);
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  return await invoke<string>('import_editor_video', {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return await invoke('import_editor_video', {
     pageId,
     fileName: file.name || 'video',
     bytes,
@@ -235,7 +243,7 @@ export async function importEditorMedia(file: File, pageId: string): Promise<str
 }
 
 export function coverImageSrc(coverUrl: string): string {
-  if (/^https:\/\//i.test(coverUrl) || /^blob:/i.test(coverUrl) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) {
+  if (/^blob:/i.test(coverUrl) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(coverUrl)) {
     return coverUrl;
   }
 
