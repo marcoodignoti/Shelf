@@ -1129,12 +1129,12 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
       const pdf = await loadingTask.promise;
       pdfDocument = pdf;
       if (!isStudioPdfPageCountAllowed(pdf.numPages)) {
-        await pdf.destroy();
+        await disposeStudioPdfDocument(pdf);
         pdfDocument = null;
         throw new Error(tRef.current("studio.pdfTooManyPages", { numPages: String(pdf.numPages), maxPages: String(MAX_STUDIO_PDF_PAGES) }));
       }
       if (isCancelled) {
-        await pdfDocument.destroy();
+        await disposeStudioPdfDocument(pdfDocument);
         pdfDocument = null;
         return;
       }
@@ -1158,10 +1158,10 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     return () => {
       isCancelled = true;
       if (pdfDocument) {
-        void pdfDocument.destroy();
+        void disposeStudioPdfDocument(pdfDocument);
         pdfDocument = null;
       } else {
-        void loadingTask?.destroy();
+        void loadingTask?.destroy?.();
       }
     };
   }, [src]);
@@ -1265,6 +1265,22 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
     </div>
   );
 });
+
+async function disposeStudioPdfDocument(pdfDocument: pdfjsLib.PDFDocumentProxy): Promise<void> {
+  const documentWithLifecycle = pdfDocument as pdfjsLib.PDFDocumentProxy & {
+    cleanup?: () => Promise<unknown> | unknown;
+    destroy?: () => Promise<void> | void;
+  };
+
+  if (typeof documentWithLifecycle.destroy === "function") {
+    await documentWithLifecycle.destroy();
+    return;
+  }
+
+  if (typeof documentWithLifecycle.cleanup === "function") {
+    await documentWithLifecycle.cleanup();
+  }
+}
 
 const StudioPdfPageCanvas = memo(function StudioPdfPageCanvas({
   pdfDocument,

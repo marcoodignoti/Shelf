@@ -7,7 +7,8 @@ const { copyDirectoryFiltered, assertBundleClean } = require("./audit-release-bu
 
 const root = path.resolve(__dirname, "..");
 const packageJson = require(path.join(root, "package.json"));
-const electronApp = path.join(root, "node_modules", "electron", "dist", "Electron.app");
+const electronPackageDir = path.join(root, "node_modules", "electron");
+const electronApp = path.join(electronPackageDir, "dist", "Electron.app");
 const outputDir = path.join(root, "dist-electron", "mac-arm64");
 const workingOutputDir =
   process.platform === "darwin" ? fs.mkdtempSync(path.join(os.tmpdir(), "shelf-package-")) : outputDir;
@@ -51,6 +52,18 @@ function copyAppBundle(source, destination) {
   copyDirectory(source, destination);
 }
 
+function ensureElectronAppBundle() {
+  if (process.platform !== "darwin" || fs.existsSync(electronApp)) return;
+  const installer = path.join(electronPackageDir, "install.js");
+  if (!fs.existsSync(installer)) {
+    throw new Error(`Electron installer missing: ${installer}`);
+  }
+  run(process.execPath, [installer]);
+  if (!fs.existsSync(electronApp)) {
+    throw new Error(`Electron app bundle missing after install: ${electronApp}`);
+  }
+}
+
 async function createAppAsar() {
   const appAsarPath = path.join(resourcesDir, "app.asar");
   fs.rmSync(appResourcesDir, { recursive: true, force: true });
@@ -81,6 +94,7 @@ async function createAppAsar() {
 async function main() {
   fs.rmSync(path.join(root, "dist-electron"), { recursive: true, force: true });
   fs.mkdirSync(workingOutputDir, { recursive: true });
+  ensureElectronAppBundle();
   copyAppBundle(electronApp, appDir);
 
   const macOsDir = path.join(appDir, "Contents", "MacOS");
