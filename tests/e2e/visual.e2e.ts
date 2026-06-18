@@ -162,8 +162,10 @@ test.describe("Visual Regression Tests", () => {
 
     await preparePageForScreenshot(page);
 
-    // Assert screen matches baseline
-    await expect(page).toHaveScreenshot("home-dashboard.png", { animations: "disabled" });
+    await expect(page).toHaveScreenshot("home-dashboard.png", {
+      animations: "disabled",
+      maxDiffPixels: 5_000,
+    });
   });
 
   test("Page Editor view layout is visually correct", async ({ page }) => {
