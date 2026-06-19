@@ -1635,17 +1635,14 @@ test.describe("system clipboard", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    const editor = await createPageAndFocusEditor(page, "Copy All With Formula");
-    await editor.evaluate((element) => {
-      const data = new DataTransfer();
-      data.setData("text/plain", "$$E=mc^2$$");
-      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
-    });
+    await seedPage(page, "Copy All With Formula", [
+      { id: "formula-first", type: "formula", props: { formula: "E=mc^2" }, content: undefined, children: [] },
+      { id: "tail", type: "paragraph", content: "tail text after formula", children: [] },
+    ]);
+    const editor = page.locator('[contenteditable="true"]').first();
     await expect(page.locator(".on-formula-block").first()).toBeVisible();
-    await editor.click();
-    await page.keyboard.press("ControlOrMeta+ArrowDown");
-    await page.keyboard.type("tail text after formula");
     await expect(page.getByText("tail text after formula")).toBeVisible();
+    await page.getByText("tail text after formula").click();
 
     await page.evaluate(() => navigator.clipboard.writeText("SENTINEL-ALL"));
     await page.keyboard.press("ControlOrMeta+a");
