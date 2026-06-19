@@ -11,11 +11,11 @@ import { resolveLocale, translate } from "./i18n";
 
 describe("translate", () => {
   it("returns the english string for en", () => {
-    expect(translate("en", "settings.nav.preferences")).toBe("Preferences");
+    expect(translate("en", "settings.nav.preferences")).toBe("General");
   });
 
   it("returns the italian string for it", () => {
-    expect(translate("it", "settings.nav.preferences")).toBe("Preferenze");
+    expect(translate("it", "settings.nav.preferences")).toBe("Generali");
   });
 
   it("interpolates {params}", () => {
@@ -24,7 +24,7 @@ describe("translate", () => {
 
   it("falls back to english when an it value is empty at runtime", () => {
     const broken = { ...itDict, "settings.nav.preferences": "" };
-    expect(translate("it", "settings.nav.preferences", undefined, broken)).toBe("Preferences");
+    expect(translate("it", "settings.nav.preferences", undefined, broken)).toBe("General");
   });
 
   it("italian dictionary covers every english key", () => {

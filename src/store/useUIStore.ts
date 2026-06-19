@@ -12,6 +12,7 @@ import {
   type PageWidth,
   type TitleEnterBehavior,
 } from '../lib/preferences';
+import type { SettingsSection } from '../lib/settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -24,8 +25,13 @@ interface UIState {
   editorFontSize: EditorFontSize;
   pageWidth: PageWidth;
   titleEnterBehavior: TitleEnterBehavior;
+  isSettingsWindowOpen: boolean;
+  settingsSection: SettingsSection;
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
+  openSettingsWindow: (section?: SettingsSection) => void;
+  closeSettingsWindow: () => void;
+  setSettingsSection: (section: SettingsSection) => void;
   setTheme: (theme: Theme) => void;
   setLocalePreference: (value: LocalePreference) => void;
   setEditorFont: (value: EditorFont) => void;
@@ -68,6 +74,8 @@ export const useUIStore = create<UIState>((set) => ({
   editorFontSize: getStoredPreference(PREFERENCE_STORAGE_KEYS.editorFontSize, parseEditorFontSize),
   pageWidth: getStoredPreference(PREFERENCE_STORAGE_KEYS.pageWidth, parsePageWidth),
   titleEnterBehavior: getStoredPreference(PREFERENCE_STORAGE_KEYS.titleEnter, parseTitleEnterBehavior),
+  isSettingsWindowOpen: false,
+  settingsSection: 'profile',
 
   toggleSidebar: () => {
     set((state) => ({ isSidebarOpen: !state.isSidebarOpen }));
@@ -77,6 +85,18 @@ export const useUIStore = create<UIState>((set) => ({
     const sidebarWidth = clampSidebarWidth(width);
     localStorage.setItem('opennotion-sidebar-width', String(sidebarWidth));
     set({ sidebarWidth });
+  },
+
+  openSettingsWindow: (section = 'profile') => {
+    set({ isSettingsWindowOpen: true, settingsSection: section });
+  },
+
+  closeSettingsWindow: () => {
+    set({ isSettingsWindowOpen: false });
+  },
+
+  setSettingsSection: (section) => {
+    set({ settingsSection: section });
   },
 
   setTheme: (theme) => {

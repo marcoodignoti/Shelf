@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Layout } from "./components/Layout";
 import { useAppStore } from "./store/useAppStore";
 import { useUIStore } from "./store/useUIStore";
@@ -6,11 +6,12 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppNotice } from "./components/AppNotice";
 import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { DesktopUpdateRestartNotice } from "./components/DesktopUpdateRestartNotice";
+import { SettingsModal } from "./components/SettingsModal";
 import { isNewPageShortcut } from "./lib/shortcuts";
 import { HOME_PAGE_ID } from "./lib/navigation";
 import { resolveLocale, useT } from "./lib/i18n";
 import { HomeView } from "./components/HomeView";
-import type { DesktopUpdateInfo } from "./lib/desktop";
+import { setNativeThemeSource, type DesktopUpdateInfo } from "./lib/desktop";
 import { isStudioPageUnified } from "./lib/studioDocuments";
 
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
@@ -31,6 +32,9 @@ export default function App() {
   const currentPageId = useAppStore((state) => state.currentPageId);
   const theme = useUIStore((state) => state.theme);
   const localePreference = useUIStore((state) => state.localePreference);
+  const isSettingsWindowOpen = useUIStore((state) => state.isSettingsWindowOpen);
+  const settingsSection = useUIStore((state) => state.settingsSection);
+  const closeSettingsWindow = useUIStore((state) => state.closeSettingsWindow);
   const isLoading = useAppStore((state) => state.isLoading);
   const addPage = useAppStore((state) => state.addPage);
   const setCurrentPageId = useAppStore((state) => state.setCurrentPageId);
@@ -45,9 +49,10 @@ export default function App() {
   const showErrorKey = useAppStore((state) => state.showErrorKey);
   const [readyUpdate, setReadyUpdate] = useState<{ version: string | null } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
+    void setNativeThemeSource(theme);
     if (theme === 'system') {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       root.classList.add(systemTheme);
@@ -66,6 +71,23 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = resolveLocale(localePreference, navigator.language);
   }, [localePreference]);
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    const syncWindowFocusClass = () => {
+      root.classList.toggle("app-window-inactive", !document.hasFocus());
+    };
+
+    syncWindowFocusClass();
+    window.addEventListener("focus", syncWindowFocusClass);
+    window.addEventListener("blur", syncWindowFocusClass);
+
+    return () => {
+      window.removeEventListener("focus", syncWindowFocusClass);
+      window.removeEventListener("blur", syncWindowFocusClass);
+      root.classList.remove("app-window-inactive");
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -151,6 +173,25 @@ export default function App() {
   const handleReplaceStudioPdf = useCallback((documentId: string) => {
     void replaceStudioPdfAction(documentId);
   }, [replaceStudioPdfAction]);
+
+  if (isSettingsWindowOpen) {
+    return (
+      <div className="on-app-shell h-screen overflow-hidden bg-background text-foreground font-sans">
+        <SettingsModal
+          isOpen
+          embedded
+          initialSection={settingsSection}
+          onClose={closeSettingsWindow}
+        />
+        {readyUpdate ? (
+          <DesktopUpdateRestartNotice version={readyUpdate.version} onDismiss={() => setReadyUpdate(null)} />
+        ) : (
+          <BetaUpdateNotice />
+        )}
+        <AppNotice />
+      </div>
+    );
+  }
 
   return (
     <Layout>

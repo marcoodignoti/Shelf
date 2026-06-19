@@ -9,6 +9,7 @@ const {
   ipcMain,
   Menu,
   net,
+  nativeTheme,
   protocol,
   shell,
 } = require("electron");
@@ -795,6 +796,15 @@ function registerIpc() {
     const args = isRecord(payload.args) ? payload.args : {};
     assertRendererInvokeAllowed(payload.command, args);
     return await createBackend().invoke(payload.command, args);
+  });
+
+  ipcMain.handle("opennotion:native-theme-source", async (event, themeSource) => {
+    requireTrustedSender(event);
+    if (!["system", "light", "dark"].includes(themeSource)) {
+      throw new Error("invalid native theme source");
+    }
+    nativeTheme.themeSource = themeSource;
+    return null;
   });
 
   ipcMain.handle("opennotion:dialog-open", async (event, options = {}) => {

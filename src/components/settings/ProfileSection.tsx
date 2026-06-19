@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../lib/i18n';
+import { fileSrc } from '../../lib/desktop';
 import { Trash2, Upload } from 'lucide-react';
+
+function safeFileSrc(path: string): string {
+  try {
+    return fileSrc(path);
+  } catch {
+    return path;
+  }
+}
 
 export function ProfileSection() {
   const t = useT();
   const profile = useAppStore((state) => state.profile);
+  const pages = useAppStore((state) => state.pages ?? []);
+  const studioDocuments = useAppStore((state) => state.studioDocuments ?? []);
   const updateProfileAction = useAppStore((state) => state.updateProfileAction);
   const importProfileAvatarAction = useAppStore((state) => state.importProfileAvatarAction);
 
@@ -42,11 +53,45 @@ export function ProfileSection() {
     await importProfileAvatarAction();
   };
 
+  const displayName = profile?.name || profile?.workspaceName || 'Shelf';
+  const displayWorkspaceName = profile?.workspaceName || 'Shelf';
+  const avatarInitial = displayName.trim().charAt(0).toUpperCase() || 'S';
+  const activePages = pages.filter((page) => page.is_deleted === 0);
+  const noteCount = activePages.filter((page) => page.page_kind === 'note').length;
+  const projectCount = activePages.filter((page) => page.page_kind === 'project').length;
+  const studioNoteCount = activePages.filter((page) => page.page_kind === 'studio_note').length;
+
   return (
     <div className="on-settings-content">
-      <div className="on-settings-content-title">
-        <h2>{t('settings.profile.title')}</h2>
-        <p>{t('settings.profile.description')}</p>
+      <h2 className="sr-only">{t('settings.profile.title')}</h2>
+      <div className="on-settings-profile-hero">
+        {profile?.avatarPath ? (
+          <img className="on-settings-profile-avatar" src={safeFileSrc(profile.avatarPath)} alt="" />
+        ) : (
+          <span className="on-settings-profile-avatar">{avatarInitial}</span>
+        )}
+        <div className="on-settings-profile-title">
+          <h2>{displayName}</h2>
+          <p>{displayWorkspaceName} · {t('settings.card.localWorkspace')}</p>
+        </div>
+        <div className="on-settings-profile-stats" aria-label={t('settings.profile.statsLabel')}>
+          <div>
+            <strong>{noteCount}</strong>
+            <span>{t('settings.profile.statsNotes')}</span>
+          </div>
+          <div>
+            <strong>{projectCount}</strong>
+            <span>{t('settings.profile.statsProjects')}</span>
+          </div>
+          <div>
+            <strong>{studioDocuments.length}</strong>
+            <span>{t('settings.profile.statsDocuments')}</span>
+          </div>
+          <div>
+            <strong>{studioNoteCount}</strong>
+            <span>{t('settings.profile.statsStudioNotes')}</span>
+          </div>
+        </div>
       </div>
 
       <section className="on-settings-group">

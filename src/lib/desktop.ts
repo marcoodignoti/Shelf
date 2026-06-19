@@ -4,6 +4,8 @@ import type {
   DesktopCommandResult,
 } from "./desktopCommands";
 
+export type NativeThemeSource = "system" | "light" | "dark";
+
 export interface DialogFilter {
   name: string;
   extensions: string[];
@@ -76,6 +78,7 @@ interface ShelfDesktopBridge {
   onDesktopUpdate?(callback: (eventName: DesktopUpdateEventName, payload: unknown) => void): () => void;
   autoUpdateActive?(): boolean;
   installUpdateNow?(): Promise<null>;
+  setNativeThemeSource?(themeSource: NativeThemeSource): Promise<null>;
 }
 
 declare global {
@@ -186,4 +189,8 @@ export function desktopAutoUpdateActive(): boolean {
 
 export async function installDesktopUpdateNow(): Promise<void> {
   await requireBridgeMethod("installUpdateNow", "restart-to-update is not available in this build")();
+}
+
+export async function setNativeThemeSource(themeSource: NativeThemeSource): Promise<void> {
+  await window.openNotion?.setNativeThemeSource?.(themeSource);
 }

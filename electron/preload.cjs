@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld("openNotion", {
   installUpdateNow() {
     return ipcRenderer.invoke("opennotion:install-update-now");
   },
+  setNativeThemeSource(themeSource) {
+    return ipcRenderer.invoke("opennotion:native-theme-source", themeSource);
+  },
   onDesktopUpdate(callback) {
     if (typeof callback !== "function") throw new Error("callback must be a function");
     const listeners = [];

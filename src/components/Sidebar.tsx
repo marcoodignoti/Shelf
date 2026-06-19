@@ -7,6 +7,7 @@ import { useUIStore } from '../store/useUIStore';
 import Plus from 'lucide-react/dist/esm/icons/plus.mjs';
 import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.mjs';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.mjs';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.mjs';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
@@ -15,6 +16,9 @@ import FilePlus from 'lucide-react/dist/esm/icons/file-plus.mjs';
 import Upload from 'lucide-react/dist/esm/icons/upload.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
 import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
+import UserCircle from 'lucide-react/dist/esm/icons/user-circle.mjs';
+import SlidersHorizontal from 'lucide-react/dist/esm/icons/sliders-horizontal.mjs';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.mjs';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.mjs';
 import FolderInput from 'lucide-react/dist/esm/icons/folder-input.mjs';
 import Check from 'lucide-react/dist/esm/icons/check.mjs';
@@ -29,7 +33,6 @@ import { Page } from '../lib/db';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
 import { buildSidebarSections, sortSidebarPages } from '../lib/sidebarProjects';
 import { buildStudioNoteDocuments, type StudioNoteDocument, type StudioNoteEntry } from '../lib/sidebarStudioNotes';
-import { SettingsModal } from './SettingsModal';
 import { HOME_PAGE_ID } from '../lib/navigation';
 import { normalizePageTitle } from '../lib/pageTitle';
 import { clampContextMenuPosition } from '../lib/contextMenu';
@@ -40,6 +43,9 @@ import type { DropPosition } from '../lib/pageOrder';
 import { buildPageStudioContexts } from '../lib/studioPageContexts';
 import type { PageStudioContext } from '../lib/studioPageContexts';
 import { useT } from '../lib/i18n';
+import { fileSrc } from '../lib/desktop';
+import type { SettingsSection } from '../lib/settings';
+import type { Theme } from '../store/useUIStore';
 
 type PendingDelete = {
   page: Page;
@@ -58,6 +64,13 @@ type DragSession = {
   startY: number;
   active: boolean;
 };
+
+const THEME_CHOICES: Theme[] = ['system', 'light', 'dark'];
+
+function cycleChoice<T extends string>(choices: readonly T[], current: T, direction: -1 | 1): T {
+  const currentIndex = Math.max(0, choices.indexOf(current));
+  return choices[(currentIndex + direction + choices.length) % choices.length];
+}
 
 type SidebarModel = {
   pinnedProjects: Page[];
@@ -412,8 +425,8 @@ function PageItem({
     <div>
       <div
         data-page-id={page.id}
-        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
-        style={{ paddingLeft: `${(depth * 12) + 6}px`, paddingRight: '8px' }}
+        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
+        style={{ paddingLeft: `${(depth * 12) + 5}px`, paddingRight: '6px' }}
         onClick={() => setCurrentPageId(page.id)}
         onDoubleClick={startRename}
         onContextMenu={handleContextMenu}
@@ -421,7 +434,7 @@ function PageItem({
       >
         <div className="flex min-w-0 flex-1 items-center truncate">
           {page.icon && (
-            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13px]">
+            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13.5px]">
               {page.icon}
             </span>
           )}
@@ -824,8 +837,8 @@ function ProjectItem({
     <div>
       <div
         data-page-id={project.id}
-        className={`group on-shell-row on-sidebar-page-row on-sidebar-project-row mb-[1px] cursor-pointer justify-between py-[3px] text-[13px] select-none ${dropClass} ${draggedPageId === project.id ? 'opacity-45' : ''}`}
-        style={{ paddingLeft: `${(depth * 12) + 6}px`, paddingRight: '8px' }}
+        className={`group on-shell-row on-sidebar-page-row on-sidebar-project-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${dropClass} ${draggedPageId === project.id ? 'opacity-45' : ''}`}
+        style={{ paddingLeft: `${(depth * 12) + 5}px`, paddingRight: '6px' }}
         aria-expanded={isExpanded}
         onClick={() => setExpanded(!isExpanded)}
         onDoubleClick={startRename}
@@ -833,7 +846,7 @@ function ProjectItem({
       >
         <div className="flex min-w-0 flex-1 items-center truncate">
           {project.icon ? (
-            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13px]">
+            <span className="mr-1.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center text-[13.5px]">
               {project.icon}
             </span>
           ) : (
@@ -1021,7 +1034,7 @@ function StudioNotesTree({
     >
       <div className="flex min-w-0 items-center gap-2">
         {entry.page.icon && (
-          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{entry.page.icon}</span>
+          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13.5px]">{entry.page.icon}</span>
         )}
         <span className="truncate">{entry.page.title || t("sidebar.untitled")}</span>
       </div>
@@ -1080,6 +1093,7 @@ export function Sidebar() {
     createProjectAction,
     removeProjectAction,
     fetchProfile,
+    profile,
   } = useAppStore(useShallow((s) => ({
     pages: s.pages,
     fetchPages: s.fetchPages,
@@ -1101,11 +1115,26 @@ export function Sidebar() {
     createProjectAction: s.createProjectAction,
     removeProjectAction: s.removeProjectAction,
     fetchProfile: s.fetchProfile,
+    profile: s.profile,
   })));
-  const { sidebarWidth, setSidebarWidth } = useUIStore();
+  const {
+    sidebarWidth,
+    setSidebarWidth,
+    theme,
+    setTheme,
+    openSettingsWindow,
+  } = useUIStore(useShallow((state) => ({
+    sidebarWidth: state.sidebarWidth,
+    setSidebarWidth: state.setSidebarWidth,
+    theme: state.theme,
+    setTheme: state.setTheme,
+    openSettingsWindow: state.openSettingsWindow,
+  })));
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsPopoverRef = useRef<HTMLDivElement>(null);
   const newPageButtonRef = useRef<HTMLButtonElement>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [newPageMenuPosition, setNewPageMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
@@ -1129,6 +1158,46 @@ export function Sidebar() {
   useEffect(() => {
     void fetchProfile();
   }, [fetchProfile]);
+
+  useEffect(() => {
+    if (!isSettingsMenuOpen) return;
+
+    const closeSettingsMenu = () => setIsSettingsMenuOpen(false);
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (settingsPopoverRef.current?.contains(target) || settingsButtonRef.current?.contains(target)) {
+        return;
+      }
+      closeSettingsMenu();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeSettingsMenu();
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeSettingsMenu);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(CLOSE_OPEN_OVERLAYS_EVENT, closeSettingsMenu);
+    };
+  }, [isSettingsMenuOpen]);
+
+  const themeLabel = {
+    system: t("settings.appearance.themeSystem"),
+    light: t("settings.appearance.themeLight"),
+    dark: t("settings.appearance.themeDark"),
+  }[theme];
+  const profileTitle = profile?.workspaceName || "Shelf";
+  const profileSubtitle = profile?.name || t("settings.card.localWorkspace");
+  const avatarInitial = (profile?.name || profile?.workspaceName || "S").trim().charAt(0).toUpperCase() || "S";
+
+  const openSettingsSection = (section: SettingsSection) => {
+    setIsSettingsMenuOpen(false);
+    openSettingsWindow(section);
+  };
 
   const sidebarModel: SidebarModel = useMemo(() => {
     const sidebarSections = buildSidebarSections(pages);
@@ -1782,7 +1851,7 @@ export function Sidebar() {
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         {page.icon && (
-                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13px]">{page.icon}</span>
+                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13.5px]">{page.icon}</span>
                         )}
                         <span className="truncate">{page.title || t("sidebar.untitled")}</span>
                       </div>
@@ -1796,22 +1865,88 @@ export function Sidebar() {
         </div>
       </div>
       {deleteDialog}
+      {isSettingsMenuOpen && settingsButtonRef.current && createPortal(
+        <div
+          ref={settingsPopoverRef}
+          className="on-settings-quick-popover fixed z-[180]"
+          style={{
+            left: Math.max(12, settingsButtonRef.current.getBoundingClientRect().left),
+            bottom: Math.max(12, window.innerHeight - settingsButtonRef.current.getBoundingClientRect().top + 8),
+            width: Math.min(320, Math.max(280, sidebarWidth + 8)),
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="on-settings-quick-account">
+            {profile?.avatarPath ? (
+              <img className="on-settings-quick-avatar on-settings-quick-avatar-img" src={fileSrc(profile.avatarPath)} alt="" />
+            ) : (
+              <span className="on-settings-quick-avatar">{avatarInitial}</span>
+            )}
+            <div className="min-w-0">
+              <div className="truncate text-[13.5px] font-normal text-foreground">{profileTitle}</div>
+              <div className="truncate text-xs text-muted-foreground">{profileSubtitle}</div>
+            </div>
+          </div>
+
+          <div className="on-settings-quick-divider" />
+
+          <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('profile')}>
+            <UserCircle className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span>{t("settings.nav.profile")}</span>
+          </button>
+          <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('data')}>
+            <FolderInput className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span>{t("settings.nav.data")}</span>
+          </button>
+          <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('updates')}>
+            <RefreshCw className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span>{t("settings.updates.checkRow")}</span>
+          </button>
+          <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('appearance')}>
+            <Settings className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span>{t("sidebar.settings")}</span>
+          </button>
+
+          <div className="on-settings-quick-divider" />
+
+          <div className="on-settings-quick-stepper">
+            <div className="on-settings-quick-stepper-label">
+              <SlidersHorizontal className="h-[18px] w-[18px]" strokeWidth={1.9} />
+              <span>{t("settings.appearance.theme")}</span>
+            </div>
+            <div className="on-settings-quick-stepper-control">
+              <button type="button" onClick={() => setTheme(cycleChoice(THEME_CHOICES, theme, -1))} aria-label={t("settings.appearance.theme")}>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span>{themeLabel}</span>
+              <button type="button" onClick={() => setTheme(cycleChoice(THEME_CHOICES, theme, 1))} aria-label={t("settings.appearance.theme")}>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       <div className="on-sidebar-footer">
         <button
+          ref={settingsButtonRef}
           type="button"
           className="on-sidebar-settings-button"
           aria-label={t("sidebar.settings")}
           title={t("sidebar.settings")}
           onClick={() => {
+            if (isSettingsMenuOpen) {
+              setIsSettingsMenuOpen(false);
+              return;
+            }
             closeOpenOverlays();
-            setIsSettingsOpen(true);
+            setIsSettingsMenuOpen(true);
           }}
         >
           <Settings className="h-4 w-4" strokeWidth={1.9} />
           <span>{t("sidebar.settings")}</span>
         </button>
       </div>
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
 }
