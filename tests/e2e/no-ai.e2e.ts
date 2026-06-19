@@ -19,6 +19,11 @@ test("does not expose AI features or call AI backend commands", async ({ page })
   await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "Settings" }).click();
+  // The sidebar footer button opens a quick-settings popover first; opening a
+  // section from it swaps the app to the full-screen settings window.
+  const popover = page.locator(".on-settings-quick-popover");
+  await expect(popover).toBeVisible();
+  await popover.getByRole("button", { name: "Settings" }).click();
   const settingsPanel = page.locator(".on-settings-panel");
   await expect(settingsPanel).toBeVisible();
   await expect(settingsPanel.getByText(/AI/i)).toHaveCount(0);

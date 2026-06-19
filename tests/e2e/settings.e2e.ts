@@ -17,6 +17,10 @@ test.beforeEach(async ({ page }) => {
 async function openSettings(page: import("@playwright/test").Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Settings" }).click();
+  // The sidebar footer button opens a quick-settings popover first; opening a
+  // section from it swaps the app to the full-screen settings window.
+  await expect(page.locator(".on-settings-quick-popover")).toBeVisible();
+  await page.locator(".on-settings-quick-popover").getByRole("button", { name: "Settings" }).click();
   await expect(page.locator(".on-settings-panel")).toBeVisible();
 }
 
@@ -31,9 +35,9 @@ test("appearance preferences persist to localStorage", async ({ page }) => {
 
 test("switching language to Italian translates the modal instantly", async ({ page }) => {
   await openSettings(page);
-  await page.getByRole("button", { name: "Preferences" }).click();
+  await page.getByRole("button", { name: "General" }).click();
   await page.getByLabel("Language").selectOption("it");
-  await expect(page.getByRole("button", { name: "Preferenze" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generali" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Aspetto" })).toBeVisible();
 });
 
@@ -42,12 +46,12 @@ test("profile name edits reflect in the sidebar card", async ({ page }) => {
   await page.getByRole("button", { name: "Profile" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Marco");
   await page.getByLabel("Name", { exact: true }).blur();
-  await expect(page.locator(".on-settings-account-card")).toContainText("Marco");
+  await expect(page.locator(".on-settings-profile-hero")).toContainText("Marco");
 });
 
 test("preferences persist across reload", async ({ page }) => {
   await openSettings(page);
-  await page.getByRole("button", { name: "Preferences" }).click();
+  await page.getByRole("button", { name: "General" }).click();
   await page.getByLabel("Page width").selectOption("full");
   await page.reload({ waitUntil: "domcontentloaded" });
   expect(await page.evaluate(() => localStorage.getItem("opennotion-page-width"))).toBe("full");
