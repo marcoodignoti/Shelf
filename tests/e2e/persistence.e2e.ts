@@ -936,6 +936,230 @@ test("turns one-line display math paste into a formula block", async ({ page }) 
   await expect(page.getByLabel("Formula preview: q = \\pm Ne")).toBeVisible();
 });
 
+test("collapses pasted repeated equals inside formula blocks", async ({ page }) => {
+  const title = "Formula Equals Paste Smoke";
+  await createPageAndFocusEditor(page, title);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "Formula:",
+        "[",
+        "\\nabla \\times \\vec B ==================== \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}",
+        "]",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(
+    page.getByLabel(
+      "Formula preview: \\nabla \\times \\vec B = \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}"
+    )
+  ).toBeVisible();
+  await page.waitForFunction(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "";
+      return content.includes("\\\\nabla \\\\times \\\\vec B = \\\\mu_0\\\\vec j") && !content.includes("====");
+    },
+    { key: storageKey, title }
+  );
+});
+
+test("turns pasted markdown tables and dividers into structured blocks", async ({ page }) => {
+  const title = "Table Divider Paste Smoke";
+  await createPageAndFocusEditor(page, title);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "| Sotto-argomento | Dove compare |",
+        "| --- | --- |",
+        "| Campo magnetico di solenoide indefinito | 07/11/2023, 27/06/2023, 13/06/2023 |",
+        "| Campo magnetico di solenoide toroidale | 07/02/2024 |",
+        "",
+        "---",
+        "",
+        "Formule da dominare:",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByText("Sotto-argomento", { exact: true })).toBeVisible();
+  await expect(page.getByText("Campo magnetico di solenoide toroidale", { exact: true })).toBeVisible();
+  await expect(page.getByText("Formule da dominare:", { exact: true })).toBeVisible();
+  await page.waitForFunction(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "[]";
+
+      return (
+        content.includes('"type":"table"') &&
+        content.includes('"type":"divider"') &&
+        content.includes("Sotto-argomento") &&
+        content.includes("Dove compare")
+      );
+    },
+    { key: storageKey, title }
+  );
+});
+
+test("preserves rich markdown formatting from LLM-style paste", async ({ page }) => {
+  const title = "Rich LLM Paste Smoke";
+  await createPageAndFocusEditor(page, title);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "## Risposta rapida",
+        "",
+        "- **Grassetto**, *corsivo*, `codice` e [fonte](https://example.com).",
+        "",
+        "> Nota importante da mantenere come citazione.",
+        "",
+        "$$",
+        "F",
+        "/",
+        "L",
+        "=",
+        "\\frac{\\mu_0 i_1 i_2}{2\\pi d}",
+        "$$",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByRole("heading", { name: "Risposta rapida" })).toBeVisible();
+  await expect(page.getByText("Nota importante da mantenere come citazione.")).toBeVisible();
+  await expect(page.locator(".on-formula-block")).toBeVisible();
+  await page.waitForFunction(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "";
+
+      return (
+        content.includes('"type":"heading"') &&
+        content.includes('"type":"bulletListItem"') &&
+        content.includes('"type":"quote"') &&
+        content.includes('"type":"link"') &&
+        content.includes('"bold":true') &&
+        content.includes('"italic":true') &&
+        content.includes('"code":true') &&
+        content.includes('"type":"formula"') &&
+        content.includes("\\\\frac{\\\\mu_0 i_1 i_2}{2\\\\pi d}")
+      );
+    },
+    { key: storageKey, title }
+  );
+});
+
+test("preserves bare aligned latex environments from LLM-style paste", async ({ page }) => {
+  const title = "Aligned Formula Paste Smoke";
+  await createPageAndFocusEditor(page, title);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "## 7. Equazioni di Maxwell nel vuoto",
+        "",
+        "Le equazioni sono:",
+        "",
+        "\\begin{aligned}",
+        "\\nabla \\cdot \\vec E &= \\frac{\\rho}{\\varepsilon_0} \\\\",
+        "\\nabla \\cdot \\vec B &= 0 \\\\",
+        "\\nabla \\times \\vec E &= -\\frac{\\partial \\vec B}{\\partial t} \\\\",
+        "\\nabla \\times \\vec B &= \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}",
+        "\\end{aligned}",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  const formula =
+    "\\begin{aligned} \\nabla \\cdot \\vec E &= \\frac{\\rho}{\\varepsilon_0} \\\\ \\nabla \\cdot \\vec B &= 0 \\\\ \\nabla \\times \\vec E &= -\\frac{\\partial \\vec B}{\\partial t} \\\\ \\nabla \\times \\vec B &= \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t} \\end{aligned}";
+
+  await expect(page.getByRole("heading", { name: "Equazioni di Maxwell nel vuoto" })).toBeVisible();
+  await expect(page.getByLabel(`Formula preview: ${formula}`)).toBeVisible();
+  await expect(page.getByText("\\begin{aligned}", { exact: true })).toHaveCount(0);
+  await page.waitForFunction(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "";
+      return (
+        content.includes('"type":"formula"') &&
+        content.includes("\\\\begin{aligned}") &&
+        content.includes("\\\\nabla \\\\times \\\\vec B")
+      );
+    },
+    { key: storageKey, title }
+  );
+});
+
+test("preserves the uploaded LLM study-plan markdown shape", async ({ page }) => {
+  const title = "Study Plan Paste Smoke";
+  await createPageAndFocusEditor(page, title);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      [
+        "## 1. Argomenti complessivi estratti dai compiti",
+        "",
+        "### A. Elettrostatica con simmetria e legge di Gauss",
+        "",
+        "Sotto-argomenti:",
+        "",
+        "| Sotto-argomento | Dove compare |",
+        "| --- | --- |",
+        "| Grafico qualitativo di (E(r)) e (V(r)) | 25/06/2025, 16/09/2025 |",
+        "| Forza su carica di prova | 24/01/2024, 27/06/2023 |",
+        "",
+        "Qui devi essere forte su:",
+        "",
+        "[",
+        "\\oint \\vec E \\cdot d\\vec S = \\frac{q_{\\text{int}}}{\\varepsilon_0}",
+        "]",
+        "",
+        "---",
+        "",
+        "### B. Conduttori, condensatori, dielettrici",
+      ].join("\n")
+    );
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+
+  await expect(page.getByRole("heading", { name: "Argomenti complessivi estratti dai compiti" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A. Elettrostatica con simmetria e legge di Gauss" })).toBeVisible();
+  await expect(page.getByText("Grafico qualitativo di", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: E(r)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Formula: V(r)", exact: true })).toBeVisible();
+  await expect(
+    page.getByLabel("Formula preview: \\oint \\vec E \\cdot d\\vec S = \\frac{q_{\\text{int}}}{\\varepsilon_0}")
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "B. Conduttori, condensatori, dielettrici" })).toBeVisible();
+  await page.waitForFunction(
+    ({ key, title }) => {
+      const pages = JSON.parse(window.localStorage.getItem(key) ?? "[]") as MockPage[];
+      const content = pages.find((page) => page.title === title)?.content ?? "";
+
+      return (
+        content.includes('"type":"table"') &&
+        content.includes('"type":"divider"') &&
+        content.includes('"type":"formula"') &&
+        content.includes('"type":"math"') &&
+        content.includes("Grafico qualitativo")
+      );
+    },
+    { key: storageKey, title }
+  );
+});
+
 test("preserves ChatGPT-style markdown while normalizing pasted formulas", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 

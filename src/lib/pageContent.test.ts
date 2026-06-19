@@ -39,16 +39,20 @@ describe("parsePageBlocks", () => {
     expect(parsePageBlocks(JSON.stringify([null, [], "bad"]))).toEqual([{ type: "paragraph" }]);
   });
 
-  it("converts unsupported legacy blocks while preserving supported formula blocks", () => {
+  it("converts unsupported legacy blocks while preserving supported formula, divider, quote, and toggle blocks", () => {
     expect(
       parsePageBlocks(
         JSON.stringify([
           { id: "separator", type: "divider", props: {}, children: [] },
+          { id: "quote", type: "quote", content: "Remember this", children: [] },
+          { id: "toggle", type: "toggleListItem", content: "Details", children: [] },
           { id: "eq", type: "formula", props: { formula: "E=mc^2" }, children: [] },
         ])
       )
     ).toEqual([
-      { id: "separator", type: "paragraph", children: [] },
+      { id: "separator", type: "divider", props: {}, children: [] },
+      { id: "quote", type: "quote", content: "Remember this", children: [] },
+      { id: "toggle", type: "toggleListItem", content: "Details", children: [] },
       {
         id: "eq",
         type: "formula",
@@ -100,6 +104,25 @@ describe("pageContentToSearchText", () => {
     ]);
 
     expect(pageContentToSearchText(content)).toBe("Alpha \\nabla \\cdot \\vec{E} Research note Beta Nested item Roadmap");
+  });
+
+  it("extracts readable text from default markdown links and quote blocks", () => {
+    const content = JSON.stringify([
+      {
+        type: "quote",
+        content: [
+          { type: "text", text: "Quoted ", styles: {} },
+          {
+            type: "link",
+            href: "https://example.com",
+            content: [{ type: "text", text: "source", styles: {} }],
+          },
+        ],
+        children: [],
+      },
+    ]);
+
+    expect(pageContentToSearchText(content)).toBe("Quoted source");
   });
 
   it("keeps legacy plain text searchable", () => {

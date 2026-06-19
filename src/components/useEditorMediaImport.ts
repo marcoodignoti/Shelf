@@ -13,7 +13,12 @@ import {
   editorMediaUserMessage,
   type EditorMediaKind,
 } from "../lib/editorMedia";
-import { blocksFromPastedMathText } from "../lib/editorMath";
+import {
+  blocksFromPastedMathText,
+  normalizeMathInlineContentInEditor,
+  prepareMarkdownForBlockNotePaste,
+  shouldUseBlockNoteMarkdownPaste,
+} from "../lib/editorMath";
 import type { TranslationKey, TranslationParams } from "../lib/i18n";
 
 type ShowError = (error: unknown) => void;
@@ -23,7 +28,10 @@ type Translate = (key: TranslationKey, params?: TranslationParams) => string;
 type EditorPasteHandlerArgs = {
   event: ClipboardEvent;
   editor: BlockNoteEditor<any, any, any>;
-  defaultPasteHandler: () => void;
+  defaultPasteHandler: (context?: {
+    prioritizeMarkdownOverHTML?: boolean;
+    plainTextAsMarkdown?: boolean;
+  }) => boolean | undefined;
 };
 
 export async function uploadEditorMediaFile(
@@ -53,7 +61,20 @@ export function handleEditorPasteWithMedia(
 ): boolean | void {
   const mediaFiles = Array.from(event.clipboardData?.files ?? []).filter((file) => editorMediaKindForFile(file));
   const pastedText = event.clipboardData?.getData("text/plain") ?? "";
-  const mathBlocks = mediaFiles.length === 0 ? blocksFromPastedMathText(pastedText) : null;
+  const useBlockNoteMarkdownPaste = mediaFiles.length === 0 && shouldUseBlockNoteMarkdownPaste(pastedText);
+  const mathBlocks = mediaFiles.length === 0 && !useBlockNoteMarkdownPaste ? blocksFromPastedMathText(pastedText) : null;
+
+  if (useBlockNoteMarkdownPaste) {
+    const blocks = editor.tryParseMarkdownToBlocks(prepareMarkdownForBlockNotePaste(pastedText));
+    const cursorBlock = editor.getTextCursorPosition().block;
+    if (isEmptyEditorBlock(cursorBlock)) {
+      editor.replaceBlocks([cursorBlock], blocks as never);
+    } else {
+      editor.insertBlocks(blocks as never, cursorBlock, "after");
+    }
+    normalizeMathInlineContentInEditor(editor);
+    return true;
+  }
 
   if (mathBlocks) {
     const cursorBlock = editor.getTextCursorPosition().block;

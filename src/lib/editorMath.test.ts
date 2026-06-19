@@ -7,7 +7,9 @@ import {
   normalizeMathInlineContent,
   normalizeMathInlineContentInEditor,
   openNotionEditorSchema,
+  prepareMarkdownForBlockNotePaste,
   renderFormulaHtml,
+  shouldUseBlockNoteMarkdownPaste,
 } from "./editorMath";
 
 describe("normalizeMathInlineContent", () => {
@@ -80,6 +82,19 @@ describe("normalizeMathInlineContent", () => {
     ).toEqual([
       { type: "math", props: { formula: "\\vec{E}" } },
       { type: "text", text: " è il campo elettrico", styles: {} },
+    ]);
+  });
+
+  it("converts compact parenthesized variable functions in explanatory text", () => {
+    expect(
+      normalizeMathInlineContent([
+        { type: "text", text: "grafico qualitativo di (E(r)) e (V(r))", styles: {} },
+      ]).content
+    ).toEqual([
+      { type: "text", text: "grafico qualitativo di ", styles: {} },
+      { type: "math", props: { formula: "E(r)" } },
+      { type: "text", text: " e ", styles: {} },
+      { type: "math", props: { formula: "V(r)" } },
     ]);
   });
 
@@ -218,6 +233,81 @@ describe("blocksFromPastedMathText", () => {
     ]);
   });
 
+  it("turns pasted markdown pipe tables into table blocks", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "| Sotto-argomento | Dove compare |",
+          "| --- | --- |",
+          "| Campo magnetico di solenoide indefinito | 07/11/2023, 27/06/2023, 13/06/2023 |",
+          "| Campo magnetico di solenoide toroidale | 07/02/2024 |",
+          "| Induttanza di solenoide rettilineo | 09/04/2025 |",
+        ].join("\n")
+      )
+    ).toEqual([
+      {
+        type: "table",
+        content: {
+          type: "tableContent",
+          rows: [
+            { cells: ["Sotto-argomento", "Dove compare"] },
+            {
+              cells: [
+                "Campo magnetico di solenoide indefinito",
+                "07/11/2023, 27/06/2023, 13/06/2023",
+              ],
+            },
+            { cells: ["Campo magnetico di solenoide toroidale", "07/02/2024"] },
+            { cells: ["Induttanza di solenoide rettilineo", "09/04/2025"] },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("pads uneven markdown table rows and normalizes inline math in cells", () => {
+    expect(
+      blocksFromPastedMathText(
+        [
+          "| Formula | Nota |",
+          "| --- | --- |",
+          "| Forza | \\(F/L\\) tra fili | extra |",
+          "| Selettore | |",
+        ].join("\n")
+      )
+    ).toEqual([
+      {
+        type: "table",
+        content: {
+          type: "tableContent",
+          rows: [
+            { cells: ["Formula", "Nota", ""] },
+            {
+              cells: [
+                "Forza",
+                [
+                  { type: "math", props: { formula: "F/L" } },
+                  { type: "text", text: " tra fili", styles: {} },
+                ],
+                "extra",
+              ],
+            },
+            { cells: ["Selettore", "", ""] },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("turns pasted markdown dividers into divider blocks", () => {
+    expect(blocksFromPastedMathText("Formule da dominare:\n---\n# Dopo")).toEqual([
+      { type: "paragraph", content: "Formule da dominare:" },
+      { type: "divider" },
+      { type: "heading", props: { level: 1 }, content: "Dopo" },
+    ]);
+    expect(blocksFromPastedMathText("---")).toEqual([{ type: "divider" }]);
+  });
+
   it("structures long plain-text lesson summaries into headings and paragraphs", () => {
     expect(
       blocksFromPastedMathText(
@@ -320,6 +410,109 @@ describe("blocksFromPastedMathText", () => {
         props: { formula: "M,d\\theta = dW" },
       },
     ]);
+  });
+});
+
+describe("shouldUseBlockNoteMarkdownPaste", () => {
+  it("uses BlockNote's markdown parser for rich markdown from LLM output", () => {
+    expect(
+      shouldUseBlockNoteMarkdownPaste(
+        [
+          "## Summary",
+          "",
+          "- **Important** item with [source](https://example.com) and `code`",
+          "> quoted note",
+        ].join("\n")
+      )
+    ).toBe(true);
+  });
+
+  it("keeps Shelf's plain-text lesson structuring for non-markdown summaries", () => {
+    expect(
+      shouldUseBlockNoteMarkdownPaste(
+        [
+          "Di seguito trovi il riassunto pagina per pagina della lezione.",
+          "Pagina 1 — Copertina",
+          "La prima slide è la copertina.",
+          "R → cadute di tensione e dissipazione",
+        ].join("\n")
+      )
+    ).toBe(false);
+  });
+
+  it("uses BlockNote's parser for display math so markdown formatting survives around it", () => {
+    expect(shouldUseBlockNoteMarkdownPaste("**Forza**:\n$$\nF/L = \\frac{\\mu_0 i_1 i_2}{2\\pi d}\n$$")).toBe(true);
+  });
+});
+
+describe("prepareMarkdownForBlockNotePaste", () => {
+  it("protects explicit inline latex before BlockNote markdown parsing", () => {
+    expect(prepareMarkdownForBlockNotePaste("- Corrente dove \\(R_{eq} < R_i\\).")).toBe(
+      "- Corrente dove \\\\(R\\_{eq} < R\\_i\\\\)."
+    );
+  });
+
+  it("protects parenthesized compact formulas copied from LLM output", () => {
+    expect(prepareMarkdownForBlockNotePaste("grafico di (E(r)) e (V(r)), regione con (B).")).toBe(
+      "grafico di (E(r)) e (V(r)), regione con (B)."
+    );
+  });
+
+  it("protects display math fences as formula block HTML", () => {
+    expect(
+      prepareMarkdownForBlockNotePaste(
+        [
+          "Formula:",
+          "[",
+          "\\oint \\vec E \\cdot d\\vec S = \\frac{q_{\\text{int}}}{\\varepsilon_0}",
+          "]",
+        ].join("\n")
+      )
+    ).toBe(
+      [
+        "Formula:",
+        "",
+        '<figure class="on-formula-block" data-latex="\\oint \\vec E \\cdot d\\vec S = \\frac{q_{\\text{int}}}{\\varepsilon_0}"></figure>',
+        "",
+      ].join("\n")
+    );
+  });
+
+  it("collapses pasted equation separator runs inside display formulas", () => {
+    expect(
+      prepareMarkdownForBlockNotePaste(
+        [
+          "Formula:",
+          "[",
+          "\\nabla \\times \\vec B ==================== \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}",
+          "]",
+        ].join("\n")
+      )
+    ).toContain(
+      'data-latex="\\nabla \\times \\vec B = \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}"'
+    );
+  });
+
+  it("protects bare aligned latex environments as display formula blocks", () => {
+    expect(
+      prepareMarkdownForBlockNotePaste(
+        [
+          "Le equazioni sono:",
+          "\\begin{aligned}",
+          "\\nabla \\cdot \\vec E &= \\frac{\\rho}{\\varepsilon_0} \\\\",
+          "\\nabla \\cdot \\vec B &= 0 \\\\",
+          "\\nabla \\times \\vec E &= -\\frac{\\partial \\vec B}{\\partial t}",
+          "\\end{aligned}",
+        ].join("\n")
+      )
+    ).toBe(
+      [
+        "Le equazioni sono:",
+        "",
+        '<figure class="on-formula-block" data-latex="\\begin{aligned} \\nabla \\cdot \\vec E &amp;= \\frac{\\rho}{\\varepsilon_0} \\\\ \\nabla \\cdot \\vec B &amp;= 0 \\\\ \\nabla \\times \\vec E &amp;= -\\frac{\\partial \\vec B}{\\partial t} \\end{aligned}"></figure>',
+        "",
+      ].join("\n")
+    );
   });
 });
 
@@ -492,6 +685,30 @@ describe("normalizeMathInlineContentInEditor", () => {
       children: [],
     });
   });
+
+  it("repairs pasted formula blocks with repeated equals separators", () => {
+    const document = [
+      {
+        id: "formula",
+        type: "formula",
+        props: {
+          formula: "\\nabla \\times \\vec B ==================== \\mu_0\\vec j",
+        },
+        content: undefined,
+        children: [],
+      },
+    ];
+    const editor = {
+      document,
+      removeBlocks() {},
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document[0].props.formula).toBe("\\nabla \\times \\vec B = \\mu_0\\vec j");
+  });
 });
 
 describe("normalizeMathInlineContentInEditor", () => {
@@ -529,6 +746,64 @@ describe("normalizeMathInlineContentInEditor", () => {
         children: [],
       },
     ]);
+  });
+
+  it("repairs existing split aligned latex environments on page load", () => {
+    const document = [
+      {
+        id: "open",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\begin{aligned}", styles: {} }],
+        children: [],
+      },
+      {
+        id: "gauss",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\nabla \\cdot \\vec E &= \\frac{\\rho}{\\varepsilon_0} \\\\", styles: {} }],
+        children: [],
+      },
+      {
+        id: "ampere",
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "\\nabla \\times \\vec B &= \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t}",
+            styles: {},
+          },
+        ],
+        children: [],
+      },
+      {
+        id: "close",
+        type: "paragraph",
+        content: [{ type: "text", text: "\\end{aligned}", styles: {} }],
+        children: [],
+      },
+    ];
+    const editor = {
+      document,
+      removeBlocks(blocks: Array<{ id: string }>) {
+        const ids = new Set(blocks.map((block) => block.id));
+        for (let index = document.length - 1; index >= 0; index -= 1) {
+          if (ids.has(document[index].id)) document.splice(index, 1);
+        }
+      },
+      updateBlock(block: { id: string }, update: Record<string, unknown>) {
+        Object.assign(document.find((item) => item.id === block.id)!, update);
+      },
+    };
+
+    expect(normalizeMathInlineContentInEditor(editor as never)).toBe(true);
+    expect(document).toHaveLength(1);
+    expect(document[0]).toMatchObject({
+      id: "open",
+      type: "formula",
+      props: {
+        formula:
+          "\\begin{aligned} \\nabla \\cdot \\vec E &= \\frac{\\rho}{\\varepsilon_0} \\\\ \\nabla \\times \\vec B &= \\mu_0\\vec j + \\mu_0\\varepsilon_0 \\frac{\\partial \\vec E}{\\partial t} \\end{aligned}",
+      },
+    });
   });
 
   it("normalizes multi-line bracket formulas with split derivative terms", () => {

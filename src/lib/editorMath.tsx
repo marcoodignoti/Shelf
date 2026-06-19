@@ -331,10 +331,34 @@ export const openNotionEditorSchema = BlockNoteSchema.create({
 
 export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, any, any>): boolean {
   let changed = normalizeBracketedMathBlocks(editor);
+  changed = normalizeLatexEnvironmentBlocks(editor) || changed;
 
   const visit = (block: Block<any, any, any>) => {
     if (block.type === "codeBlock") {
       block.children.forEach(visit);
+      return;
+    }
+
+    if (block.type === "formula") {
+      const normalizedFormula = normalizePastedFormula(block.props.formula);
+      if (normalizedFormula !== block.props.formula) {
+        changed = true;
+        editor.updateBlock(block, {
+          props: { formula: normalizedFormula },
+        } as never);
+      }
+      block.children.forEach(visit);
+      return;
+    }
+
+    const standaloneInlineFormula = formulaFromStandaloneMathInlineContent(block.content);
+    if (standaloneInlineFormula && block.type !== "formula") {
+      changed = true;
+      editor.updateBlock(block, {
+        type: "formula",
+        props: { formula: normalizePastedFormula(standaloneInlineFormula) },
+        content: undefined,
+      } as never);
       return;
     }
 
@@ -343,7 +367,7 @@ export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, 
       changed = true;
       editor.updateBlock(block, {
         type: "formula",
-        props: { formula: blockFormula },
+        props: { formula: normalizePastedFormula(blockFormula) },
         content: undefined,
       } as never);
       return;
@@ -370,6 +394,19 @@ export function normalizeMathInlineContentInEditor(editor: BlockNoteEditor<any, 
   return changed;
 }
 
+function formulaFromStandaloneMathInlineContent(content: unknown): string | null {
+  if (!Array.isArray(content)) return null;
+
+  const meaningfulContent = content.filter((item) => {
+    if (typeof item === "string") return item.trim().length > 0;
+    if (isTextInlineContent(item)) return item.text.trim().length > 0;
+    return true;
+  });
+
+  if (meaningfulContent.length !== 1 || !isMathInlineContent(meaningfulContent[0])) return null;
+  return meaningfulContent[0].props.formula;
+}
+
 export function formulaFromBlockContent(content: unknown): string | null {
   return formulaFromText(textFromBlockContent(content));
 }
@@ -381,14 +418,18 @@ export function formulaInputFromBlockContent(content: unknown): string {
 export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
   const normalizedText = text.replace(/\r\n?/g, "\n");
   const lines = normalizedText.split("\n");
+  const hasMarkdownTableOrDivider = lines.some((line, index) =>
+    isMarkdownDividerLine(line) || readMarkdownTable(lines, index) !== null
+  );
   const hasMathFence = lines.some((line) => {
     const trimmed = line.trim();
-    return isOpenMathFence(trimmed) || trimmed.startsWith("$$") || trimmed.startsWith("\\[");
+    return isOpenMathFence(trimmed) || trimmed.startsWith("$$") || trimmed.startsWith("\\[") || isLatexEnvironmentStart(trimmed);
   });
 
   if (!hasMathFence) {
-    if (!isStructuredPlainTextPaste(lines)) return null;
     const blocks = blocksFromMarkdownLikeLines(lines);
+    if (hasMarkdownTableOrDivider) return blocks.length > 0 ? blocks : null;
+    if (!isStructuredPlainTextPaste(lines)) return null;
     return blocks.length > 1 ? blocks : null;
   }
 
@@ -410,13 +451,14 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
 
     blocks.push({
       type: "formula",
-      props: { formula: parts.join(" ") },
+      props: { formula: normalizePastedFormula(parts.join(" ")) },
     } as unknown as PartialBlock);
     formulaLines = null;
     return true;
   };
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const trimmed = line.trim();
 
     if (formulaLines) {
@@ -437,8 +479,19 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
       flushParagraph();
       blocks.push({
         type: "formula",
-        props: { formula: inlineDisplayFormula },
+        props: { formula: normalizePastedFormula(inlineDisplayFormula) },
       } as unknown as PartialBlock);
+      continue;
+    }
+
+    const latexEnvironment = collectLatexEnvironment(lines, index);
+    if (latexEnvironment) {
+      flushParagraph();
+      blocks.push({
+        type: "formula",
+        props: { formula: latexEnvironment.formula },
+      } as unknown as PartialBlock);
+      index = latexEnvironment.closeIndex;
       continue;
     }
 
@@ -459,6 +512,250 @@ export function blocksFromPastedMathText(text: string): PartialBlock[] | null {
   return blocks.length > 0 ? blocks : null;
 }
 
+export function shouldUseBlockNoteMarkdownPaste(text: string): boolean {
+  const normalizedText = text.replace(/\r\n?/g, "\n");
+  const lines = normalizedText.split("\n");
+
+  if (hasInlineMarkdownSyntax(normalizedText)) return true;
+
+  return lines.some((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+
+    return (
+      isOpenMathFence(trimmed) ||
+      trimmed.startsWith("$$") ||
+      trimmed.startsWith("\\[") ||
+      isLatexEnvironmentStart(trimmed) ||
+      isMarkdownLikeLine(trimmed) ||
+      isSetextHeadingUnderline(lines, index) ||
+      readMarkdownTable(lines, index) !== null
+    );
+  });
+}
+
+export function prepareMarkdownForBlockNotePaste(text: string): string {
+  const normalizedText = text.replace(/\r\n?/g, "\n");
+  const lines = normalizedText.split("\n");
+  const protectedLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    const singleLineFormula = formulaFromText(trimmed);
+
+    if (singleLineFormula && isDelimitedDisplayMathLine(trimmed)) {
+      protectedLines.push("", formulaHtmlBlock(singleLineFormula), "");
+      continue;
+    }
+
+    const latexEnvironment = collectLatexEnvironment(lines, index);
+    if (latexEnvironment) {
+      protectedLines.push("", formulaHtmlBlock(latexEnvironment.formula), "");
+      index = latexEnvironment.closeIndex;
+      continue;
+    }
+
+    const openFence = openingMathFence(trimmed);
+    if (openFence) {
+      const collected = collectDisplayMathFence(lines, index, openFence.hasFormulaContent);
+      if (collected) {
+        protectedLines.push("", formulaHtmlBlock(collected.formula), "");
+        index = collected.closeIndex;
+        continue;
+      }
+    }
+
+    protectedLines.push(protectInlineMathForMarkdown(line));
+  }
+
+  return protectedLines.join("\n");
+}
+
+function isDelimitedDisplayMathLine(text: string): boolean {
+  return text.startsWith("$$") || text.startsWith("\\[") || (text.startsWith("[") && text.endsWith("]"));
+}
+
+function collectDisplayMathFence(
+  lines: string[],
+  openIndex: number,
+  openingLineHasFormula: boolean
+): { formula: string; closeIndex: number } | null {
+  const formulaLines: string[] = [];
+  const openingLine = lines[openIndex].trim();
+
+  if (openingLineHasFormula) {
+    formulaLines.push(stripOpeningMathFence(openingLine));
+  }
+
+  for (let index = openIndex + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+
+    if (isCloseMathFence(trimmed)) {
+      const formula = formulaFromFenceLines(formulaLines);
+      return formula ? { formula, closeIndex: index } : null;
+    }
+
+    formulaLines.push(trimmed);
+    if (hasClosingMathFence(trimmed)) {
+      const formula = formulaFromFenceLines(formulaLines);
+      return formula ? { formula, closeIndex: index } : null;
+    }
+  }
+
+  return null;
+}
+
+function formulaFromFenceLines(lines: string[]): string | null {
+  const parts = lines.map((line) => stripClosingMathFence(line.trim())).filter(Boolean);
+  if (parts.length === 0 || !parts.every(isLikelyLatexFormulaLine)) return null;
+  return normalizePastedFormula(parts.join(" "));
+}
+
+const DISPLAY_LATEX_ENVIRONMENTS = new Set([
+  "aligned",
+  "alignedat",
+  "gathered",
+  "matrix",
+  "pmatrix",
+  "bmatrix",
+  "Bmatrix",
+  "vmatrix",
+  "Vmatrix",
+  "cases",
+]);
+
+function latexEnvironmentName(line: string): string | null {
+  const match = line.trim().match(/^\\begin\{([A-Za-z*]+)\}/);
+  if (!match) return null;
+
+  const environment = match[1];
+  return DISPLAY_LATEX_ENVIRONMENTS.has(environment) ? environment : null;
+}
+
+function isLatexEnvironmentStart(line: string): boolean {
+  return latexEnvironmentName(line) !== null;
+}
+
+function latexEnvironmentClosePattern(environment: string): RegExp {
+  return new RegExp(`\\\\end\\{${environment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\}`);
+}
+
+function collectLatexEnvironment(
+  lines: string[],
+  openIndex: number
+): { formula: string; closeIndex: number } | null {
+  const environment = latexEnvironmentName(lines[openIndex] ?? "");
+  if (!environment) return null;
+
+  const parts: string[] = [];
+  const closePattern = latexEnvironmentClosePattern(environment);
+
+  for (let index = openIndex; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    parts.push(trimmed);
+
+    if (closePattern.test(trimmed)) {
+      if (!parts.every(isLikelyLatexFormulaLine)) return null;
+      return { formula: normalizePastedFormula(parts.join(" ")), closeIndex: index };
+    }
+  }
+
+  return null;
+}
+
+function protectInlineMathForMarkdown(line: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < line.length) {
+    if (line.startsWith("\\(", cursor)) {
+      const end = line.indexOf("\\)", cursor + 2);
+      if (end !== -1) {
+        const formula = line.slice(cursor + 2, end).trim();
+        if (formula) {
+          result += `\\\\(${escapeMarkdownFormula(formula)}\\\\)`;
+          cursor = end + 2;
+          continue;
+        }
+      }
+    }
+
+    const char = line[cursor];
+    if (char === "(") {
+      const end = findClosingParenthesis(line, cursor);
+      if (end !== -1) {
+        const formula = line.slice(cursor + 1, end).trim();
+        if (shouldProtectParenthesizedMath(formula)) {
+          result += `(${escapeMarkdownFormula(formula)})`;
+          cursor = end + 1;
+          continue;
+        }
+      }
+    }
+
+    result += char;
+    cursor += 1;
+  }
+
+  return result;
+}
+
+function findClosingParenthesis(text: string, openIndex: number): number {
+  let depth = 0;
+
+  for (let index = openIndex; index < text.length; index += 1) {
+    if (text[index] === "(") depth += 1;
+    if (text[index] === ")") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+
+  return -1;
+}
+
+function shouldProtectParenthesizedMath(value: string): boolean {
+  if (!value || value.length > 120 || containsProseText(value)) return false;
+  if (!/^[A-Za-z0-9\\{}_^=+\-*/.,<>\s()[\]]+$/.test(value)) return false;
+
+  return value.includes("\\") ||
+    /[_^=<>]/.test(value) ||
+    /^[A-Za-z](?:\([A-Za-z0-9]+\))?$/.test(value) ||
+    /^(?:RC|LC)$/.test(value);
+}
+
+function escapeMarkdownFormula(value: string): string {
+  return value.replace(/([_*`[\]])/g, "\\$1");
+}
+
+function normalizePastedFormula(formula: string): string {
+  return formula.replace(/\s*={3,}\s*/g, " = ").replace(/\s+/g, " ").trim();
+}
+
+function formulaHtmlBlock(formula: string): string {
+  return `<figure class="on-formula-block" data-latex="${escapeHtmlAttribute(normalizePastedFormula(formula))}"></figure>`;
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function hasInlineMarkdownSyntax(text: string): boolean {
+  return /(^|[\s([{])(?:\*\*[^*\n]+?\*\*|__[^_\n]+?__|\*[^*\n]+?\*|_[^_\n]+?_|~~[^~\n]+?~~|`[^`\n]+?`|!?\[[^\]\n]{1,128}\]\(https?:\/\/[^)\s]+[^)]*\))/m.test(text);
+}
+
+function isSetextHeadingUnderline(lines: string[], index: number): boolean {
+  if (index <= 0) return false;
+  const previous = lines[index - 1].trim();
+  const current = lines[index].trim();
+  return Boolean(previous) && /^(?:=+|-+)$/.test(current);
+}
+
 function isStructuredPlainTextPaste(lines: string[]): boolean {
   const nonEmptyLines = lines.map((line) => line.trim()).filter(Boolean);
   if (nonEmptyLines.length < 2) return false;
@@ -474,7 +771,8 @@ function isMarkdownLikeLine(line: string): boolean {
     /^[-*]\s+\[[ xX]\]\s+/.test(line) ||
     /^\d+[.)]\s+/.test(line) ||
     /^>\s+/.test(line) ||
-    /^```/.test(line);
+    /^```/.test(line) ||
+    isMarkdownDividerLine(line);
 }
 
 function isDocumentSectionHeading(line: string): boolean {
@@ -497,6 +795,15 @@ export function normalizeMathInlineContent(content: InlineContent[]): {
       const split = splitTextIntoMathInlineContent(item, {});
       changed ||= split.changed;
       return split.content;
+    }
+
+    if (isMathInlineContent(item)) {
+      const normalizedFormula = normalizePastedFormula(item.props.formula);
+      if (normalizedFormula !== item.props.formula) {
+        changed = true;
+        return [{ ...item, props: { ...item.props, formula: normalizedFormula } }];
+      }
+      return [item];
     }
 
     if (!isTextInlineContent(item)) {
@@ -522,7 +829,7 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
   if (latexPrefix) {
     const content: InlineContent[] = [];
     pushText(content, text.slice(0, latexPrefix.start), styles);
-    content.push({ type: "math", props: { formula: latexPrefix.formula } });
+    content.push({ type: "math", props: { formula: normalizePastedFormula(latexPrefix.formula) } });
     pushText(content, text.slice(latexPrefix.end), styles);
 
     return { changed: true, content };
@@ -535,7 +842,7 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
     const content: InlineContent[] = [];
 
     pushText(content, leadingWhitespace, styles);
-    content.push({ type: "math", props: { formula: standaloneFormula } });
+    content.push({ type: "math", props: { formula: normalizePastedFormula(standaloneFormula) } });
     pushText(content, trailingWhitespace, styles);
 
     return { changed: true, content };
@@ -559,7 +866,7 @@ function splitTextIntoMathInlineContent(text: string, styles: Record<string, unk
     }
 
     pushText(items, text.slice(cursor, token.start), styles);
-    items.push({ type: "math", props: { formula } });
+    items.push({ type: "math", props: { formula: normalizePastedFormula(formula) } });
     changed = true;
     cursor = end + token.close.length;
   }
@@ -637,6 +944,19 @@ function findNextFormulaToken(text: string, startIndex: number): { start: number
 }
 
 function findUnescapedDelimiter(text: string, delimiter: "$$" | "$" | "]" | ")" | "\\]" | "\\)", startIndex: number): number {
+  if (delimiter === ")") {
+    let depth = 1;
+    for (let index = startIndex; index < text.length; index += 1) {
+      if (text[index] === "(" && text[index - 1] !== "\\") depth += 1;
+      if (text[index] === ")" && text[index - 1] !== "\\") {
+        depth -= 1;
+        if (depth === 0) return index;
+      }
+    }
+
+    return -1;
+  }
+
   for (let index = startIndex; index < text.length; index += 1) {
     if (delimiter.length > 1 && text.startsWith(delimiter, index)) {
       return index;
@@ -656,7 +976,12 @@ function findUnescapedDelimiter(text: string, delimiter: "$$" | "$" | "]" | ")" 
 
 function isInlineFormula(formula: string, delimiter: "$$" | "$" | "[" | "(" | "\\[" | "\\("): boolean {
   if (!formula || formula.includes("\n")) return false;
-  return delimiter === "$" || delimiter === "$$" || delimiter === "\\[" || delimiter === "\\(" || isLikelyLatexFormula(formula);
+  return delimiter === "$" ||
+    delimiter === "$$" ||
+    delimiter === "\\[" ||
+    delimiter === "\\(" ||
+    shouldProtectParenthesizedMath(formula) ||
+    isLikelyLatexFormula(formula);
 }
 
 function latexPrefixBeforeProse(text: string): { start: number; end: number; formula: string } | null {
@@ -700,6 +1025,95 @@ function isLikelyLatexFormula(value: string): boolean {
     /\\[a-zA-Z]+\{/.test(value);
 }
 
+function isMarkdownDividerLine(line: string): boolean {
+  const compact = line.trim().replace(/\s+/g, "");
+  return /^(?:-{3,}|\*{3,}|_{3,})$/.test(compact);
+}
+
+function parseMarkdownTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return null;
+
+  let row = trimmed;
+  if (row.startsWith("|")) row = row.slice(1);
+  if (row.endsWith("|")) row = row.slice(0, -1);
+
+  const cells: string[] = [];
+  let cell = "";
+
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index];
+    if (char === "\\" && row[index + 1] === "|") {
+      cell += "|";
+      index += 1;
+      continue;
+    }
+
+    if (char === "|") {
+      cells.push(cell.trim());
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  cells.push(cell.trim());
+
+  if (cells.length < 2 || cells.every((value) => value === "")) return null;
+  return cells;
+}
+
+function isMarkdownTableSeparator(cells: string[]): boolean {
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function normalizeMarkdownTableRows(rows: string[][]): Array<{ cells: Array<string | InlineContent[]> }> {
+  const columnCount = Math.max(...rows.map((row) => row.length));
+
+  return rows.map((row) => ({
+    cells: Array.from({ length: columnCount }, (_, index) => {
+      const cell = row[index] ?? "";
+      return contentFromMarkdownLikeLine(cell);
+    }),
+  }));
+}
+
+function readMarkdownTable(lines: string[], startIndex: number): {
+  block: PartialBlock;
+  nextIndex: number;
+} | null {
+  const header = parseMarkdownTableRow(lines[startIndex] ?? "");
+  const separator = parseMarkdownTableRow(lines[startIndex + 1] ?? "");
+
+  if (!header || !separator || !isMarkdownTableSeparator(separator)) return null;
+
+  const rows = [header];
+  let nextIndex = startIndex + 2;
+
+  while (nextIndex < lines.length) {
+    const trimmed = lines[nextIndex].trim();
+    if (!trimmed) break;
+
+    const row = parseMarkdownTableRow(lines[nextIndex]);
+    if (!row) break;
+
+    rows.push(row);
+    nextIndex += 1;
+  }
+
+  return {
+    block: {
+      type: "table",
+      content: {
+        type: "tableContent",
+        rows: normalizeMarkdownTableRows(rows),
+      },
+    } as unknown as PartialBlock,
+    nextIndex,
+  };
+}
+
 function blocksFromMarkdownLikeLines(lines: string[]): PartialBlock[] {
   const blocks: PartialBlock[] = [];
   let codeFence: { language: string; lines: string[] } | null = null;
@@ -714,7 +1128,8 @@ function blocksFromMarkdownLikeLines(lines: string[]): PartialBlock[] {
     codeFence = null;
   };
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const trimmed = line.trim();
 
     if (codeFence) {
@@ -727,6 +1142,18 @@ function blocksFromMarkdownLikeLines(lines: string[]): PartialBlock[] {
     }
 
     if (!trimmed) continue;
+
+    const table = readMarkdownTable(lines, index);
+    if (table) {
+      blocks.push(table.block);
+      index = table.nextIndex - 1;
+      continue;
+    }
+
+    if (isMarkdownDividerLine(trimmed)) {
+      blocks.push({ type: "divider" } as unknown as PartialBlock);
+      continue;
+    }
 
     if (isDocumentSectionHeading(trimmed)) {
       blocks.push({
@@ -1036,6 +1463,16 @@ function normalizeBracketedMathBlocks(editor: BlockNoteEditor<any, any, any>): b
   return changed;
 }
 
+function normalizeLatexEnvironmentBlocks(editor: BlockNoteEditor<any, any, any>): boolean {
+  let changed = false;
+
+  while (normalizeFirstLatexEnvironmentGroup(editor, editor.document)) {
+    changed = true;
+  }
+
+  return changed;
+}
+
 function normalizeFirstBracketedMathGroup(
   editor: BlockNoteEditor<any, any, any>,
   blocks: Block<any, any, any>[]
@@ -1059,7 +1496,7 @@ function normalizeFirstBracketedMathGroup(
     }).filter(Boolean);
     if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
 
-    const formula = formulaParts.join(" ");
+    const formula = normalizePastedFormula(formulaParts.join(" "));
     const targetBlock = openFence.hasFormulaContent ? openBlock : formulaBlocks[0];
     const blocksToRemove = openFence.hasFormulaContent ? formulaBlocks.slice(1) : [openBlock, ...formulaBlocks.slice(1)];
     editor.removeBlocks(blocksToRemove);
@@ -1073,6 +1510,51 @@ function normalizeFirstBracketedMathGroup(
 
   for (const block of blocks) {
     if (block.children.length > 0 && normalizeFirstBracketedMathGroup(editor, block.children)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeFirstLatexEnvironmentGroup(
+  editor: BlockNoteEditor<any, any, any>,
+  blocks: Block<any, any, any>[]
+): boolean {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const openBlock = blocks[index];
+    if (openBlock.type === "formula") continue;
+
+    const openText = textFromMathBlock(openBlock).trim();
+    const environment = latexEnvironmentName(openText);
+    if (!environment) continue;
+
+    const closePattern = latexEnvironmentClosePattern(environment);
+    const closeIndex = blocks.findIndex((block, candidateIndex) => (
+      candidateIndex >= index && closePattern.test(textFromMathBlock(block).trim())
+    ));
+    if (closeIndex === -1) continue;
+
+    const formulaParts = blocks.slice(index, closeIndex + 1)
+      .map((block) => textFromMathBlock(block).replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    if (formulaParts.length === 0 || !formulaParts.every(isLikelyLatexFormulaLine)) continue;
+
+    const formula = normalizePastedFormula(formulaParts.join(" "));
+    const blocksToRemove = blocks.slice(index + 1, closeIndex + 1);
+    if (blocksToRemove.length > 0) {
+      editor.removeBlocks(blocksToRemove);
+    }
+    editor.updateBlock(openBlock, {
+      type: "formula",
+      props: { formula },
+      content: undefined,
+    } as never);
+    return true;
+  }
+
+  for (const block of blocks) {
+    if (block.children.length > 0 && normalizeFirstLatexEnvironmentGroup(editor, block.children)) {
       return true;
     }
   }
@@ -1094,6 +1576,7 @@ function stripOpeningMathFence(text: string): string {
   const value = text.trim();
   if (value.startsWith("$$")) return value.slice(2).trim();
   if (value.startsWith("\\[")) return value.slice(2).trim();
+  if (value.startsWith("[")) return value.slice(1).trim();
   return value;
 }
 
@@ -1310,7 +1793,7 @@ function escapeFormulaHtml(value: string): string {
 }
 
 function normalizeFormulaForKatex(formula: string): string {
-  const strippedFormula = stripFormulaDelimiters(formula);
+  const strippedFormula = normalizePastedFormula(stripFormulaDelimiters(formula));
 
   return strippedFormula
     .replace(/\$\$/g, " ")

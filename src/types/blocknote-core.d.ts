@@ -28,8 +28,11 @@ export class BlockNoteEditor<
     pasteHandler?: (options: {
       event: ClipboardEvent;
       editor: BlockNoteEditor;
-      defaultPasteHandler: () => void;
-    }) => void;
+      defaultPasteHandler: (context?: {
+        prioritizeMarkdownOverHTML?: boolean;
+        plainTextAsMarkdown?: boolean;
+      }) => boolean | undefined;
+    }) => boolean | undefined | void;
     [key: string]: any;
   }): BlockNoteEditor;
 
@@ -49,6 +52,7 @@ export class BlockNoteEditor<
   setSelection(...selection: unknown[]): void;
   setTextCursorPosition(block: Block | string, placement?: string): void;
   transact(callback: () => void): void;
+  tryParseMarkdownToBlocks(markdown: string): Block[];
   updateBlock(block: Block | string, update: PartialBlock): void;
 }
 

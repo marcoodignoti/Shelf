@@ -7,12 +7,15 @@ const SUPPORTED_BLOCK_TYPES = new Set([
   "bulletListItem",
   "numberedListItem",
   "checkListItem",
+  "toggleListItem",
+  "quote",
   "table",
   "image",
   "video",
   "audio",
   "file",
   "codeBlock",
+  "divider",
   "formula",
 ]);
 const MEDIA_BLOCK_TYPES = new Set(["image", "video", "audio", "file"]);
@@ -65,14 +68,6 @@ function sanitizePageBlock(block: unknown): PartialBlock | null {
   const id = typeof record.id === "string" ? record.id : undefined;
   const children = Array.isArray(record.children) ? sanitizePageChildren(record.children) : undefined;
 
-  if (record.type === "divider") {
-    return {
-      ...(id ? { id } : {}),
-      type: "paragraph",
-      ...(children ? { children } : {}),
-    } as PartialBlock;
-  }
-
   if (typeof record.type !== "string" || !SUPPORTED_BLOCK_TYPES.has(record.type)) {
     const text = textFromBlock(record).join(" ");
 
@@ -115,6 +110,9 @@ function textFromInlineContent(content: unknown): string {
         const props = "props" in item && typeof item.props === "object" && item.props !== null ? item.props : {};
         if ("label" in props && typeof props.label === "string" && props.label.trim()) return props.label;
         return "title" in props && typeof props.title === "string" ? props.title : "";
+      }
+      if ("type" in item && item.type === "link") {
+        return textFromInlineContent("content" in item ? item.content : "");
       }
       return "";
     })
