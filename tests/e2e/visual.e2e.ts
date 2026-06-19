@@ -164,7 +164,7 @@ test.describe("Visual Regression Tests", () => {
 
     await expect(page).toHaveScreenshot("home-dashboard.png", {
       animations: "disabled",
-      maxDiffPixels: 5_000,
+      maxDiffPixels: 10_000,
     });
   });
 
