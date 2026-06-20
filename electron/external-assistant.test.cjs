@@ -8,17 +8,28 @@ const {
 
 test("provider table matches the TS source of truth", () => {
   // Drift guard: if someone edits the CJS table without updating the TS
-  // table (or vice versa), this catches it. We assert the ids, urls, and
-  // partitions — the security-relevant fields.
+  // table (or vice versa), this catches it. The allowlist is the most
+  // security-relevant field, so it is covered explicitly.
   const expected = [
-    { id: "chatgpt", url: "https://chatgpt.com/", partition: "persist:external-assistant-chatgpt" },
-    { id: "gemini", url: "https://gemini.google.com/", partition: "persist:external-assistant-gemini" },
+    {
+      id: "chatgpt",
+      url: "https://chatgpt.com/",
+      partition: "persist:external-assistant-chatgpt",
+      allowlist: ["chatgpt.com", "*.chatgpt.com", "auth.openai.com", "auth0.openai.com", "chat.openai.com"],
+    },
+    {
+      id: "gemini",
+      url: "https://gemini.google.com/",
+      partition: "persist:external-assistant-gemini",
+      allowlist: ["gemini.google.com", "accounts.google.com"],
+    },
   ];
   for (const exp of expected) {
     const p = PROVIDERS.find((x) => x.id === exp.id);
     assert.ok(p, `missing provider ${exp.id}`);
     assert.equal(p.url, exp.url);
     assert.equal(p.partition, exp.partition);
+    assert.deepEqual(p.allowlist, exp.allowlist);
   }
 });
 

@@ -93,9 +93,15 @@ function createExternalAssistantController({ getMainWindow, backend }) {
     //   - params (3rd arg) is a flat { src, partition } record
     webContents.on("will-attach-webview", (event, attachedWebPreferences, params) => {
       const partition = typeof params?.partition === "string" ? params.partition : undefined;
-      const providerId = partition === "persist:external-assistant-gemini"
-        ? "gemini"
-        : "chatgpt";
+      // Derive the provider from the partition via the provider table so the
+      // mapping stays single-sourced. An unrecognized partition resolves to
+      // null, and validateWebviewAttachment then fails on partition mismatch.
+      const providerId = PROVIDERS.find((p) => p.partition === partition)?.id ?? null;
+      if (!providerId) {
+        console.error("[external-assistant] blocked webview attachment: unrecognized partition");
+        event.preventDefault();
+        return;
+      }
       const result = validateWebviewAttachment({
         src: params?.src,
         partition,
@@ -122,9 +128,10 @@ function createExternalAssistantController({ getMainWindow, backend }) {
         navEvent.preventDefault();
         void shell.openExternal(url);
       });
+      // Deny all window.open / target=_blank and route to the system browser.
+      // An "allow" here would spawn a new BrowserWindow without our security
+      // handlers attached, defeating the allowlist. Mirrors main.cjs posture.
       webviewContents.setWindowOpenHandler(({ url }) => {
-        const providerId = sessionToProvider.get(webviewContents.session) ?? null;
-        if (providerId && isAllowedNavigation(providerId, url)) return { action: "allow" };
         void shell.openExternal(url);
         return { action: "deny" };
       });
