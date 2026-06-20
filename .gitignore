@@ -19,6 +19,7 @@ dist-ssr
 # caveman skill (installed globally in ~/.claude; these are project-level duplicates)
 .agents/
 .claude/
+.codex-plugins/
 skills-lock.json
 
 playwright-report/
