@@ -15,6 +15,7 @@ import SquarePen from 'lucide-react/dist/esm/icons/square-pen.mjs';
 import FilePlus from 'lucide-react/dist/esm/icons/file-plus.mjs';
 import Upload from 'lucide-react/dist/esm/icons/upload.mjs';
 import Home from 'lucide-react/dist/esm/icons/house.mjs';
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.mjs';
 import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
 import UserCircle from 'lucide-react/dist/esm/icons/user-circle.mjs';
 import SlidersHorizontal from 'lucide-react/dist/esm/icons/sliders-horizontal.mjs';
@@ -1680,6 +1681,14 @@ export function Sidebar() {
         >
           <Home className="on-sidebar-nav-icon" strokeWidth={1.9} />
           <span>{t("sidebar.home")}</span>
+        </button>
+        <button
+          className="on-shell-row"
+          onClick={() => void window.openNotion?.externalAssistant?.toggle()}
+          title={t("sidebar.chat")}
+        >
+          <MessageSquare className="on-sidebar-nav-icon" strokeWidth={1.9} />
+          <span>{t("sidebar.chat")}</span>
         </button>
       </div>
       <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto pt-3">

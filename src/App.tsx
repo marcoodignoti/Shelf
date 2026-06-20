@@ -97,6 +97,13 @@ export default function App() {
         return;
       }
 
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
+        && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        void window.openNotion?.externalAssistant?.toggle();
+        return;
+      }
+
       if (isNewPageShortcut(event)) {
         event.preventDefault();
         void addPage();

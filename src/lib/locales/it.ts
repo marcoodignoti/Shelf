@@ -155,6 +155,7 @@ export const it: Record<keyof typeof en, string> = {
   "sidebar.newPage": "Nuova pagina",
   "sidebar.search": "Cerca",
   "sidebar.importPdf": "Importa PDF",
+  "sidebar.chat": "Chat",
   "sidebar.settings": "Impostazioni",
   "sidebar.resizeSidebar": "Ridimensiona la barra laterale",
   "sidebar.blankPage": "Pagina vuota",

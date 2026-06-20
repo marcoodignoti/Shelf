@@ -153,6 +153,7 @@ export const en = {
   "sidebar.newPage": "New page",
   "sidebar.search": "Search",
   "sidebar.importPdf": "Import PDF",
+  "sidebar.chat": "Chat",
   "sidebar.settings": "Settings",
   "sidebar.resizeSidebar": "Resize sidebar",
   "sidebar.blankPage": "Blank page",
