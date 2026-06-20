@@ -1579,11 +1579,6 @@
   .on-main-surface {
     border-radius: 0.75rem;
     background: hsl(var(--background));
-    box-shadow: 0 1px 2px hsl(222 28% 12% / 0.06), 0 2px 8px hsl(222 28% 12% / 0.1);
-  }
-
-  .dark .on-main-surface {
-    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.2), 0 2px 8px hsl(0 0% 0% / 0.36);
   }
 
   .on-section-label {
