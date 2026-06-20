@@ -984,6 +984,7 @@ test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", 
   await expect(page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" })).toBeVisible({ timeout: 60_000 });
 
   await page.getByTitle("Toggle sidebar").click();
+  await page.waitForTimeout(300);
 
   const toggleBox = await page.getByTitle("Toggle sidebar").boundingBox();
   const filenameBox = await page.locator(".on-studio-toolbar-title-secondary", { hasText: "civil-law.pdf" }).boundingBox();
