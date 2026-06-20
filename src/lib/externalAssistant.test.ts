@@ -52,6 +52,15 @@ describe("isAllowedNavigation", () => {
   it("rejects unknown providers", () => {
     expect(isAllowedNavigation("claude" as ProviderId, "https://chatgpt.com/")).toBe(false);
   });
+
+  it("wildcard matches real subdomains but not suffix-confusion attacks", () => {
+    // *.chatgpt.com matches the bare root and real subdomains...
+    expect(isAllowedNavigation("chatgpt", "https://abc.chatgpt.com/")).toBe(true);
+    // ...but NOT hosts that merely end with the suffix without the dot boundary,
+    // and NOT hosts where the suffix appears mid-host.
+    expect(isAllowedNavigation("chatgpt", "https://evilchatgpt.com/")).toBe(false);
+    expect(isAllowedNavigation("chatgpt", "https://chatgpt.com.evil.com/")).toBe(false);
+  });
 });
 
 describe("validateWebviewAttachment", () => {
@@ -119,6 +128,14 @@ describe("parseAssistantState", () => {
     expect(parseAssistantState(null)).toBeNull();
     expect(parseAssistantState("not json")).toBeNull();
     expect(parseAssistantState("{}")).toBeNull();
+  });
+
+  it("returns null when required fields are missing or invalid", () => {
+    expect(parseAssistantState(JSON.stringify({ x: 0, y: 0, width: 420, height: 640, provider: "chatgpt" }))).toBeNull(); // missing lastOpenedAt
+    expect(parseAssistantState(JSON.stringify({ x: 0, y: 0, width: 0, height: 640, lastOpenedAt: "2026-06-20T10:00:00Z" }))).toBeNull(); // width <= 0
+    expect(parseAssistantState(JSON.stringify({ x: 0, y: 0, width: 420, height: -1, lastOpenedAt: "2026-06-20T10:00:00Z" }))).toBeNull(); // height <= 0
+    expect(parseAssistantState(JSON.stringify({ x: Number.NaN, y: 0, width: 420, height: 640, lastOpenedAt: "2026-06-20T10:00:00Z" }))).toBeNull(); // non-finite x
+    expect(parseAssistantState(JSON.stringify({ x: 0, y: 0, width: 420, height: 640, provider: 123, lastOpenedAt: "2026-06-20T10:00:00Z" }))).not.toBeNull(); // non-string provider normalizes to chatgpt
   });
 
   it("parses a well-formed state", () => {

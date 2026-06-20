@@ -157,10 +157,11 @@ export interface Bounds {
 
 export function clampBoundsToBounds(bounds: Bounds, container: Rect): Bounds {
   const minVisibleWidth = 80; // keep the titlebar / drag region reachable
+  const minVisibleHeight = 40; // keep the header/footer reachable
   const width = Math.min(bounds.width, container.width);
   const height = Math.min(bounds.height, container.height);
   const maxX = Math.max(container.left, container.left + container.width - minVisibleWidth);
-  const maxY = Math.max(container.top, container.top + container.height - 40);
+  const maxY = Math.max(container.top, container.top + container.height - minVisibleHeight);
   const x = Math.min(Math.max(bounds.x, container.left), maxX);
   const y = Math.min(Math.max(bounds.y, container.top), maxY);
   return { x, y, width, height };
