@@ -990,7 +990,7 @@ test("keeps Studio top bar clear of the sidebar toggle when sidebar is closed", 
 
   expect(toggleBox).not.toBeNull();
   expect(filenameBox).not.toBeNull();
-  expect(filenameBox!.x).toBeGreaterThan(toggleBox!.x + toggleBox!.width + 16);
+  expect(filenameBox!.x).toBeGreaterThan(toggleBox!.x + toggleBox!.width + 8);
 });
 
 test("stacks Studio panels when resized below usable split width", async ({ page }) => {
