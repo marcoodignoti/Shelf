@@ -11,7 +11,6 @@ import { createPage, Page } from "../lib/db";
 import { useT } from "../lib/i18n";
 import { arrowKeyPageIntent, isTextEntryElement, pageForNavigationIntent, swipePageIntent, wheelSwipePageIntent } from "../lib/pdfNavigation";
 import { useAppStore } from "../store/useAppStore";
-import { useUIStore } from "../store/useUIStore";
 import {
   buildStudioPanelGridColumns,
   buildStudioContinuousPageWindow,
@@ -107,7 +106,6 @@ export function StudioWorkspace({
     { value: "single" as StudioPdfDisplayMode, label: t("studio.displayModeSingle"), shortcut: t("studio.displayModeShortcut2"), shortcutKey: "2", icon: Square },
     { value: "two-page" as StudioPdfDisplayMode, label: t("studio.displayModeTwoPage"), shortcut: t("studio.displayModeShortcut3"), shortcutKey: "3", icon: BookOpen },
   ], [t]);
-  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const fetchPages = useAppStore((state) => state.fetchPages);
   const fetchStudioDocuments = useAppStore((state) => state.fetchStudioDocuments);
   const removePage = useAppStore((state) => state.removePage);
@@ -597,7 +595,7 @@ export function StudioWorkspace({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <div className={`on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-3 px-4 py-2 ${isSidebarOpen ? "" : "pl-36"}`}>
+      <div className="on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-3 px-4 py-2 pl-36">
         <div className="on-studio-toolbar-title pointer-events-auto min-w-0">
           <div className="on-studio-toolbar-title-primary truncate text-sm font-medium text-foreground">{studioDocument.title}</div>
           <div className="on-studio-toolbar-title-secondary truncate text-xs">{studioDocument.original_filename}</div>
