@@ -312,7 +312,7 @@
   }
 
   .on-sidebar-header-spacer {
-    height: 2rem;
+    height: 2.75rem;
   }
 
   .on-sidebar-mode-row {
@@ -330,28 +330,14 @@
     color: hsl(var(--muted-foreground));
   }
 
-  .on-sidebar-resize-handle {
+  .on-main-resize-handle {
     position: absolute;
     inset-block: 0;
-    right: -0.5rem;
-    z-index: 30;
-    width: 0.5rem;
+    z-index: 95;
+    transform: translateX(-50%);
+    width: 0.75rem;
     cursor: col-resize;
     background: transparent;
-  }
-
-  .on-sidebar-resize-handle::after {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    right: 0;
-    width: 1px;
-    background: transparent;
-    transition: background-color 120ms ease;
-  }
-
-  .on-sidebar-resize-handle:hover::after {
-    background: hsl(var(--border) / 0.72);
   }
 
   .on-sidebar-settings-fade {
@@ -595,7 +581,7 @@
 
   .on-sidebar-footer {
     flex: 0 0 auto;
-    padding: 0.34rem 0.2rem 0.16rem;
+    padding: 0.34rem 0.2rem 0.16rem 0.7rem;
   }
 
   .on-sidebar-settings-button {
@@ -1125,7 +1111,6 @@
     min-height: 3.75rem;
     flex-shrink: 0;
     border: 1px solid hsl(var(--border) / 0.7);
-    border-bottom: none;
     border-top-left-radius: 0.75rem;
     border-top-right-radius: 0.75rem;
     background: hsl(var(--background));
@@ -1526,10 +1511,16 @@
 
   .on-studio-split-frame {
     container-type: inline-size;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border) / 0.7);
+    border-top: 0;
+    border-bottom-left-radius: 0.75rem;
+    border-bottom-right-radius: 0.75rem;
   }
 
   .on-studio-split {
     display: grid;
+    overflow: hidden;
   }
 
   .on-studio-pdf-pages {
@@ -2482,7 +2473,7 @@
 
   .on-settings-panel {
     display: grid;
-    grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+    grid-template-columns: minmax(15.5rem, 19rem) minmax(0, 1fr);
     width: min(74rem, calc(100vw - 5rem));
     height: min(43.5rem, calc(100dvh - 5rem));
     min-height: min(32rem, calc(100dvh - 2rem));
@@ -2511,6 +2502,10 @@
     border-right: 1px solid hsl(var(--border) / 0.46);
     background: hsl(var(--muted) / 0.56);
     padding: 1rem 0.72rem 0.9rem;
+  }
+
+  .on-settings-window .on-settings-sidebar {
+    padding-top: 4.35rem;
   }
 
   .dark .on-settings-sidebar {

@@ -7,15 +7,20 @@ import { useT } from '../lib/i18n';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const t = useT();
-  const { isSidebarOpen, sidebarWidth, toggleSidebar } = useUIStore(useShallow((state) => ({
+  const { isSidebarOpen, sidebarWidth, toggleSidebar, setSidebarWidth } = useUIStore(useShallow((state) => ({
     isSidebarOpen: state.isSidebarOpen,
     sidebarWidth: state.sidebarWidth,
     toggleSidebar: state.toggleSidebar,
+    setSidebarWidth: state.setSidebarWidth,
   })));
   const sidebarMargin = 8;
   const sidebarShellWidth = sidebarWidth + sidebarMargin * 2;
   const [shouldRenderSidebar, setShouldRenderSidebar] = React.useState(isSidebarOpen);
   const [isSidebarShellOpen, setIsSidebarShellOpen] = React.useState(isSidebarOpen);
+  const titlebarOffsets = {
+    "--on-main-titlebar-action-left": isSidebarShellOpen ? "1.5rem" : "5.25rem",
+    "--on-main-titlebar-content-left": isSidebarShellOpen ? "5.25rem" : "9rem",
+  } as React.CSSProperties;
 
   React.useEffect(() => {
     if (isSidebarOpen) {
@@ -42,8 +47,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
     };
   }, [isSidebarOpen, isSidebarShellOpen, shouldRenderSidebar]);
 
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(startWidth + moveEvent.clientX - startX);
+    };
+
+    const handlePointerUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
   return (
-    <div className="on-app-shell flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
+    <div className="on-app-shell relative flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
       {shouldRenderSidebar && (
         <div
           className={`on-sidebar-shell ${isSidebarShellOpen ? "on-sidebar-shell-open" : "on-sidebar-shell-closed"}`}
@@ -53,8 +83,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </div>
       )}
-      <main className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col">
-        <div className="absolute left-[84px] top-2 z-[90] flex items-center gap-2">
+      {isSidebarShellOpen ? (
+        <div
+          className="on-main-resize-handle"
+          style={{ left: sidebarShellWidth + sidebarMargin }}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("sidebar.resizeSidebar")}
+          onPointerDown={handleResizePointerDown}
+        />
+      ) : null}
+      <main
+        className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col"
+        style={titlebarOffsets}
+      >
+        <div className="absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2">
           <button
             onClick={toggleSidebar}
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

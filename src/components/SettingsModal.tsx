@@ -108,11 +108,13 @@ export function SettingsModal({
   const settingsPanel = (
     <div className="on-modal-panel on-settings-panel" onMouseDown={(event) => event.stopPropagation()}>
       <aside className="on-settings-sidebar">
+        {!embedded ? (
           <div className="on-settings-window-controls" aria-hidden="true">
             <span />
             <span />
             <span />
           </div>
+        ) : null}
 
           <button type="button" className="on-settings-back" onClick={onClose}>
             <ArrowLeft className="h-4 w-4" strokeWidth={1.9} />
@@ -157,9 +159,11 @@ export function SettingsModal({
       <main className="on-settings-main">
         <div className="on-settings-header">
           <div className="on-settings-current-title">{activeEntry ? t(activeEntry.labelKey) : t('sidebar.settings')}</div>
-          <button onClick={onClose} className="on-settings-close" aria-label={t('settings.close')}>
-            <X className="h-4 w-4" strokeWidth={2} />
-          </button>
+          {!embedded ? (
+            <button onClick={onClose} className="on-settings-close" aria-label={t('settings.close')}>
+              <X className="h-4 w-4" strokeWidth={2} />
+            </button>
+          ) : null}
         </div>
 
         <div className="on-settings-body">

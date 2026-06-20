@@ -1119,13 +1119,11 @@ export function Sidebar() {
   })));
   const {
     sidebarWidth,
-    setSidebarWidth,
     theme,
     setTheme,
     openSettingsWindow,
   } = useUIStore(useShallow((state) => ({
     sidebarWidth: state.sidebarWidth,
-    setSidebarWidth: state.setSidebarWidth,
     theme: state.theme,
     setTheme: state.setTheme,
     openSettingsWindow: state.openSettingsWindow,
@@ -1566,31 +1564,6 @@ export function Sidebar() {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
-  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    const startX = event.clientX;
-    const startWidth = sidebarWidth;
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(startWidth + moveEvent.clientX - startX);
-    };
-
-    const handlePointerUp = () => {
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    window.addEventListener('pointercancel', handlePointerUp);
-  };
-
   const hasPageContent = rootRegularPages.length > 0 || studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
   const deleteTitle = pendingDelete?.page.title || t("sidebar.untitled");
   const deleteMessage = pendingDeleteStudioDocument
@@ -1643,15 +1616,8 @@ export function Sidebar() {
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
-      <div
-        className="on-sidebar-resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t("sidebar.resizeSidebar")}
-        onPointerDown={handleResizePointerDown}
-      />
       <div className="on-sidebar-header-spacer flex-shrink-0" />
-      <div className="on-sidebar-nav px-0.5">
+      <div className="on-sidebar-nav pl-2.5 pr-0.5">
         <button
           ref={newPageButtonRef}
           className="on-shell-row"
@@ -1720,7 +1686,7 @@ export function Sidebar() {
         {isLoading && (
           <div className="px-5 py-4 text-xs text-muted-foreground">{t("sidebar.loadingPages")}</div>
         )}
-        <div className="px-1 pb-6">
+        <div className="pl-3 pr-1 pb-6">
           <section className="on-sidebar-section">
             <div className="on-section-label">{t("sidebar.sectionPinned")}</div>
             {pinnedProjectGroups.map(({ project, children }) => (
