@@ -79,6 +79,7 @@ interface ShelfDesktopBridge {
   autoUpdateActive?(): boolean;
   installUpdateNow?(): Promise<null>;
   setNativeThemeSource?(themeSource: NativeThemeSource): Promise<null>;
+  externalAssistant?: { toggle(options?: { provider?: "chatgpt" | "gemini" }): Promise<null> };
 }
 
 declare global {
@@ -193,4 +194,8 @@ export async function installDesktopUpdateNow(): Promise<void> {
 
 export async function setNativeThemeSource(themeSource: NativeThemeSource): Promise<void> {
   await window.openNotion?.setNativeThemeSource?.(themeSource);
+}
+
+export async function toggleExternalAssistant(options?: { provider?: "chatgpt" | "gemini" }): Promise<void> {
+  await window.openNotion?.externalAssistant?.toggle(options);
 }

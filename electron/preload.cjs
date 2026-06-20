@@ -91,6 +91,11 @@ contextBridge.exposeInMainWorld("openNotion", {
   setNativeThemeSource(themeSource) {
     return ipcRenderer.invoke("opennotion:native-theme-source", themeSource);
   },
+  externalAssistant: {
+    toggle(options) {
+      return ipcRenderer.invoke("external-assistant:toggle", isRecord(options) ? options : {});
+    },
+  },
   onDesktopUpdate(callback) {
     if (typeof callback !== "function") throw new Error("callback must be a function");
     const listeners = [];
