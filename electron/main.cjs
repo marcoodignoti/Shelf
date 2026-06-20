@@ -15,6 +15,7 @@ const {
 } = require("electron");
 const { pathToFileURL } = require("node:url");
 const { ShelfBackend } = require("./backend.cjs");
+const { createExternalAssistantController } = require("./external-assistant.cjs");
 
 const APP_PROTOCOL = "opennotion-app";
 const APP_RENDERER_HOST = "renderer";
@@ -48,6 +49,7 @@ const RENDERER_SOURCE_PATH_COMMANDS = new Set([
 ]);
 let mainWindow = null;
 let backend = null;
+let externalAssistant = null;
 let studioPdfServer = null;
 let studioPdfServerOrigin = null;
 let studioPdfPort = null;
@@ -1070,6 +1072,11 @@ app.whenReady().then(async () => {
   createBackend();
   await startStudioPdfServer();
   createMainWindow();
+  externalAssistant = createExternalAssistantController({
+    getMainWindow: () => mainWindow,
+    backend: createBackend(),
+  });
+  externalAssistant.init();
   configureWindowsAutoUpdater();
 
   app.on("activate", () => {
