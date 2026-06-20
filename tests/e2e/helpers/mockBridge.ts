@@ -431,6 +431,12 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
         }
         return () => {};
       },
+      externalAssistant: {
+        toggle: async () => {
+          (window as any).__externalAssistantToggleCalls =
+            ((window as any).__externalAssistantToggleCalls ?? 0) + 1;
+        },
+      },
     };
   }, options);
 }
