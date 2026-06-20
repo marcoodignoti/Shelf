@@ -1169,7 +1169,7 @@ function EditorSurface({
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
       {!isStudioVariant && (
-        <div className="h-11 border-b border-border/70 flex items-center justify-between pr-6 pl-36 shrink-0 bg-background/95 backdrop-blur z-40 select-none">
+        <div className="h-11 border-y border-border/70 flex items-center justify-between pr-6 pl-36 shrink-0 bg-background/95 backdrop-blur z-40 select-none">
           {/* Breadcrumbs on the left */}
           <nav className="flex items-center gap-1 min-w-0" aria-label={t("editor.pageBreadcrumb")}>
             {breadcrumbs.map((breadcrumb, index) => {
