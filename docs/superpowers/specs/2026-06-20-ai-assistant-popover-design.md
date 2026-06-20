@@ -94,11 +94,24 @@ This section is what concretely delivers the user's requirement: *"it's OK that 
 
 ### 3. Navigation restrictions
 
-- Each `<webview>` may navigate only to its provider's origin plus its authentication domains. Allowlist:
-  - **ChatGPT:** `chatgpt.com`, `auth.openai.com`, `auth0.openai.com`, `openai.com`
-  - **Gemini:** `gemini.google.com`, `accounts.google.com`, `google.com`
-- Any destination outside the allowlist is intercepted via `will-navigate` / `setWindowOpenHandler` in the main process and handed to `shell.openExternal` (the system browser), never rendered inside Shelf. This prevents the popover from becoming a generic browser or falling for phishing.
+- Each `<webview>` may navigate only to its provider's origin plus tightly-scoped authentication domains. Allowlist (`https:` only, exact hosts or targeted subdomains):
+  - **ChatGPT** — provider host: `chatgpt.com` (and `*.chatgpt.com`); auth hosts: `auth.openai.com`, `auth0.openai.com`, `chat.openai.com` (legacy auth redirect)
+  - **Gemini** — provider host: `gemini.google.com`; auth host: `accounts.google.com`
+- Bare `openai.com` / `google.com` are **not** allowlisted for in-shell navigation: generic links to those roots (e.g. a link in a ChatGPT answer pointing at `openai.com/blog/...`) are intercepted and opened in the system browser via `shell.openExternal`, never rendered inside Shelf. Only the targeted auth/provider hosts above render in-shell.
+- Any destination outside the allowlist is intercepted via `will-navigate` / `setWindowOpenHandler` in the main process and handed to `shell.openExternal`. All scheme matching requires `https:` (no `http:`, no custom schemes). This prevents the popover from becoming a generic browser or falling for phishing.
 - The user agent is the standard Chromium UA from Electron — providers function normally. Note: a Cloudflare challenge may appear on first login; that is the normal authentication flow, not a defect.
+
+### 4. `will-attach-webview` validation (defense-in-depth)
+
+Before any `<webview>` attaches to the popover shell, the main process validates it via the `webContents('will-attach-webview')` event and **blocks** the attachment unless all of the following hold:
+
+- the initial `src` is `https:` and on the provider's allowlist (Section 3);
+- the `partition` is exactly one of `persist:ai-assistant-chatgpt` / `persist:ai-assistant-gemini` (no other partition, no default/in-memory partition);
+- no `preload` is set (the webview must not bridge to any Node surface);
+- `nodeIntegration` is `false` and `contextIsolation` is `true`;
+- the provider id is recognized.
+
+If any check fails, `event.preventDefault()` — the webview does not attach. This is a hard backstop on top of the React shell only ever emitting known-safe `<webview>` attributes: even if a compromised renderer tried to inject a webview with a different src/partition/preload, it would be refused.
 
 ### What Shelf actually sees
 
@@ -280,8 +293,9 @@ The existing `app_metadata` table (key/value) is reused. A new row, key `ai_assi
 }
 ```
 
-- Written on: `move`/`resize` (throttled), provider switch, open/close.
+- Written on: `move`/`resize` (throttled), provider switch, open/close (updates `lastOpenedAt` only).
 - Read at boot only to know the last bounds/provider; the popover does **not** auto-open.
+- **No visibility flag is persisted.** Whether the popover was open or hidden at last quit is never stored; the popover only ever opens via an explicit user action (sidebar button or shortcut). `lastOpenedAt` exists solely as local debug metadata and is never used to drive auto-open behavior.
 - Provider cookies are handled separately by Electron's `persist:*` partitions and never enter SQLite.
 
 This follows the existing schema-evolution convention (idempotent writes, no migration framework needed).
@@ -293,7 +307,7 @@ This follows the existing schema-evolution convention (idempotent writes, no mig
 | Login not yet done at first access | The webview shows the provider's official login page. No special handling; the `persist:*` partition remembers the session. |
 | Service offline / provider down | The webview shows Chromium's native error page. We do not invent UI. |
 | Popover open + main window closed | Popover destroyed/hidden with the parent. |
-| Popover open + app quit | `before-quit` → persist bounds + visibility flag, destroy the child window. Does not auto-reopen on next boot. |
+| Popover open + app quit | `before-quit` → persist bounds + provider + `lastOpenedAt` (no visibility flag), destroy the child window. Does not auto-reopen on next boot. |
 | Cloudflare challenge on first login | Normal flow; the webview shows the challenge, the user solves it, login proceeds. |
 | Logout from inside the popover | The webview shows the login page again. Partitions persist cookies until explicit logout or app-data wipe. |
 | Navigation outside provider origin (e.g. a link in a ChatGPT answer) | `will-navigate` in the main process: if the destination is not on the provider's allowlist, intercept and open it in the system browser via `shell.openExternal`. |
@@ -324,7 +338,8 @@ Covered pure functions:
 - `clampBoundsToBounds(bounds, container)` — validate bounds against the main window
 - `defaultBoundsFor(parentBounds): Bounds` — default bottom-right anchoring
 - `nextProvider(current)` / `providerAllowlistFor(providerId)` — allowlist lookup
-- `isAllowedNavigation(providerId, url): boolean` — allowlist matching
+- `isAllowedNavigation(providerId, url): boolean` — `https:`-only, exact-host / targeted-subdomain matching; rejects bare `openai.com` / `google.com` roots, `http:`, and non-allowlisted hosts
+- `validateWebviewAttachment(params): { ok: true } | { ok: false, reason }` — mirrors the `will-attach-webview` checks: `src` on allowlist, exact `partition`, no `preload`, `nodeIntegration=false` / `contextIsolation=true`, recognized provider id
 
 ### E2E (Playwright)
 
