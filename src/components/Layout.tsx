@@ -12,13 +12,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     sidebarWidth: state.sidebarWidth,
     toggleSidebar: state.toggleSidebar,
   })));
-  const sidebarGap = 8;
   const sidebarMargin = 8;
-  const sidebarToggleRightInset = 8;
-  const sidebarToggleTopInset = 1;
-  const sidebarToggleSize = 24;
-  const closedSidebarToggleLeft = 86;
-  const closedSidebarToggleTop = sidebarGap + sidebarToggleTopInset;
   const sidebarShellWidth = sidebarWidth + sidebarMargin * 2;
   const [shouldRenderSidebar, setShouldRenderSidebar] = React.useState(isSidebarOpen);
   const [isSidebarShellOpen, setIsSidebarShellOpen] = React.useState(isSidebarOpen);
@@ -59,24 +53,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </div>
       )}
-      <div
-        className="fixed z-[90] flex items-center gap-2 transition-[left,top] duration-[220ms] ease-out"
-        style={{
-          left: isSidebarShellOpen
-            ? sidebarGap + sidebarWidth - sidebarToggleRightInset - sidebarToggleSize
-            : closedSidebarToggleLeft,
-          top: isSidebarShellOpen ? sidebarGap + sidebarToggleTopInset : closedSidebarToggleTop,
-        }}
-      >
-        <button
-          onClick={toggleSidebar}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          title={t("layout.toggleSidebar")}
-        >
-          <PanelLeft className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <main className={`on-main-surface ${isSidebarShellOpen ? "on-main-surface-with-sidebar" : ""} flex-1 overflow-hidden relative transition-all duration-300 flex flex-col bg-background`}>
+      <main className={`on-main-surface ${isSidebarShellOpen ? "on-main-surface-with-sidebar" : ""} m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col`}>
+        <div className="absolute left-[84px] top-2 z-[90] flex items-center gap-2">
+          <button
+            onClick={toggleSidebar}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            title={t("layout.toggleSidebar")}
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+          </button>
+        </div>
         {children}
       </main>
     </div>
