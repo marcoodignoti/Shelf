@@ -13,7 +13,8 @@ export function AssistantWebview({ provider, visible }: Props) {
       src={provider.url}
       partition={provider.partition}
       className="ea-popover-webview"
-      style={{ display: visible ? "flex" : "none" }}
+      data-provider={provider.id}
+      data-visible={visible}
     />
   );
 }

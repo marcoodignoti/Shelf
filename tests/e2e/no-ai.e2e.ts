@@ -27,6 +27,13 @@ test("does not expose data-integrated AI features or content-bound AI IPC", asyn
   // No "Ask AI" button (the old integrated assistant entry point).
   await expect(page.getByRole("button", { name: /ask ai/i })).toHaveCount(0);
 
+  // Positive half of the contract: the ONLY AI surface is the isolated
+  // external popover, exposed as the "Chat" sidebar button. There must be
+  // no in-data AI panel (no Ask-AI overlay rendered inside the workspace).
+  const chatButton = page.getByRole("button", { name: "Chat" });
+  await expect(chatButton).toHaveCount(1);
+  await expect(page.locator(".on-app-shell .ai-chat-panel")).toHaveCount(0);
+
   // Command palette must not offer an in-data AI command.
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByPlaceholder("Search pages...")).toBeFocused();

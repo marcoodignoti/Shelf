@@ -33,6 +33,22 @@ dist-electron/Shelf_0.1.1_arm64.dmg
 - Large local PDFs are handled with clear errors or acceptable performance.
 - Beta update notices open the latest GitHub Release DMG manually.
 
+## WebAuthn / Passkeys
+
+Google passkey login in the embedded Chat window uses Electron WebAuthn. For
+Touch ID / Secure Enclave support in signed macOS builds, set a keychain access
+group before packaging:
+
+```sh
+export SHELF_MAC_WEBAUTHN_KEYCHAIN_ACCESS_GROUP="<TEAM_ID>.com.marcodignoti.shelf.webauthn"
+```
+
+The packaging script injects that group into the codesign entitlements, and the
+app uses the same value for `app.configureWebAuthn(...)`. Development builds use
+a best-effort fallback group (`com.marcodignoti.shelf.webauthn`) so passkey flows
+can be exercised locally, but reliable macOS platform passkeys in distributed
+builds need a real Developer ID team and matching entitlement.
+
 ## Pre-Distribution Profiling
 
 Before publishing a build, measure:

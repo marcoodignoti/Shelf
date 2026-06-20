@@ -4,6 +4,7 @@ import {
   clampBoundsToBounds,
   defaultBoundsFor,
   isAllowedNavigation,
+  isProviderAppNavigation,
   nextProvider,
   parseAssistantState,
   validateWebviewAttachment,
@@ -34,6 +35,7 @@ describe("isAllowedNavigation", () => {
     expect(isAllowedNavigation("chatgpt", "https://auth.openai.com/login")).toBe(true);
     expect(isAllowedNavigation("chatgpt", "https://auth0.openai.com/")).toBe(true);
     expect(isAllowedNavigation("chatgpt", "https://chat.openai.com/auth")).toBe(true);
+    expect(isAllowedNavigation("chatgpt", "https://accounts.google.com/o/oauth2/v2/auth")).toBe(true);
     expect(isAllowedNavigation("gemini", "https://gemini.google.com/")).toBe(true);
     expect(isAllowedNavigation("gemini", "https://accounts.google.com/signin")).toBe(true);
   });
@@ -60,6 +62,15 @@ describe("isAllowedNavigation", () => {
     // and NOT hosts where the suffix appears mid-host.
     expect(isAllowedNavigation("chatgpt", "https://evilchatgpt.com/")).toBe(false);
     expect(isAllowedNavigation("chatgpt", "https://chatgpt.com.evil.com/")).toBe(false);
+  });
+});
+
+describe("isProviderAppNavigation", () => {
+  it("keeps provider app links separate from auth links", () => {
+    expect(isProviderAppNavigation("chatgpt", "https://chatgpt.com/g/g-abc/project")).toBe(true);
+    expect(isProviderAppNavigation("chatgpt", "https://accounts.google.com/o/oauth2/v2/auth")).toBe(false);
+    expect(isProviderAppNavigation("gemini", "https://gemini.google.com/app/abc")).toBe(true);
+    expect(isProviderAppNavigation("gemini", "https://accounts.google.com/signin")).toBe(false);
   });
 });
 

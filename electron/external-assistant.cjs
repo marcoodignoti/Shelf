@@ -1,37 +1,80 @@
 const path = require("node:path");
-const { BrowserWindow, ipcMain, session, shell } = require("electron");
+const {
+  BrowserWindow: ElectronBrowserWindow,
+  ipcMain: electronIpcMain,
+  session: electronSession,
+  shell: electronShell,
+} = require("electron");
 const {
   PROVIDERS,
   isAllowedNavigation,
+  isProviderAppNavigation,
   validateWebviewAttachment,
 } = require("./external-assistant-providers.cjs");
 
 const STATE_KEY = "external_assistant_state";
 const DEFAULT_WIDTH = 420;
 const DEFAULT_HEIGHT = 640;
+const configuredWebAuthnSessions = new WeakSet();
 
 // Map each provider's persistent session to its id, so navigation handlers
 // can recover the provider after the webview attaches. Electron's Session
 // has no public getPartitionName() API, so we resolve by reference.
-function buildSessionToProviderMap() {
+function buildSessionToProviderMap(sessionApi) {
   const map = new Map();
   for (const provider of PROVIDERS) {
-    map.set(session.fromPartition(provider.partition), provider.id);
+    const providerSession = sessionApi.fromPartition(provider.partition);
+    configureWebAuthnSession(providerSession);
+    map.set(providerSession, provider.id);
   }
   return map;
 }
 
-function createExternalAssistantController({ getMainWindow, backend }) {
+function configureWebAuthnSession(providerSession) {
+  if (!providerSession || configuredWebAuthnSessions.has(providerSession)) return;
+  configuredWebAuthnSessions.add(providerSession);
+  if (typeof providerSession.on !== "function") return;
+
+  providerSession.on("select-webauthn-account", (_event, details, callback) => {
+    const accounts = Array.isArray(details?.accounts) ? details.accounts : [];
+    const selected = accounts[0];
+    callback(selected?.credentialId ?? null);
+  });
+}
+
+function createExternalAssistantController({
+  getMainWindow,
+  backend,
+  electron = {
+    BrowserWindow: ElectronBrowserWindow,
+    ipcMain: electronIpcMain,
+    session: electronSession,
+    shell: electronShell,
+  },
+}) {
+  const { BrowserWindow, ipcMain, session, shell } = electron;
   let childWindow = null;
   let wasOpenForUser = false;
   let blurHideTimer = null;
   let persistTimer = null;
+  let allowClose = false;
+  let focusTrackedWindow = null;
+
+  function clearBlurHideTimer() {
+    if (!blurHideTimer) return;
+    clearTimeout(blurHideTimer);
+    blurHideTimer = null;
+  }
+
+  function configureProviderSessions() {
+    for (const provider of PROVIDERS) {
+      configureWebAuthnSession(session.fromPartition(provider.partition));
+    }
+  }
 
   function readState() {
     try {
-      const raw = backend.readMetadataValue(STATE_KEY);
-      if (typeof raw !== "string") return null;
-      const parsed = JSON.parse(raw);
+      const parsed = readRawState();
       if (
         typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
         typeof parsed.x !== "number" || typeof parsed.y !== "number" ||
@@ -47,9 +90,18 @@ function createExternalAssistantController({ getMainWindow, backend }) {
     }
   }
 
+  function readRawState() {
+    const raw = backend.readMetadataValue(STATE_KEY);
+    if (typeof raw !== "string") return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  }
+
   function persistState(partial) {
     try {
-      const current = readState() ?? {};
+      const current = readRawState() ?? {};
       const next = { ...current, ...partial, lastOpenedAt: new Date().toISOString() };
       backend.writeMetadataValue(STATE_KEY, JSON.stringify(next));
     } catch {
@@ -86,6 +138,53 @@ function createExternalAssistantController({ getMainWindow, backend }) {
     };
   }
 
+  function currentBounds() {
+    if (!childWindow || childWindow.isDestroyed()) return null;
+    const [x, y] = childWindow.getPosition();
+    const [width, height] = childWindow.getSize();
+    return { x, y, width, height };
+  }
+
+  function openProviderPopup(providerId, url) {
+    const provider = PROVIDERS.find((p) => p.id === providerId);
+    if (!provider) return;
+    configureWebAuthnSession(session.fromPartition(provider.partition));
+    if (!isAllowedNavigation(providerId, url)) {
+      void shell.openExternal(url);
+      return;
+    }
+
+    const popup = new BrowserWindow({
+      parent: childWindow && !childWindow.isDestroyed() ? childWindow : getMainWindow() ?? undefined,
+      show: true,
+      width: 520,
+      height: 720,
+      title: provider.label,
+      webPreferences: {
+        partition: provider.partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: false,
+      },
+    });
+
+    popup.webContents.on("will-navigate", (event, targetUrl) => {
+      if (isAllowedNavigation(providerId, targetUrl)) return;
+      event.preventDefault();
+      void shell.openExternal(targetUrl);
+    });
+    popup.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+      if (isAllowedNavigation(providerId, targetUrl)) {
+        openProviderPopup(providerId, targetUrl);
+      } else {
+        void shell.openExternal(targetUrl);
+      }
+      return { action: "deny" };
+    });
+    void popup.loadURL(url);
+  }
+
   function attachSecurityHandlers(webContents) {
     // Defense-in-depth: validate every <webview> before it attaches.
     // Callback signature: (event, webPreferences, params) where
@@ -118,7 +217,7 @@ function createExternalAssistantController({ getMainWindow, backend }) {
 
     // Resolve provider by session reference (Electron has no public
     // getPartitionName() API). Built once; sessions are interned by Electron.
-    const sessionToProvider = buildSessionToProviderMap();
+    const sessionToProvider = buildSessionToProviderMap(session);
 
     // Each webview's contents, once attached, is gated on navigation.
     webContents.on("did-attach-webview", (_event, webviewContents) => {
@@ -128,11 +227,18 @@ function createExternalAssistantController({ getMainWindow, backend }) {
         navEvent.preventDefault();
         void shell.openExternal(url);
       });
-      // Deny all window.open / target=_blank and route to the system browser.
-      // An "allow" here would spawn a new BrowserWindow without our security
-      // handlers attached, defeating the allowlist. Mirrors main.cjs posture.
+      // Provider/auth popups stay in the provider's persistent partition.
+      // Everything else is routed to the system browser so the popover never
+      // becomes a generic in-app browser.
       webviewContents.setWindowOpenHandler(({ url }) => {
-        void shell.openExternal(url);
+        const providerId = sessionToProvider.get(webviewContents.session) ?? null;
+        if (providerId && isProviderAppNavigation(providerId, url)) {
+          void webviewContents.loadURL(url);
+        } else if (providerId && isAllowedNavigation(providerId, url)) {
+          openProviderPopup(providerId, url);
+        } else {
+          void shell.openExternal(url);
+        }
         return { action: "deny" };
       });
     });
@@ -140,6 +246,7 @@ function createExternalAssistantController({ getMainWindow, backend }) {
 
   function ensureWindow() {
     if (childWindow && !childWindow.isDestroyed()) return childWindow;
+    wireFocusTracking();
     const main = getMainWindow();
     const saved = readState();
     const bounds = saved
@@ -161,6 +268,8 @@ function createExternalAssistantController({ getMainWindow, backend }) {
       x: bounds.x,
       y: bounds.y,
       show: false,
+      backgroundColor: process.platform === "darwin" ? "#00000000" : "#111111",
+      transparent: process.platform === "darwin",
       titleBarStyle: "hidden",
       webPreferences: {
         preload: path.join(__dirname, "external-assistant-preload.cjs"),
@@ -172,13 +281,21 @@ function createExternalAssistantController({ getMainWindow, backend }) {
     });
 
     attachSecurityHandlers(childWindow.webContents);
+    if (process.platform === "darwin" && typeof childWindow.setWindowButtonVisibility === "function") {
+      childWindow.setWindowButtonVisibility(false);
+    }
 
     childWindow.on("move", scheduleBoundsPersist);
     childWindow.on("resize", scheduleBoundsPersist);
+    childWindow.on("focus", clearBlurHideTimer);
     childWindow.on("close", (event) => {
       // Close hides instead of destroying, so webview sessions stay alive.
+      if (allowClose) return;
       event.preventDefault();
       hide();
+    });
+    childWindow.on("closed", () => {
+      childWindow = null;
     });
 
     // alwaysOnTop follows main-window focus (see wireFocusTracking).
@@ -190,15 +307,18 @@ function createExternalAssistantController({ getMainWindow, backend }) {
 
   function show(provider) {
     const win = ensureWindow();
-    if (provider) persistState({ provider });
     win.show();
     win.focus();
     wasOpenForUser = true;
-    persistState({ lastOpenedAt: new Date().toISOString() });
+    persistState({
+      ...currentBounds(),
+      ...(provider ? { provider } : {}),
+    });
   }
 
   function hide() {
     if (!childWindow || childWindow.isDestroyed()) return;
+    persistState(currentBounds() ?? {});
     childWindow.hide();
     wasOpenForUser = false;
   }
@@ -215,18 +335,23 @@ function createExternalAssistantController({ getMainWindow, backend }) {
   function wireFocusTracking() {
     const main = getMainWindow();
     if (!main) return;
+    if (main === focusTrackedWindow) return;
+    focusTrackedWindow = main;
     main.on("focus", () => {
-      if (blurHideTimer) { clearTimeout(blurHideTimer); blurHideTimer = null; }
+      clearBlurHideTimer();
       if (wasOpenForUser && childWindow && !childWindow.isDestroyed()) {
         childWindow.show();
       }
     });
     main.on("blur", () => {
       if (!wasOpenForUser) return;
-      if (blurHideTimer) clearTimeout(blurHideTimer);
+      clearBlurHideTimer();
       blurHideTimer = setTimeout(() => {
         blurHideTimer = null;
-        if (childWindow && !childWindow.isDestroyed()) childWindow.hide();
+        if (!childWindow || childWindow.isDestroyed()) return;
+        const mainFocused = typeof main.isFocused === "function" && main.isFocused();
+        const childFocused = typeof childWindow.isFocused === "function" && childWindow.isFocused();
+        if (!mainFocused && !childFocused) childWindow.hide();
       }, 100);
     });
   }
@@ -250,13 +375,29 @@ function createExternalAssistantController({ getMainWindow, backend }) {
       }
       return null;
     });
+    ipcMain.handle("external-assistant:open-provider-external", (_event, providerId) => {
+      const provider = PROVIDERS.find((p) => p.id === providerId);
+      if (provider) void shell.openExternal(provider.url);
+      return null;
+    });
     ipcMain.on("external-assistant:close", () => hide());
   }
 
   return {
     init() {
+      configureProviderSessions();
       registerIpc();
       wireFocusTracking();
+    },
+    destroy() {
+      clearBlurHideTimer();
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      if (!childWindow || childWindow.isDestroyed()) return;
+      allowClose = true;
+      childWindow.destroy();
+      childWindow = null;
+      allowClose = false;
+      wasOpenForUser = false;
     },
     // Exposed for unit-style smoke; not used directly by the renderer.
     _internal: { ensureWindow, show, hide, toggle, readState, persistState },

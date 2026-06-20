@@ -23,6 +23,7 @@ const APP_ASSET_HOST = "asset";
 const LEGACY_TAURI_CONFIG_DIR = "org.opennotion.desktop";
 const MAX_DIALOG_FILTERS = 10;
 const MAX_DIALOG_EXTENSIONS = 20;
+const MAC_WEBAUTHN_PROMPT_REASON = "sign in to $1";
 const IMAGE_DIALOG_FILTER = {
   name: "Images",
   extensions: ["png", "jpg", "jpeg", "webp", "gif"],
@@ -78,6 +79,28 @@ function configureAppIdentity() {
     ? path.resolve(configuredUserDataPath)
     : path.join(app.getPath("appData"), LEGACY_TAURI_CONFIG_DIR);
   app.setPath("userData", userDataPath);
+}
+
+function configureWebAuthn() {
+  if (process.platform !== "darwin") return;
+  if (typeof app.configureWebAuthn !== "function") return;
+  const keychainAccessGroup =
+    process.env.SHELF_MAC_WEBAUTHN_KEYCHAIN_ACCESS_GROUP ||
+    process.env.OPENNOTION_MAC_WEBAUTHN_KEYCHAIN_ACCESS_GROUP ||
+    (process.env.SHELF_MAC_TEAM_ID
+      ? `${process.env.SHELF_MAC_TEAM_ID}.com.marcodignoti.shelf.webauthn`
+      : "com.marcodignoti.shelf.webauthn");
+  if (!keychainAccessGroup) return;
+  try {
+    app.configureWebAuthn({
+      touchID: {
+        keychainAccessGroup,
+        promptReason: MAC_WEBAUTHN_PROMPT_REASON,
+      },
+    });
+  } catch (error) {
+    console.warn(`[webauthn] Touch ID WebAuthn unavailable: ${error?.message ?? error}`);
+  }
 }
 
 function createBackend() {
@@ -651,6 +674,7 @@ function createMainWindow() {
   });
 
   mainWindow.on("closed", () => {
+    externalAssistant?.destroy();
     mainWindow = null;
   });
 }
@@ -1067,6 +1091,7 @@ configureAppIdentity();
 registerIpc();
 
 app.whenReady().then(async () => {
+  configureWebAuthn();
   configureApplicationMenu();
   configureAppProtocol();
   createBackend();
@@ -1089,6 +1114,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  externalAssistant?.destroy();
+  externalAssistant = null;
   studioPdfServer?.close();
   studioPdfServer = null;
   studioPdfServerOrigin = null;

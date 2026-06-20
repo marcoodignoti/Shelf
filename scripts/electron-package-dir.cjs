@@ -18,6 +18,7 @@ const resourcesDir = path.join(appDir, "Contents", "Resources");
 const appResourcesDir = path.join(resourcesDir, "app");
 const appIcon = path.join(root, "assets", "app-icon.icns");
 const macEntitlements = path.join(root, "packaging", "entitlements.mac.plist");
+let generatedMacEntitlements = null;
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: "inherit" });
@@ -33,11 +34,46 @@ function env(name, fallback = "") {
 
 function macCodesignArgs(appPath) {
   const args = ["--force", "--deep", "--options", "runtime"];
-  if (fs.existsSync(macEntitlements)) {
-    args.push("--entitlements", macEntitlements);
+  const entitlements = macEntitlementsForBuild();
+  if (entitlements) {
+    args.push("--entitlements", entitlements);
   }
   args.push("--sign", env("SHELF_MAC_CODESIGN_IDENTITY", env("OPENNOTION_MAC_CODESIGN_IDENTITY", "-")), appPath);
   return args;
+}
+
+function escapePlistString(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function macEntitlementsForBuild() {
+  if (generatedMacEntitlements) return generatedMacEntitlements;
+  if (!fs.existsSync(macEntitlements)) return null;
+
+  const webauthnGroup = env(
+    "SHELF_MAC_WEBAUTHN_KEYCHAIN_ACCESS_GROUP",
+    env("OPENNOTION_MAC_WEBAUTHN_KEYCHAIN_ACCESS_GROUP"),
+  );
+  if (!webauthnGroup) return macEntitlements;
+
+  const source = fs.readFileSync(macEntitlements, "utf8");
+  if (source.includes("keychain-access-groups")) return macEntitlements;
+
+  generatedMacEntitlements = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "shelf-entitlements-")),
+    "entitlements.mac.plist",
+  );
+  fs.writeFileSync(
+    generatedMacEntitlements,
+    source.replace(
+      "</dict>",
+      `  <key>keychain-access-groups</key>\n  <array>\n    <string>${escapePlistString(webauthnGroup)}</string>\n  </array>\n</dict>`,
+    ),
+  );
+  return generatedMacEntitlements;
 }
 
 function copyDirectory(source, destination) {

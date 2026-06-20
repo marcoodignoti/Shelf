@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld("externalAssistantShell", {
   getInitialState: () => ipcRenderer.invoke("external-assistant:get-state"),
   setProvider: (provider) =>
     ipcRenderer.invoke("external-assistant:set-provider", provider),
+  openProviderExternal: (provider) =>
+    ipcRenderer.invoke("external-assistant:open-provider-external", provider),
   close: () => ipcRenderer.send("external-assistant:close"),
 });

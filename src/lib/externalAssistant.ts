@@ -9,6 +9,8 @@ export interface Provider {
   label: string;
   url: string;
   partition: string;
+  /** Hosts that belong to the provider app itself and should stay in the current webview. */
+  appHosts: ReadonlyArray<string>;
   /** Hosts (exact or wildcard) the provider's webview may navigate to, https only. */
   allowlist: ReadonlyArray<string>;
 }
@@ -19,13 +21,22 @@ export const PROVIDERS: readonly Provider[] = [
     label: "ChatGPT",
     url: "https://chatgpt.com/",
     partition: "persist:external-assistant-chatgpt",
-    allowlist: ["chatgpt.com", "*.chatgpt.com", "auth.openai.com", "auth0.openai.com", "chat.openai.com"],
+    appHosts: ["chatgpt.com", "*.chatgpt.com", "chat.openai.com"],
+    allowlist: [
+      "chatgpt.com",
+      "*.chatgpt.com",
+      "auth.openai.com",
+      "auth0.openai.com",
+      "chat.openai.com",
+      "accounts.google.com",
+    ],
   },
   {
     id: "gemini",
     label: "Gemini",
     url: "https://gemini.google.com/",
     partition: "persist:external-assistant-gemini",
+    appHosts: ["gemini.google.com"],
     allowlist: ["gemini.google.com", "accounts.google.com"],
   },
 ] as const;
@@ -62,6 +73,19 @@ export function isAllowedNavigation(providerId: ProviderId, url: string): boolea
   }
   if (parsed.protocol !== "https:") return false;
   return provider.allowlist.some((entry) => hostMatchesAllowlistEntry(parsed.hostname, entry));
+}
+
+export function isProviderAppNavigation(providerId: ProviderId, url: string): boolean {
+  const provider = providerById(providerId);
+  if (!provider) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  return provider.appHosts.some((entry) => hostMatchesAllowlistEntry(parsed.hostname, entry));
 }
 
 export interface WebviewAttachmentParams {

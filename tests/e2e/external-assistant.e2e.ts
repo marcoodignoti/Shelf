@@ -4,7 +4,8 @@ import { installMockBridge } from "./helpers/mockBridge";
 // Covers the popover lifecycle. The mock bridge stubs externalAssistant.toggle
 // (it cannot spawn a real Electron child window under the Vite-only e2e setup),
 // so these tests assert the renderer-side entry points fire the bridge call
-// correctly. Real child-window behavior is covered by electron:smoke:runtime.
+// correctly. Controller lifecycle/security behavior is covered by
+// electron/external-assistant-controller.test.cjs.
 
 test.beforeEach(async ({ page }) => {
   await installMockBridge(page);

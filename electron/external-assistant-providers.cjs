@@ -8,13 +8,22 @@ const PROVIDERS = [
     label: "ChatGPT",
     url: "https://chatgpt.com/",
     partition: "persist:external-assistant-chatgpt",
-    allowlist: ["chatgpt.com", "*.chatgpt.com", "auth.openai.com", "auth0.openai.com", "chat.openai.com"],
+    appHosts: ["chatgpt.com", "*.chatgpt.com", "chat.openai.com"],
+    allowlist: [
+      "chatgpt.com",
+      "*.chatgpt.com",
+      "auth.openai.com",
+      "auth0.openai.com",
+      "chat.openai.com",
+      "accounts.google.com",
+    ],
   },
   {
     id: "gemini",
     label: "Gemini",
     url: "https://gemini.google.com/",
     partition: "persist:external-assistant-gemini",
+    appHosts: ["gemini.google.com"],
     allowlist: ["gemini.google.com", "accounts.google.com"],
   },
 ];
@@ -46,6 +55,19 @@ function isAllowedNavigation(providerId, url) {
   return provider.allowlist.some((entry) => hostMatchesAllowlistEntry(parsed.hostname, entry));
 }
 
+function isProviderAppNavigation(providerId, url) {
+  const provider = providerById(providerId);
+  if (!provider) return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  return provider.appHosts.some((entry) => hostMatchesAllowlistEntry(parsed.hostname, entry));
+}
+
 function validateWebviewAttachment(params) {
   const provider = providerById(params.providerId);
   if (!provider) return { ok: false, reason: "unknown provider" };
@@ -61,5 +83,6 @@ module.exports = {
   PROVIDERS,
   providerById,
   isAllowedNavigation,
+  isProviderAppNavigation,
   validateWebviewAttachment,
 };

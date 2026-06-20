@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalAssistantHeader } from "./ExternalAssistantHeader";
 import { AssistantWebview } from "./AssistantWebview";
 import { SHELL_PROVIDERS } from "./providers";
@@ -9,6 +9,7 @@ declare global {
     externalAssistantShell?: {
       getInitialState: () => Promise<{ provider: ProviderId }>;
       setProvider: (provider: ProviderId) => Promise<null>;
+      openProviderExternal: (provider: ProviderId) => Promise<null>;
       close: () => void;
     };
   }
@@ -16,6 +17,7 @@ declare global {
 
 export function ExternalAssistantPopover() {
   const [provider, setProvider] = useState<ProviderId>("chatgpt");
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,23 +33,32 @@ export function ExternalAssistantPopover() {
     void window.externalAssistantShell?.setProvider(next);
   };
 
+  const reloadActiveProvider = () => {
+    const activeWebview = bodyRef.current?.querySelector(
+      `webview[data-provider="${provider}"]`,
+    ) as (HTMLElement & { reload?: () => void }) | null;
+    activeWebview?.reload?.();
+  };
+
   return (
     <div className="ea-popover-root">
       <ExternalAssistantHeader
         provider={provider}
         onProviderChange={handleProviderChange}
+        onReload={reloadActiveProvider}
+        onOpenExternal={() => void window.externalAssistantShell?.openProviderExternal(provider)}
         onClose={() => window.externalAssistantShell?.close()}
       />
-      <div className="ea-popover-body">
+      <footer className="ea-popover-footer">
+        {provider === "chatgpt"
+          ? "OpenAI provider - chats go to OpenAI servers."
+          : "Google provider - chats go to Google servers."}
+      </footer>
+      <div ref={bodyRef} className="ea-popover-body">
         {SHELL_PROVIDERS.map((p) => (
           <AssistantWebview key={p.id} provider={p} visible={p.id === provider} />
         ))}
       </div>
-      <footer className="ea-popover-footer">
-        {provider === "chatgpt"
-          ? "Served by OpenAI — your chats go to their servers."
-          : "Served by Google — your chats go to their servers."}
-      </footer>
     </div>
   );
 }

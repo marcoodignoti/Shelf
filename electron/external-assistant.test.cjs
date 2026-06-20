@@ -3,6 +3,7 @@ const test = require("node:test");
 const {
   PROVIDERS,
   isAllowedNavigation,
+  isProviderAppNavigation,
   validateWebviewAttachment,
 } = require("./external-assistant-providers.cjs");
 
@@ -15,12 +16,21 @@ test("provider table matches the TS source of truth", () => {
       id: "chatgpt",
       url: "https://chatgpt.com/",
       partition: "persist:external-assistant-chatgpt",
-      allowlist: ["chatgpt.com", "*.chatgpt.com", "auth.openai.com", "auth0.openai.com", "chat.openai.com"],
+      appHosts: ["chatgpt.com", "*.chatgpt.com", "chat.openai.com"],
+      allowlist: [
+        "chatgpt.com",
+        "*.chatgpt.com",
+        "auth.openai.com",
+        "auth0.openai.com",
+        "chat.openai.com",
+        "accounts.google.com",
+      ],
     },
     {
       id: "gemini",
       url: "https://gemini.google.com/",
       partition: "persist:external-assistant-gemini",
+      appHosts: ["gemini.google.com"],
       allowlist: ["gemini.google.com", "accounts.google.com"],
     },
   ];
@@ -29,13 +39,26 @@ test("provider table matches the TS source of truth", () => {
     assert.ok(p, `missing provider ${exp.id}`);
     assert.equal(p.url, exp.url);
     assert.equal(p.partition, exp.partition);
+    assert.deepEqual(p.appHosts, exp.appHosts);
     assert.deepEqual(p.allowlist, exp.allowlist);
   }
 });
 
 test("isAllowedNavigation rejects bare openai.com / google.com roots", () => {
   assert.equal(isAllowedNavigation("chatgpt", "https://openai.com/blog"), false);
+  assert.equal(isAllowedNavigation("chatgpt", "https://google.com/search"), false);
   assert.equal(isAllowedNavigation("gemini", "https://google.com/"), false);
+});
+
+test("isAllowedNavigation allows ChatGPT Google OAuth host", () => {
+  assert.equal(isAllowedNavigation("chatgpt", "https://accounts.google.com/o/oauth2/v2/auth"), true);
+});
+
+test("isProviderAppNavigation separates app links from auth links", () => {
+  assert.equal(isProviderAppNavigation("chatgpt", "https://chatgpt.com/g/g-abc/project"), true);
+  assert.equal(isProviderAppNavigation("chatgpt", "https://accounts.google.com/o/oauth2/v2/auth"), false);
+  assert.equal(isProviderAppNavigation("gemini", "https://gemini.google.com/app/abc"), true);
+  assert.equal(isProviderAppNavigation("gemini", "https://accounts.google.com/signin"), false);
 });
 
 test("isAllowedNavigation rejects http", () => {

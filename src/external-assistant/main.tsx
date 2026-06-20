@@ -37,6 +37,7 @@ function applyTheme(): (() => void) | undefined {
 
 const container = document.getElementById("root");
 if (container) {
+  window.document.body.classList.add("external-assistant-shell");
   applyTheme();
   createRoot(container).render(
     <React.StrictMode>
