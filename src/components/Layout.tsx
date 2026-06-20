@@ -53,7 +53,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </div>
       )}
-      <main className={`on-main-surface ${isSidebarShellOpen ? "on-main-surface-with-sidebar" : ""} m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col`}>
+      <main className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col">
         <div className="absolute left-[84px] top-2 z-[90] flex items-center gap-2">
           <button
             onClick={toggleSidebar}
