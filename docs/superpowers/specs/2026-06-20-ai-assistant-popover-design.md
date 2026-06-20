@@ -1,8 +1,41 @@
-# AI Assistant Popover — Design
+# External Assistant Popover — Design
 
 **Date:** 2026-06-20
-**Status:** Approved (brainstorming complete, pending implementation plan)
-**Goal:** Embed the official ChatGPT and Gemini web apps inside Shelf as a draggable popover, so the user can reach an AI assistant without leaving the app.
+**Status:** Approved (brainstorming complete, contract updated, pending implementation plan)
+**Goal:** Embed the official ChatGPT and Gemini web apps inside Shelf as a draggable popover, so the user can reach a chat provider without leaving the app — without giving that provider any access to Shelf data.
+
+## Decision re: the `no-ai` contract
+
+This feature changes a codified product contract and that change is recorded here explicitly, not buried in implementation detail.
+
+**History.** Shelf previously shipped a deeply-integrated AI feature: a Rust AI module (`src-tauri/src/ai.rs`, ~3,342 lines), an `AiChat.tsx` component (~1,091 lines), an "Ask AI" command in the command palette, and an AI section in settings. It was **intentionally removed** in commit `3cf4c66` ("refactor: remove ai features", 2026-06-03), and the removal was **sealed by a guard test**, `tests/e2e/no-ai.e2e.ts`, which asserts that Shelf exposes no AI features (no "Ask AI" button, no "AI" text in the command palette or settings) and invokes no AI IPC commands.
+
+**Old contract:** *"Shelf has no AI."*
+**New contract:** *"Shelf has no AI that touches Shelf data. The only AI surface permitted is an isolated external window (a popover embedding the official pages of user-chosen providers) with no access to notes, the database, Studio documents, or files."*
+
+Everything else in this spec is scoped to honor that new contract. In particular:
+
+- The popover is a separate process (per-provider `<webview>`) with **no bridge** to Shelf data (no `invoke`, no `fileSrc`, no DB access). See *Security & Privacy*.
+- The main process **never injects into or reads** the webviews; conversations flow directly between the user's client and the provider.
+- There is **no** command palette "Ask Shelf AI" and **no** AI settings section.
+- The guard test `tests/e2e/no-ai.e2e.ts` is **replaced** (not deleted) with a new guard that codifies the new contract: still forbids AI-integrated-into-data (no content-bound IPC commands, no "Ask Shelf AI" in palette/settings), and additionally asserts the positive fact that the only AI surface is the isolated external popover. The replacement is the first task of the implementation plan.
+
+**Naming convention.** To make the distinction legible throughout the codebase, every new surface uses the `external_assistant_*` / `Chat` namespace rather than `ai_*`:
+
+- IPC commands: `external_assistant_toggle`, `external_assistant_set_provider`, `external_assistant_close`, `external_assistant_get_state`
+- Persisted state key (`app_metadata`): `external_assistant_state`
+- Cookie partitions: `persist:external-assistant-chatgpt`, `persist:external-assistant-gemini`
+- Files: `electron/external-assistant.cjs`, `electron/external-assistant-preload.cjs`, `src/external-assistant/*`, `src/lib/externalAssistant.ts`
+- UI label: **"Chat"** (`sidebar.chat`), not "AI Assistant". The footer discloses which provider serves the chat (OpenAI/Google).
+
+This is not to evade the guard test (which is updated regardless); it is to keep the semantic boundary — *external bridge, never data-integrated* — visible at every call site.
+
+**Residue scan (performed before this spec update).** No live AI code remains. Verified:
+- `src/` — no AI references.
+- `electron/` — no AI references.
+- `src-tauri/` — directory fully removed; does not exist.
+- `package.json` — no AI dependencies (no `openai`, `anthropic`, `langchain`, `@ai-sdk`, `ollama`, `tiktoken`). Runtime deps are BlockNote, Mantine, KaTeX, pdfjs, React, zustand.
+- `tests/e2e/persistence.e2e.ts` — contains tests whose **names** mention "LLM-style paste" / "ChatGPT-style markdown". These test BlockNote's paste-normalization behavior on content that *originated* from an LLM, not any AI feature. They are **unrelated** to this work and stay as-is.
 
 ## Problem & Non-goals
 
@@ -45,22 +78,22 @@ Three approaches were considered; this is the selected one. Rationale:
 ```
 [main renderer]                       [popover child window]              [provider pages]
  React UI ──────────────────────────► React popover shell ─────────────► ChatGPT / Gemini
-  Sidebar button,                     ├ header: drag handle,              (in <webview>, separate
+  Sidebar "Chat" button,              ├ header: drag handle,              (in <webview>, separate
   Cmd+Shift+A shortcut                │   switcher (single), close          process, partition:
-                                       └ <webview> per provider              persist:ai-assistant-*)
+                                       └ <webview> per provider              persist:external-assistant-*)
         │                                     ▲
-        │ invoke("ai_assistant_open", …)      │
+        │ invoke("external_assistant_toggle", …) │
         ▼                                     │ parent bounds + provider
   electron/main.cjs ──────────────────────────┘
    creates/controls BrowserWindow(child, frameless, parent: mainWindow)
-   persists state to app_metadata row "ai_assistant_state"
+   persists state to app_metadata row "external_assistant_state"
 ```
 
 ### Execution flow
 
-1. User clicks the sidebar button (end of nav) or presses `Cmd+Shift+A`. The renderer calls `window.openNotion.aiAssistant.toggle({ provider? })`.
-2. `electron/main.cjs` routes the call to `electron/ai-assistant.cjs`, which creates (first time) or shows/hides the frameless child `BrowserWindow`. `parent: mainWindow`; `alwaysOnTop` at level `floating`, gated on main-window focus.
-3. The child window loads `opennotion-app://renderer/ai-assistant.html` — a second Vite build entry — a tiny React app that renders the header + two `<webview>` tags (one ChatGPT, one Gemini), only one visible at a time.
+1. User clicks the sidebar "Chat" button (end of nav) or presses `Cmd+Shift+A`. The renderer calls `window.openNotion.externalAssistant.toggle({ provider? })`.
+2. `electron/main.cjs` routes the call to `electron/external-assistant.cjs`, which creates (first time) or shows/hides the frameless child `BrowserWindow`. `parent: mainWindow`; `alwaysOnTop` at level `floating`, gated on main-window focus.
+3. The child window loads `opennotion-app://renderer/external-assistant.html` — a second Vite build entry — a tiny React app that renders the header + two `<webview>` tags (one ChatGPT, one Gemini), only one visible at a time.
 4. The header switcher toggles which `<webview>` is `visible` (the other stays mounted in memory, preserving its conversation) and persists the active provider.
 5. Close (the `×` button, or `Cmd+W` inside the popover) → **hide**, not destroy. Reopening is instant and the webview sessions stay alive.
 
@@ -74,20 +107,20 @@ This section is what concretely delivers the user's requirement: *"it's OK that 
 
 ### 1. Strong isolation via `<webview>` + dedicated partitions
 
-- The popover child window loads a minimal React shell (`ai-assistant.html`) containing the header (drag / switcher / close) and **two `<webview>` tags**: one for `chatgpt.com`, one for `gemini.google.com`. Only the active one is visible.
+- The popover child window loads a minimal React shell (`external-assistant.html`) containing the header (drag / switcher / close) and **two `<webview>` tags**: one for `chatgpt.com`, one for `gemini.google.com`. Only the active one is visible.
 - Each `<webview>` is a **separate Chromium process** with its own persistent cookie partition:
-  - `persist:ai-assistant-chatgpt`
-  - `persist:ai-assistant-gemini`
+  - `persist:external-assistant-chatgpt`
+  - `persist:external-assistant-gemini`
 - Separate partitions = ChatGPT and Gemini cookies/logins never mix with each other or with Shelf's own session, and **persist across app launches** (login remembered).
 
 ### 2. No bridge to Shelf data
 
-- The popover React shell uses a **dedicated, minimal preload** (`electron/ai-assistant-preload.cjs`), separate from the main `preload.cjs`. It exposes a `window.aiAssistant` surface (distinct from the main renderer's `window.openNotion.aiAssistant`) with only:
+- The popover React shell uses a **dedicated, minimal preload** (`electron/external-assistant-preload.cjs`), separate from the main `preload.cjs`. It exposes a `window.externalAssistantShell` surface (distinct from the main renderer's `window.openNotion.externalAssistant`) with only:
   - `getInitialState()` → `{ provider }` (last provider used)
   - `setProvider(id)` → persists last provider
   - `close()` → hides the window
 
-  The two surfaces are intentionally separate: `window.openNotion.aiAssistant.toggle()` lives in the **main renderer** (sidebar button, shortcut) and drives window lifecycle; `window.aiAssistant.*` lives in the **popover child window** and drives only in-shell behavior. They never share an object.
+  The two surfaces are intentionally separate: `window.openNotion.externalAssistant.toggle()` lives in the **main renderer** (sidebar button, shortcut) and drives window lifecycle; `window.externalAssistantShell.*` lives in the **popover child window** and drives only in-shell behavior. They never share an object.
 - It does **not** expose `invoke`, `fileSrc`, `studioPdfSrc`, or anything else. The popover shell cannot see SQLite, pages, notes, or Studio documents.
 - The `<webview>` tags have **no preload at all** → ChatGPT and Gemini cannot call any Shelf API. There is no `window.openNotion` in their context.
 - Drag is native via a CSS drag region (`-webkit-app-region: drag` on the header); resize is native (`resizable: true`). No IPC for movement.
@@ -106,7 +139,7 @@ This section is what concretely delivers the user's requirement: *"it's OK that 
 Before any `<webview>` attaches to the popover shell, the main process validates it via the `webContents('will-attach-webview')` event and **blocks** the attachment unless all of the following hold:
 
 - the initial `src` is `https:` and on the provider's allowlist (Section 3);
-- the `partition` is exactly one of `persist:ai-assistant-chatgpt` / `persist:ai-assistant-gemini` (no other partition, no default/in-memory partition);
+- the `partition` is exactly one of `persist:external-assistant-chatgpt` / `persist:external-assistant-gemini` (no other partition, no default/in-memory partition);
 - no `preload` is set (the webview must not bridge to any Node surface);
 - `nodeIntegration` is `false` and `contextIsolation` is `true`;
 - the provider id is recognized.
@@ -126,11 +159,11 @@ Added to the nav block in `src/components/Sidebar.tsx` (the `on-sidebar-nav` gro
 ```tsx
 <button
   className="on-shell-row"
-  onClick={() => window.openNotion.aiAssistant.toggle()}
-  title={t("sidebar.aiAssistant")}
+  onClick={() => window.openNotion.externalAssistant.toggle()}
+  title={t("sidebar.chat")}
 >
   <MessageSquare className="on-sidebar-nav-icon" strokeWidth={1.9} />
-  <span>{t("sidebar.aiAssistant")}</span>
+  <span>{t("sidebar.chat")}</span>
 </button>
 ```
 
@@ -144,18 +177,18 @@ Added in `src/App.tsx` alongside the existing `Cmd+K` handler:
 if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
     && event.key.toLowerCase() === "a") {
   event.preventDefault();
-  window.openNotion.aiAssistant.toggle();
+  window.openNotion.externalAssistant.toggle();
   return;
 }
 ```
 
 ### Open/close/hide logic
 
-The bridge exposes a single function: `window.openNotion.aiAssistant.toggle(options?)`, with an optional `options.provider` to force a provider.
+The bridge exposes a single function: `window.openNotion.externalAssistant.toggle(options?)`, with an optional `options.provider` to force a provider.
 
 | Event | Action |
 |---|---|
-| `toggle()` first time | Create the frameless child `BrowserWindow` with bounds from the last saved state (or default), load `ai-assistant.html`, show |
+| `toggle()` first time | Create the frameless child `BrowserWindow` with bounds from the last saved state (or default), load `external-assistant.html`, show |
 | `toggle()` with popover visible | hide (not destroy) |
 | `toggle()` with popover hidden | show + restore saved bounds |
 | Click `×` in header | hide |
@@ -189,7 +222,7 @@ new BrowserWindow({
   backgroundColor: /* same as main */,
   titleBarStyle: 'hidden',             // drag via CSS region
   webPreferences: {
-    preload: 'ai-assistant-preload.cjs',
+    preload: 'external-assistant-preload.cjs',
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
@@ -201,50 +234,51 @@ new BrowserWindow({
 ## File structure
 
 ```
-vite.config.ts                       # +input: ai-assistant.html
-ai-assistant.html                    # NEW: popover shell HTML entry
-src/ai-assistant/
+vite.config.ts                       # +input: external-assistant.html
+external-assistant.html              # NEW: popover shell HTML entry
+src/external-assistant/
   main.tsx                           # React bootstrap for the shell
-  AiAssistantPopover.tsx             # root: header + webview container + footer
-  AiAssistantHeader.tsx              # drag handle (-webkit-app-region: drag), switcher, close
+  ExternalAssistantPopover.tsx       # root: header + webview container + footer
+  ExternalAssistantHeader.tsx        # drag handle (-webkit-app-region: drag), switcher, close
   AssistantWebview.tsx               # <webview> wrapper + loading state
   providers.ts                       # provider list (id, label, url, partition, allowlist)
-  types.ts                           # ProviderId, AssistantState
-src/lib/aiAssistant.ts               # NEW: pure helpers (parseAssistantState, clampBounds, isAllowedNavigation, ...)
-src/lib/aiAssistant.test.ts          # NEW: unit tests for the pure helpers
-electron/ai-assistant.cjs            # NEW: child BrowserWindow lifecycle + IPC + persistence
-electron/ai-assistant-preload.cjs    # NEW: minimal shell preload (getInitialState/setProvider/close)
-electron/main.cjs                    # wire ai-assistant.cjs in, expose aiAssistant.toggle via IPC
-electron/preload.cjs                 # expose window.openNotion.aiAssistant = { toggle }
-src/components/Sidebar.tsx           # +sidebar button
+  types.ts                           # ProviderId, ExternalAssistantState
+src/lib/externalAssistant.ts         # NEW: pure helpers (parseAssistantState, clampBounds, isAllowedNavigation, ...)
+src/lib/externalAssistant.test.ts    # NEW: unit tests for the pure helpers
+electron/external-assistant.cjs      # NEW: child BrowserWindow lifecycle + IPC + persistence
+electron/external-assistant-preload.cjs # NEW: minimal shell preload (getInitialState/setProvider/close)
+electron/main.cjs                    # wire external-assistant.cjs in, expose externalAssistant.toggle via IPC
+electron/preload.cjs                 # expose window.openNotion.externalAssistant = { toggle }
+src/components/Sidebar.tsx           # +sidebar "Chat" button
 src/App.tsx                          # +Cmd+Shift+A shortcut
-src/lib/desktop.ts                   # +types/window.openNotion.aiAssistant surface
-src/lib/i18n                         # +keys: sidebar.aiAssistant, aiAssistant.{footerOpenAI, footerGoogle, ...}
+src/lib/desktop.ts                   # +types/window.openNotion.externalAssistant surface
+src/lib/i18n                         # +keys: sidebar.chat, externalAssistant.{footerOpenAI, footerGoogle, ...}
 src/global.css (or index.css)        # +popover shell styles (header drag region, footer, webview container)
-tests/e2e/ai-assistant.e2e.ts        # NEW: Playwright e2e for popover lifecycle + switcher
+tests/e2e/external-assistant.e2e.ts  # NEW: Playwright e2e for popover lifecycle + switcher
+tests/e2e/no-ai.e2e.ts               # REPLACE: new contract guard (see "Decision re: the no-ai contract")
 ```
 
 ### React shell components (minimal)
 
 ```tsx
-// AiAssistantPopover.tsx
-export function AiAssistantPopover() {
+// ExternalAssistantPopover.tsx
+export function ExternalAssistantPopover() {
   const [provider, setProvider] = useState<ProviderId>('chatgpt'); // from getInitialState()
   const [loading, setLoading] = useState(true);
 
   return (
-    <div className="ai-popover-root">
-      <AiAssistantHeader
+    <div className="ea-popover-root">
+      <ExternalAssistantHeader
         provider={provider}
-        onProviderChange={(p) => { setProvider(p); window.aiAssistant.setProvider(p); }}
-        onClose={() => window.aiAssistant.close()}
+        onProviderChange={(p) => { setProvider(p); window.externalAssistantShell.setProvider(p); }}
+        onClose={() => window.externalAssistantShell.close()}
       />
-      <div className="ai-popover-body">
+      <div className="ea-popover-body">
         {PROVIDERS.map((p) => (
           <AssistantWebview key={p.id} provider={p} visible={p.id === provider} onLoadingChange={setLoading} />
         ))}
       </div>
-      <footer className="ai-popover-footer">
+      <footer className="ea-popover-footer">
         {provider === 'chatgpt'
           ? 'Served by OpenAI — your chats go to their servers.'
           : 'Served by Google — your chats go to their servers.'}
@@ -255,9 +289,9 @@ export function AiAssistantPopover() {
 ```
 
 ```tsx
-// AiAssistantHeader.tsx — native drag handle
-<div className="ai-popover-header" /* -webkit-app-region: drag */>
-  <div className="ai-popover-switcher">
+// ExternalAssistantHeader.tsx — native drag handle
+<div className="ea-popover-header" /* -webkit-app-region: drag */>
+  <div className="ea-popover-switcher">
     <button data-active={provider === 'chatgpt'} onClick={() => onProviderChange('chatgpt')}>ChatGPT</button>
     <button data-active={provider === 'gemini'} onClick={() => onProviderChange('gemini')}>Gemini</button>
   </div>
@@ -269,7 +303,7 @@ export function AiAssistantPopover() {
 // AssistantWebview.tsx — both webviews always mounted, only one visible
 <webview
   src={provider.url}
-  partition={provider.partition}        // persist:ai-assistant-chatgpt | persist:ai-assistant-gemini
+  partition={provider.partition}        // persist:external-assistant-chatgpt | persist:external-assistant-gemini
   style={{ display: visible ? 'flex' : 'none' }}
   /* navigation gating handled in main process via will-navigate */
 />
@@ -283,7 +317,7 @@ export function AiAssistantPopover() {
 
 ## Persistence
 
-The existing `app_metadata` table (key/value) is reused. A new row, key `ai_assistant_state`:
+The existing `app_metadata` table (key/value) is reused. A new row, key `external_assistant_state`:
 
 ```json
 {
@@ -319,17 +353,17 @@ This follows the existing schema-evolution convention (idempotent writes, no mig
 
 ### Security — error paths
 
-- If the child window fails to create (e.g. webview unsupported): catch in IPC, log, surface a `notice` via Shelf's existing notification system ("AI Assistant unavailable"). The app keeps running.
-- If the `ai_assistant_state` row in `app_metadata` is corrupt: defensive parse, fall back to defaults, do not crash.
+- If the child window fails to create (e.g. webview unsupported): catch in IPC, log, surface a `notice` via Shelf's existing notification system ("Chat unavailable"). The app keeps running.
+- If the `external_assistant_state` row in `app_metadata` is corrupt: defensive parse, fall back to defaults, do not crash.
 
 ## Testing
 
 Aligned to the repo conventions: Vitest for pure logic, Playwright for UI.
 
-### Unit (Vitest) — pure helpers in `src/lib/aiAssistant.ts`
+### Unit (Vitest) — pure helpers in `src/lib/externalAssistant.ts`
 
 ```
-src/lib/aiAssistant.test.ts
+src/lib/externalAssistant.test.ts
 ```
 
 Covered pure functions:
@@ -345,12 +379,17 @@ Covered pure functions:
 
 The popover is a **second Electron window**; Playwright supports multiple Electron contexts/windows.
 
-`tests/e2e/ai-assistant.e2e.ts`:
+`tests/e2e/external-assistant.e2e.ts`:
 
-- Open popover via sidebar button → verify the child window appears
+- Open popover via sidebar "Chat" button → verify the child window appears
 - Open via `Cmd+Shift+A` → same verification
 - Toggle via close button → verify hidden; reopen → verify bounds restored
 - Switch provider → verify the active webview's origin changes (assert on `webview.src` or loaded URL)
+
+**Replaced contract guard** (`tests/e2e/no-ai.e2e.ts` → rewritten in the first plan task):
+
+- Still forbids AI-integrated-into-data: no content-bound IPC commands, no "Ask Shelf AI" in palette/settings, no AI module that reads notes/DB/Studio/files.
+- Adds a positive assertion that the only AI surface is the isolated external popover (e.g. the "Chat" sidebar button opens a separate window, not an in-data AI panel).
 
 **Skipped in CI (documented in the test):** the real provider login flow (requires live credentials + external network — flaky and inappropriate for CI).
 
