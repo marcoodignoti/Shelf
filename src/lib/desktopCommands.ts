@@ -54,6 +54,7 @@ export const DESKTOP_COMMAND_NAMES = [
   "open_external_url",
   "fetch_update_manifest",
   "download_update_artifact",
+  "cancel_update_download",
   "get_workspace_profile",
   "update_workspace_profile",
   "import_profile_avatar",
@@ -110,7 +111,8 @@ export interface DesktopCommandMap {
   import_editor_video: { args: { pageId?: string; page_id?: string; fileName?: string; file_name?: string; bytes?: number[] | Uint8Array; sourcePath?: string; source_path?: string }; result: string };
   open_external_url: { args: { url: string }; result: void };
   fetch_update_manifest: { args: { url: string }; result: unknown };
-  download_update_artifact: { args: { url: string; sha256: string; downloadToken?: string; download_token?: string }; result: { path: string; bytes: number; sha256: string } };
+  download_update_artifact: { args: { url: string; sha256: string; downloadToken?: string; download_token?: string; downloadId?: string; download_id?: string }; result: { path: string; bytes: number; sha256: string } | { cancelled: true; bytes: number; sha256: string } };
+  cancel_update_download: { args: { downloadId?: string; download_id?: string }; result: { cancelled: boolean } };
   get_workspace_profile: { args: undefined; result: WorkspaceProfile };
   update_workspace_profile: { args: Partial<Pick<WorkspaceProfile, "name" | "workspaceName">> & { avatarPath?: string | null }; result: WorkspaceProfile };
   import_profile_avatar: { args: { sourcePath?: string; source_path?: string }; result: string };

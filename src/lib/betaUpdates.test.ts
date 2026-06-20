@@ -127,6 +127,7 @@ describe("beta update manifest", () => {
 	      url: VALID_MAC_URL,
 	      sha256: VALID_SHA,
 	      downloadToken: VALID_DOWNLOAD_TOKEN,
+	      downloadId: expect.any(String),
 	    });
 	  });
 

@@ -79,6 +79,8 @@ class ShelfBackend {
     this.downloadsDir = downloadsDir || path.join(appConfigDir, "downloads");
     this.updateManifestPublicKey = updateManifestPublicKey(publicKey);
     this.verifiedUpdateDownloads = new Map();
+    this.verifiedDownloadsByFingerprint = new Map();
+    this.activeUpdateDownloads = new Map();
     this.db = openDatabase(appConfigDir);
     this.openPath = openPath || (() => Promise.resolve(""));
     this.revealPath = revealPath || (() => {});

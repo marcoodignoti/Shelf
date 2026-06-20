@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Clipboard from "lucide-react/dist/esm/icons/clipboard.mjs";
 import Download from "lucide-react/dist/esm/icons/download.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
-import { BetaUpdateState, checkForBetaUpdate, dismissedUpdateKey, downloadVerifiedUpdate } from "../lib/betaUpdates";
+import { BetaUpdateState, UpdateDownloadProgress, UpdateDownloadTask, checkForBetaUpdate, dismissedUpdateKey, startVerifiedUpdateDownload } from "../lib/betaUpdates";
 import { desktopAutoUpdateActive } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
 import { useT } from "../lib/i18n";
+import { UpdateDownloadProgress as UpdateDownloadProgressBar } from "./UpdateDownloadProgress";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
 const HOMEBREW_UPDATE_COMMAND = [
@@ -33,6 +34,10 @@ function isMacPlatform(): boolean {
   return typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
 }
 
+function isExpiredUpdateToken(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("update download is not linked to a verified manifest");
+}
+
 export function BetaUpdateNotice() {
   const t = useT();
   const showError = useAppStore((state) => state.showError);
@@ -41,6 +46,8 @@ export function BetaUpdateNotice() {
   const [state, setState] = useState<BetaUpdateState>({ status: "idle" });
   const [copiedHomebrewCommand, setCopiedHomebrewCommand] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
+  const downloadTaskRef = useRef<UpdateDownloadTask | null>(null);
 
 	  useEffect(() => {
 	    // Legacy bridge builds can opt out; current desktop builds use the
@@ -78,14 +85,49 @@ export function BetaUpdateNotice() {
 
     try {
       setIsDownloading(true);
-      await downloadVerifiedUpdate(state.download);
+      setDownloadProgress(null);
+      const task = startVerifiedUpdateDownload(state.download, setDownloadProgress);
+      downloadTaskRef.current = task;
+      await task.promise;
       showSuccess("notice.updateDownloaded");
     } catch (error: unknown) {
-      showError(error);
+      if (error instanceof Error && error.message === "Update download cancelled") {
+        setDownloadProgress(null);
+        showSuccess("settings.updates.cancelled");
+      } else if (isExpiredUpdateToken(error)) {
+        const refreshed = await checkForBetaUpdate();
+        if (refreshed.status === "available" && refreshed.download) {
+          setState(refreshed);
+          setDownloadProgress(null);
+          try {
+            const retryTask = startVerifiedUpdateDownload(refreshed.download, setDownloadProgress);
+            downloadTaskRef.current = retryTask;
+            await retryTask.promise;
+            showSuccess("notice.updateDownloaded");
+          } catch (retryError: unknown) {
+            if (retryError instanceof Error && retryError.message === "Update download cancelled") {
+              setDownloadProgress(null);
+              showSuccess("settings.updates.cancelled");
+            } else {
+              showError(retryError);
+            }
+          }
+        } else {
+          setState(refreshed);
+          showError(error);
+        }
+      } else {
+        showError(error);
+      }
     } finally {
+      downloadTaskRef.current = null;
       setIsDownloading(false);
     }
   }, [showError, showErrorKey, showSuccess, state]);
+
+  const handleCancelDownload = useCallback(async () => {
+    await downloadTaskRef.current?.cancel();
+  }, []);
 
   const handleCopyHomebrewCommand = useCallback(async () => {
     try {
@@ -119,20 +161,29 @@ export function BetaUpdateNotice() {
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        className="on-button-secondary on-beta-update-button"
-        onClick={() => void handleDownload()}
-        disabled={isDownloading || !download}
-      >
-        <Download className="h-4 w-4" strokeWidth={1.9} />
-        {isDownloading
-          ? t("settings.updates.verifying")
-          : download
-            ? t("settings.updates.download", { label: manifest.version })
-            : t("settings.updates.noBuild")}
-      </button>
+      <div className="on-update-actions">
+        <button
+          type="button"
+          className="on-button-secondary on-beta-update-button"
+          onClick={() => void handleDownload()}
+          disabled={isDownloading || !download}
+        >
+          <Download className="h-4 w-4" strokeWidth={1.9} />
+          {isDownloading
+            ? t("settings.updates.verifying")
+            : download
+              ? t("settings.updates.download", { label: manifest.version })
+              : t("settings.updates.noBuild")}
+        </button>
+        {isDownloading && (
+          <button type="button" className="on-button-secondary on-beta-update-button" onClick={() => void handleCancelDownload()}>
+            <X className="h-4 w-4" strokeWidth={1.9} />
+            {t("settings.updates.cancel")}
+          </button>
+        )}
+      </div>
       {download?.size && <div className="on-beta-update-size">{download.label} - {download.size}</div>}
+      <UpdateDownloadProgressBar progress={downloadProgress} />
       <div className="on-beta-update-steps">
         <span>{t("betaUpdate.closeInstallReopen")}</span>
         {showHomebrewCommand && <span>{t("betaUpdate.homebrewInstead")}</span>}

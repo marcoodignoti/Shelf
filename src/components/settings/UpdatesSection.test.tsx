@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { UpdatesSection } from "./UpdatesSection";
-import { checkForBetaUpdate, downloadVerifiedUpdate } from "../../lib/betaUpdates";
+import { checkForBetaUpdate, startVerifiedUpdateDownload } from "../../lib/betaUpdates";
 
 const mockShowSuccess = vi.fn();
 const mockShowError = vi.fn();
@@ -27,7 +27,7 @@ vi.mock("../../store/useUIStore", () => ({
 
 vi.mock("../../lib/betaUpdates", () => ({
   checkForBetaUpdate: vi.fn(),
-  downloadVerifiedUpdate: vi.fn(),
+  startVerifiedUpdateDownload: vi.fn(),
   CURRENT_APP_VERSION: "0.4.1",
 }));
 
@@ -84,6 +84,10 @@ describe("UpdatesSection Component", () => {
       },
       download: mockDownload,
     });
+    vi.mocked(startVerifiedUpdateDownload).mockReturnValue({
+      promise: Promise.resolve({ path: "/tmp/Shelf.dmg", bytes: 1, sha256: "sha256" }),
+      cancel: vi.fn(),
+    });
 
     render(<UpdatesSection />);
 
@@ -103,7 +107,7 @@ describe("UpdatesSection Component", () => {
     fireEvent.click(downloadButton);
 
     await waitFor(() => {
-      expect(downloadVerifiedUpdate).toHaveBeenCalledWith(mockDownload);
+      expect(startVerifiedUpdateDownload).toHaveBeenCalledWith(mockDownload, expect.any(Function));
       expect(mockShowSuccess).toHaveBeenCalledWith("settings.updates.downloaded");
     });
   });

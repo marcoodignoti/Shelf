@@ -25,6 +25,24 @@ export type VerifiedUpdateDownload = {
   sha256: string;
 };
 
+export type UpdateDownloadProgressStatus = "downloading" | "verifying" | "done";
+
+export type UpdateDownloadProgress = {
+  url: string;
+  sha256: string;
+  bytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+  bytesPerSecond: number | null;
+  estimatedSecondsRemaining: number | null;
+  status: UpdateDownloadProgressStatus;
+};
+
+export type UpdateDownloadTask = {
+  promise: Promise<VerifiedUpdateDownload>;
+  cancel: () => Promise<void>;
+};
+
 export type BetaUpdateManifest = {
   version: string;
   channel: "beta" | "stable";
@@ -110,6 +128,33 @@ function parseDownload(value: unknown): BetaUpdateDownload | undefined {
 	  };
 }
 
+function parseProgressStatus(value: unknown): UpdateDownloadProgressStatus | null {
+  return value === "downloading" || value === "verifying" || value === "done" ? value : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseUpdateDownloadProgress(value: unknown): UpdateDownloadProgress | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const status = parseProgressStatus(record.status);
+  const bytes = finiteNumber(record.bytes);
+  if (!isString(record.url) || !isString(record.sha256) || !status || bytes === null) return null;
+
+  return {
+    url: record.url,
+    sha256: record.sha256.toLowerCase(),
+    bytes,
+    totalBytes: finiteNumber(record.totalBytes),
+    percent: finiteNumber(record.percent),
+    bytesPerSecond: finiteNumber(record.bytesPerSecond),
+    estimatedSecondsRemaining: finiteNumber(record.estimatedSecondsRemaining),
+    status,
+  };
+}
+
 export function parseBetaUpdateManifest(value: unknown): BetaUpdateManifest {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Invalid update manifest");
@@ -160,19 +205,55 @@ export function downloadForCurrentPlatform(manifest: BetaUpdateManifest): BetaUp
   return downloadForPlatform(manifest, navigator.platform, navigator.userAgent);
 }
 
-export async function downloadVerifiedUpdate(download: BetaUpdateDownload): Promise<VerifiedUpdateDownload> {
+export async function downloadVerifiedUpdate(
+  download: BetaUpdateDownload,
+  onProgress?: (progress: UpdateDownloadProgress) => void,
+): Promise<VerifiedUpdateDownload> {
+  return await startVerifiedUpdateDownload(download, onProgress).promise;
+}
+
+export function startVerifiedUpdateDownload(
+  download: BetaUpdateDownload,
+  onProgress?: (progress: UpdateDownloadProgress) => void,
+): UpdateDownloadTask {
   if (typeof window === "undefined" || !window.openNotion) {
     throw new Error("Shelf desktop bridge is not available");
   }
   if (!download.downloadToken) {
     throw new Error("Update download is not linked to a verified manifest");
   }
+  const downloadId = crypto.randomUUID();
 
-  return await invoke("download_update_artifact", {
-    url: download.url,
-    sha256: download.sha256,
-    downloadToken: download.downloadToken,
-  });
+  const unsubscribe = onProgress && window.openNotion.onDesktopUpdate
+    ? window.openNotion.onDesktopUpdate((eventName, payload) => {
+        if (eventName !== "desktop-update-download-progress") return;
+        const progress = parseUpdateDownloadProgress(payload);
+        if (!progress) return;
+        if (progress.url !== download.url || progress.sha256 !== download.sha256) return;
+        onProgress(progress);
+      })
+    : undefined;
+
+  const promise = invoke("download_update_artifact", {
+      url: download.url,
+      sha256: download.sha256,
+      downloadToken: download.downloadToken,
+      downloadId,
+    }).then((result) => {
+      if ("cancelled" in result && result.cancelled) {
+        throw new Error("Update download cancelled");
+      }
+      return result as VerifiedUpdateDownload;
+    }).finally(() => {
+      unsubscribe?.();
+    });
+
+  return {
+    promise,
+    cancel: async () => {
+      await invoke("cancel_update_download", { downloadId });
+    },
+  };
 }
 
 export async function checkForBetaUpdate(): Promise<BetaUpdateState> {

@@ -795,6 +795,14 @@ function registerIpc() {
     }
     const args = isRecord(payload.args) ? payload.args : {};
     assertRendererInvokeAllowed(payload.command, args);
+    if (payload.command === "download_update_artifact") {
+      return await createBackend().invoke(payload.command, {
+        ...args,
+        onProgress: (progress) => {
+          event.sender.send("desktop-update-download-progress", progress);
+        },
+      });
+    }
     return await createBackend().invoke(payload.command, args);
   });
 

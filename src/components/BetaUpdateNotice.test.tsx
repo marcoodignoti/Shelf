@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { BetaUpdateNotice } from "./BetaUpdateNotice";
-import { checkForBetaUpdate, downloadVerifiedUpdate } from "../lib/betaUpdates";
+import { checkForBetaUpdate, startVerifiedUpdateDownload } from "../lib/betaUpdates";
 import { desktopAutoUpdateActive } from "../lib/desktop";
 
 const mockShowSuccess = vi.fn();
@@ -30,7 +30,7 @@ vi.mock("../store/useUIStore", () => ({
 
 vi.mock("../lib/betaUpdates", () => ({
   checkForBetaUpdate: vi.fn(),
-  downloadVerifiedUpdate: vi.fn(),
+  startVerifiedUpdateDownload: vi.fn(),
   dismissedUpdateKey: vi.fn((v) => `dismissed-update-${v}`),
 }));
 
@@ -145,7 +145,10 @@ describe("BetaUpdateNotice Component", () => {
       manifest: mockManifest,
       download: mockDownload,
     });
-    vi.mocked(downloadVerifiedUpdate).mockResolvedValue(undefined);
+    vi.mocked(startVerifiedUpdateDownload).mockReturnValue({
+      promise: Promise.resolve({ path: "/tmp/Shelf.dmg", bytes: 1, sha256: "sha256" }),
+      cancel: vi.fn(),
+    });
 
     render(<BetaUpdateNotice />);
 
@@ -163,7 +166,7 @@ describe("BetaUpdateNotice Component", () => {
       fireEvent.click(downloadBtn);
     });
 
-    expect(downloadVerifiedUpdate).toHaveBeenCalledWith(mockDownload);
+    expect(startVerifiedUpdateDownload).toHaveBeenCalledWith(mockDownload, expect.any(Function));
     expect(mockShowSuccess).toHaveBeenCalledWith("notice.updateDownloaded");
   });
 

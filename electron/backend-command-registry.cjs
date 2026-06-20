@@ -92,6 +92,7 @@ function createUpdateCommands(backend) {
     open_external_url: bind(backend, "openExternalUrl"),
     fetch_update_manifest: bind(backend, "fetchUpdateManifest"),
     download_update_artifact: bind(backend, "downloadUpdateArtifact"),
+    cancel_update_download: bind(backend, "cancelUpdateDownload"),
   };
 }
 
