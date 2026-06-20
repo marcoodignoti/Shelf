@@ -1,9 +1,13 @@
 import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 const require = createRequire(import.meta.url);
 const tailwindcss = require("@tailwindcss/vite").default as typeof import("@tailwindcss/vite").default;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const host = process.env.VITE_DEV_HOST;
 
@@ -15,6 +19,10 @@ export default defineConfig(async () => ({
   build: {
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        externalAssistant: resolve(__dirname, "external-assistant.html"),
+      },
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
