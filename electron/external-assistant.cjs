@@ -1,6 +1,7 @@
 const path = require("node:path");
-const { BrowserWindow, ipcMain, shell } = require("electron");
+const { BrowserWindow, ipcMain, session, shell } = require("electron");
 const {
+  PROVIDERS,
   isAllowedNavigation,
   validateWebviewAttachment,
 } = require("./external-assistant-providers.cjs");
@@ -8,6 +9,17 @@ const {
 const STATE_KEY = "external_assistant_state";
 const DEFAULT_WIDTH = 420;
 const DEFAULT_HEIGHT = 640;
+
+// Map each provider's persistent session to its id, so navigation handlers
+// can recover the provider after the webview attaches. Electron's Session
+// has no public getPartitionName() API, so we resolve by reference.
+function buildSessionToProviderMap() {
+  const map = new Map();
+  for (const provider of PROVIDERS) {
+    map.set(session.fromPartition(provider.partition), provider.id);
+  }
+  return map;
+}
 
 function createExternalAssistantController({ getMainWindow, backend }) {
   let childWindow = null;
@@ -76,13 +88,17 @@ function createExternalAssistantController({ getMainWindow, backend }) {
 
   function attachSecurityHandlers(webContents) {
     // Defense-in-depth: validate every <webview> before it attaches.
+    // Callback signature: (event, webPreferences, params) where
+    //   - webPreferences (2nd arg) carries preload/nodeIntegration/contextIsolation
+    //   - params (3rd arg) is a flat { src, partition } record
     webContents.on("will-attach-webview", (event, attachedWebPreferences, params) => {
-      const providerId = params.webPreferences?.partition === "persist:external-assistant-gemini"
+      const partition = typeof params?.partition === "string" ? params.partition : undefined;
+      const providerId = partition === "persist:external-assistant-gemini"
         ? "gemini"
         : "chatgpt";
       const result = validateWebviewAttachment({
-        src: params.src,
-        partition: params.webPreferences?.partition,
+        src: params?.src,
+        partition,
         preload: attachedWebPreferences.preload,
         nodeIntegration: Boolean(attachedWebPreferences.nodeIntegration),
         contextIsolation: attachedWebPreferences.contextIsolation !== false,
@@ -94,19 +110,21 @@ function createExternalAssistantController({ getMainWindow, backend }) {
       }
     });
 
+    // Resolve provider by session reference (Electron has no public
+    // getPartitionName() API). Built once; sessions are interned by Electron.
+    const sessionToProvider = buildSessionToProviderMap();
+
     // Each webview's contents, once attached, is gated on navigation.
     webContents.on("did-attach-webview", (_event, webviewContents) => {
       webviewContents.on("will-navigate", (navEvent, url) => {
-        const partition = webviewContents.session.getUserPartitionName();
-        const providerId = partition === "persist:external-assistant-gemini" ? "gemini" : "chatgpt";
-        if (isAllowedNavigation(providerId, url)) return;
+        const providerId = sessionToProvider.get(webviewContents.session) ?? null;
+        if (providerId && isAllowedNavigation(providerId, url)) return;
         navEvent.preventDefault();
         void shell.openExternal(url);
       });
       webviewContents.setWindowOpenHandler(({ url }) => {
-        const partition = webviewContents.session.getUserPartitionName();
-        const providerId = partition === "persist:external-assistant-gemini" ? "gemini" : "chatgpt";
-        if (isAllowedNavigation(providerId, url)) return { action: "allow" };
+        const providerId = sessionToProvider.get(webviewContents.session) ?? null;
+        if (providerId && isAllowedNavigation(providerId, url)) return { action: "allow" };
         void shell.openExternal(url);
         return { action: "deny" };
       });
