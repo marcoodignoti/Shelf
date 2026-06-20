@@ -1,39 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.mjs";
-import X from "lucide-react/dist/esm/icons/x.mjs";
-import Check from "lucide-react/dist/esm/icons/check.mjs";
+import { createPortal } from "react-dom";
 import {
   BetaUpdateDownload,
   BetaUpdateState,
   UpdateDownloadProgress,
   UpdateDownloadTask,
   checkForBetaUpdate,
-  dismissedUpdateKey,
   startVerifiedUpdateDownload,
 } from "../lib/betaUpdates";
 import { desktopAutoUpdateActive } from "../lib/desktop";
 import { useAppStore } from "../store/useAppStore";
 import { useT } from "../lib/i18n";
+import Download from "lucide-react/dist/esm/icons/download.mjs";
 
 const AUTO_CHECK_DELAY_MS = 1_500;
 
-type PillPhase = "idle" | "available" | "downloading" | "done";
-
-function hasDismissedUpdate(version: string): boolean {
-  try {
-    return window.localStorage.getItem(dismissedUpdateKey(version)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function dismissUpdate(version: string): void {
-  try {
-    window.localStorage.setItem(dismissedUpdateKey(version), "1");
-  } catch {
-    // Ignore localStorage failures. Dismissal is only a UI preference.
-  }
-}
+type PillPhase = "idle" | "available" | "downloading" | "paused" | "done";
 
 function isExpiredUpdateToken(error: unknown): boolean {
   return (
@@ -43,13 +25,25 @@ function isExpiredUpdateToken(error: unknown): boolean {
 }
 
 /**
- * Compact update pill rendered at the top-right of the sidebar. Replaces the
- * old full-card `BetaUpdateNotice`. Three visible phases:
- *  - available: blue "Aggiorna" pill + dismiss button
- *  - downloading: pill with an inline progress bar; clicking cancels
- *  - done: "Pronto" pill; clicking shows the install instructions
+ * Compact update pill. Phases:
+ *  - available: "Aggiorna" (or Download icon when compact) — click to download
+ *  - downloading: real-time progress bar (click to cancel)
+ *  - paused: frozen progress bar (click to cancel)
+ *  - done: "Pronto" — click to show install instructions
+ *
+ * The available pill and the progress bar are rendered as stacked crossfade
+ * layers so the transition from "Aggiorna" to the loading bar is fluid.
+ *
+ * When `compact` is true (sidebar closed), renders a tiny icon-only variant
+ * anchored near the sidebar toggle so the update affordance stays visible.
  */
-export function SidebarUpdatePill() {
+export function SidebarUpdatePill({
+  compact = false,
+  onExpandedChange,
+}: {
+  compact?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+}) {
   const t = useT();
   const showError = useAppStore((state) => state.showError);
   const showErrorKey = useAppStore((state) => state.showErrorKey);
@@ -61,8 +55,6 @@ export function SidebarUpdatePill() {
   const [showInstallHint, setShowInstallHint] = useState(false);
 
   useEffect(() => {
-    // Legacy bridge builds can opt out; current desktop builds use the
-    // signed manifest flow on every platform.
     if (desktopAutoUpdateActive()) return;
 
     let cancelled = false;
@@ -70,7 +62,6 @@ export function SidebarUpdatePill() {
       void checkForBetaUpdate().then((result) => {
         if (cancelled) return;
         if (result.status !== "available") return;
-        if (hasDismissedUpdate(result.manifest.version)) return;
         setState(result);
         setPhase("available");
       });
@@ -126,6 +117,9 @@ export function SidebarUpdatePill() {
       showErrorKey("notice.noPlatformDownload");
       return;
     }
+    // Blur so the now-hidden available layer doesn't retain focus behind
+    // the progress bar layer (aria-hidden + focus warning from Chromium).
+    (document.activeElement as HTMLElement | null)?.blur?.();
     await runDownload(state.download);
   }, [runDownload, showErrorKey, state]);
 
@@ -133,87 +127,120 @@ export function SidebarUpdatePill() {
     await downloadTaskRef.current?.cancel();
   }, []);
 
-  const handleDismiss = useCallback(() => {
-    if (state.status !== "available") return;
-    dismissUpdate(state.manifest.version);
-    setState({ status: "idle" });
-    setPhase("idle");
-  }, [state]);
-
   const handleDoneClick = useCallback(() => {
     setShowInstallHint((value) => !value);
   }, []);
+
+  const isBar = phase === "downloading" || phase === "paused";
+  const showAvailable = phase === "available";
+
+  useEffect(() => {
+    if (!compact || !onExpandedChange) return;
+    onExpandedChange(isBar);
+  }, [compact, isBar, onExpandedChange]);
 
   if (phase === "idle" || phase === "available") {
     if (state.status !== "available") return null;
   }
 
-  if (phase === "downloading") {
-    const percent = downloadProgress?.percent;
-    const width = percent === null || percent === undefined ? 100 : Math.max(3, Math.min(100, percent));
-    const label =
-      percent !== null && percent !== undefined
-        ? t("sidebarUpdate.downloading", { percent: String(Math.round(percent)) })
-        : t("settings.updates.verifying");
+  const percent =
+    downloadProgress?.percent !== null && downloadProgress?.percent !== undefined
+      ? Math.max(2, Math.min(100, downloadProgress.percent))
+      : 0;
 
+  if (compact) {
+    const compactLabel = isBar
+      ? t("sidebarUpdate.cancelTitle")
+      : phase === "done"
+        ? t("sidebarUpdate.ready")
+        : t("sidebarUpdate.update");
+    const compactClick = isBar
+      ? () => void handleCancelDownload()
+      : phase === "done"
+        ? handleDoneClick
+        : () => void handleStartDownload();
     return (
       <button
         type="button"
-        className="on-sidebar-update-pill on-sidebar-update-pill-downloading"
-        onClick={() => void handleCancelDownload()}
-        title={t("sidebarUpdate.cancelTitle")}
+        className={`on-sidebar-update-pill-compact ${isBar ? "on-sidebar-update-pill-compact-bar" : phase === "done" ? "on-sidebar-update-pill-compact-done" : "on-sidebar-update-pill-compact-available"}${phase === "paused" ? " on-sidebar-update-pill-compact-paused" : ""}`}
+        onClick={compactClick}
+        disabled={!isBar && phase !== "done" && (state.status !== "available" || !state.download)}
+        title={compactLabel}
+        aria-label={compactLabel}
+        role={isBar ? "progressbar" : undefined}
+        aria-valuenow={isBar ? Math.round(percent) : undefined}
+        aria-valuemin={isBar ? 0 : undefined}
+        aria-valuemax={isBar ? 100 : undefined}
       >
-        <RefreshCw className="on-sidebar-update-pill-spin h-3 w-3" strokeWidth={2.2} />
-        <span className="on-sidebar-update-pill-label">{label}</span>
-        <span className="on-sidebar-update-pill-progress" aria-hidden="true">
-          <span className="on-sidebar-update-pill-progress-fill" style={{ width: `${width}%` }} />
-        </span>
+        <Download className={`on-sidebar-update-pill-compact-icon${isBar ? " on-sidebar-update-pill-compact-icon-hidden" : ""}`} />
+        <span
+          className={`on-sidebar-update-pill-compact-bar-fill${isBar ? " on-sidebar-update-pill-compact-bar-fill-visible" : ""}`}
+          style={{ width: `${percent}%` }}
+        />
       </button>
     );
   }
 
-  if (phase === "done") {
-    return (
-      <div className="on-sidebar-update-pill-group">
+  const fullPill = (
+    <div className="on-sidebar-update-pill-group">
+      {phase === "done" ? (
         <button
           type="button"
           className="on-sidebar-update-pill on-sidebar-update-pill-done"
           onClick={handleDoneClick}
           title={t("betaUpdate.closeInstallReopen")}
         >
-          <Check className="h-3 w-3" strokeWidth={2.4} />
           <span>{t("sidebarUpdate.ready")}</span>
+          {showInstallHint && (
+            <span className="on-sidebar-update-pill-hint">{t("betaUpdate.closeInstallReopen")}</span>
+          )}
         </button>
-        {showInstallHint && (
-          <span className="on-sidebar-update-pill-hint">{t("betaUpdate.closeInstallReopen")}</span>
-        )}
-      </div>
-    );
-  }
-
-  // phase === "available"
-  const { download, manifest } = state;
-  return (
-    <div className="on-sidebar-update-pill-group">
-      <button
-        type="button"
-        className="on-sidebar-update-pill on-sidebar-update-pill-available"
-        onClick={() => void handleStartDownload()}
-        disabled={!download}
-        title={manifest.title}
-      >
-        <RefreshCw className="h-3 w-3" strokeWidth={2.2} />
-        <span>{t("sidebarUpdate.update")}</span>
-      </button>
-      <button
-        type="button"
-        className="on-sidebar-update-pill-dismiss"
-        onClick={handleDismiss}
-        aria-label={t("sidebarUpdate.dismiss")}
-        title={t("sidebarUpdate.dismiss")}
-      >
-        <X className="h-3 w-3" strokeWidth={2.2} />
-      </button>
+      ) : (
+        <>
+          <div
+            className={`on-sidebar-update-pill-layer on-sidebar-update-pill-layer-available${showAvailable ? " is-active" : " is-hidden"}`}
+            inert={!showAvailable}
+          >
+            <button
+              type="button"
+              className="on-sidebar-update-pill on-sidebar-update-pill-available"
+              onClick={() => void handleStartDownload()}
+              disabled={state.status !== "available" || !state.download}
+            >
+              <span>{t("sidebarUpdate.update")}</span>
+            </button>
+          </div>
+          <div
+            className={`on-sidebar-update-pill-layer on-sidebar-update-pill-layer-bar${isBar ? " is-active" : " is-hidden"}`}
+            inert={!isBar}
+          >
+            <button
+              type="button"
+              className={`on-sidebar-update-pill on-sidebar-update-pill-bar${isBar ? ` on-sidebar-update-pill-${phase}` : ""}`}
+              role="progressbar"
+              aria-valuenow={Math.round(percent)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={t("sidebarUpdate.cancelTitle")}
+              title={t("sidebarUpdate.cancelTitle")}
+              onClick={() => void handleCancelDownload()}
+            >
+              <span
+                className="on-sidebar-update-pill-bar-fill"
+                style={{ width: `${percent}%` }}
+              />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
+
+  // When not compact, portal into the sidebar so the pill appears inside it
+  // while keeping this component instance (and its state) always mounted.
+  const target = typeof document !== "undefined"
+    ? document.getElementById("on-sidebar-update-pill-target")
+    : null;
+  if (target) return createPortal(fullPill, target);
+  return fullPill;
 }

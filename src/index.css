@@ -73,7 +73,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 29%;
     --input: 0 0% 24%;
-    --ring: 19 84% 64%;
+    --ring: 19 84% 56%;
   }
 }
  
@@ -159,8 +159,7 @@
     --on-sidebar-highlight-active: hsl(0 0% 100% / 0.14);
     --on-sidebar-highlight-drop: hsl(0 0% 100% / 0.13);
     --on-sidebar-highlight-control: hsl(0 0% 100% / 0.11);
-    background: hsl(var(--background) / 0.12);
-    box-shadow: inset -1px 0 0 hsl(var(--border) / 0.26);
+    background: transparent;
   }
 
   .dark .on-icon-button {
@@ -1576,6 +1575,14 @@
     box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.7);
   }
 
+  /* Smooth the titlebar offsets when the compact update pill expands or the
+     sidebar toggles, so the breadcrumb slides instead of jumping. */
+  [style*="--on-main-titlebar-content-left"],
+  [style*="--on-main-titlebar-action-left"] {
+    transition: padding-left 280ms cubic-bezier(0.4, 0, 0.2, 1),
+                left 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
   .on-section-label {
     @apply px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
   }
@@ -1918,7 +1925,7 @@
 
   .on-settings-sidebar-title h2 {
     font-size: 1rem;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: -0.01em;
     color: hsl(var(--foreground));
   }
@@ -2156,23 +2163,6 @@
     color: hsl(var(--foreground));
   }
 
-  .on-beta-update p {
-    margin: 0;
-    font-size: 0.82rem;
-    line-height: 1.42;
-    color: hsl(var(--muted-foreground));
-  }
-
-  .on-beta-update-list {
-    display: grid;
-    gap: 0.28rem;
-    margin: 0;
-    padding-left: 1rem;
-    font-size: 0.8rem;
-    line-height: 1.36;
-    color: hsl(var(--foreground));
-  }
-
   .on-beta-update-button {
     min-height: 2.15rem;
     gap: 0.45rem;
@@ -2185,12 +2175,6 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
-  }
-
-  .on-beta-update-size {
-    font-size: 0.72rem;
-    line-height: 1.3;
-    color: hsl(var(--muted-foreground));
   }
 
   .on-update-progress {
@@ -2225,35 +2209,6 @@
     color: hsl(var(--muted-foreground));
   }
 
-  .on-beta-update-steps {
-    display: grid;
-    gap: 0.2rem;
-    border-top: 1px solid hsl(var(--border) / 0.58);
-    padding-top: 0.65rem;
-    font-size: 0.74rem;
-    line-height: 1.36;
-    color: hsl(var(--muted-foreground));
-  }
-
-  .on-beta-update-copy {
-    display: inline-flex;
-    min-height: 1.95rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    justify-self: start;
-    border-radius: 0.45rem;
-    border: 1px solid hsl(var(--border) / 0.68);
-    padding: 0.35rem 0.6rem;
-    font-size: 0.74rem;
-    font-weight: 650;
-    color: hsl(var(--foreground));
-  }
-
-  .on-beta-update-copy:hover {
-    background: hsl(var(--accent) / 0.48);
-  }
-
   .on-update-result {
     display: grid;
     gap: 0.72rem;
@@ -2267,28 +2222,38 @@
   .on-sidebar-update-pill-group {
     position: absolute;
     top: 0.55rem;
+    /* Stretch between the traffic lights (left) and the sidebar edge (right)
+       so the bar adapts to the sidebar width and never overlaps anything. */
+    left: 4.5rem;
     right: 0.55rem;
     z-index: 60;
+    height: 1.5rem;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    justify-content: flex-end;
   }
 
   .on-sidebar-update-pill {
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.32rem;
-    height: 1.55rem;
-    padding: 0 0.55rem;
+    justify-content: center;
+    height: 1.5rem;
+    width: max-content;
+    min-width: 3.2rem;
+    padding: 0 0.6rem;
     border: 0;
     border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 660;
+    font-size: 0.85rem;
+    font-weight: 900;
     line-height: 1;
+    letter-spacing: 0.01em;
     color: hsl(0 0% 100%);
     cursor: pointer;
-    transition: transform 120ms ease, box-shadow 150ms ease, filter 150ms ease;
+    overflow: hidden;
+    transition: background 300ms ease,
+                filter 150ms ease,
+                transform 120ms ease;
   }
 
   .on-sidebar-update-pill:active {
@@ -2302,85 +2267,163 @@
 
   .on-sidebar-update-pill-available {
     background: hsl(var(--ring));
-    box-shadow: 0 2px 8px hsl(var(--ring) / 0.36);
   }
 
   .on-sidebar-update-pill-available:hover {
-    filter: brightness(1.07);
-    box-shadow: 0 3px 12px hsl(var(--ring) / 0.46);
+    filter: brightness(1.08);
   }
 
   .on-sidebar-update-pill-done {
     color: hsl(var(--primary-foreground));
     background: hsl(142 56% 40%);
-    box-shadow: 0 2px 8px hsl(142 56% 40% / 0.32);
   }
 
   .on-sidebar-update-pill-done:hover {
-    filter: brightness(1.07);
+    filter: brightness(1.08);
   }
 
-  .on-sidebar-update-pill-downloading {
-    position: relative;
+  /* Crossfade layers for the available<->bar transition. Both layers are
+     absolutely positioned, right-anchored, and crossfade opacity-only. No
+     layout shift happens, so the progress fill always grows left→right. */
+  .on-sidebar-update-pill-layer {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    transition: opacity 200ms ease;
+  }
+
+  .on-sidebar-update-pill-layer.is-active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .on-sidebar-update-pill-layer.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Real-time progress bar (downloading / paused). */
+  .on-sidebar-update-pill-bar {
+    width: 100%;
+    height: 0.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
     overflow: hidden;
-    width: 5.2rem;
+    background: hsl(var(--ring) / 0.28);
+    cursor: pointer;
+    /* Override the base .on-sidebar-update-pill flex centering — the fill
+       must grow from the left edge, not from the center. */
+    display: block;
     justify-content: flex-start;
-    padding-left: 0.5rem;
-    background: hsl(var(--ring) / 0.92);
-    color: hsl(0 0% 100%);
   }
 
-  .on-sidebar-update-pill-downloading:hover {
-    filter: brightness(1.05);
+  .on-sidebar-update-pill-bar:hover,
+  .on-sidebar-update-pill-bar:focus-visible {
+    filter: none;
+    outline: none;
   }
 
-  .on-sidebar-update-pill-spin {
-    animation: on-sidebar-update-spin 1s linear infinite;
+  .on-sidebar-update-pill-paused {
+    background: hsl(var(--ring) / 0.42);
   }
 
-  @keyframes on-sidebar-update-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .on-sidebar-update-pill-label {
-    position: relative;
-    z-index: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .on-sidebar-update-pill-progress {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    background: hsl(var(--ring) / 0.4);
-  }
-
-  .on-sidebar-update-pill-progress-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
+  .on-sidebar-update-pill-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
     background: hsl(var(--ring));
     transition: width 180ms ease;
   }
 
-  .on-sidebar-update-pill-dismiss {
-    display: inline-flex;
-    height: 1.35rem;
-    width: 1.35rem;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 999px;
-    background: hsl(var(--muted) / 0.5);
-    color: hsl(var(--muted-foreground));
-    cursor: pointer;
-    transition: background-color 120ms ease, color 120ms ease;
+  .on-sidebar-update-pill-paused .on-sidebar-update-pill-bar-fill {
+    opacity: 0.7;
   }
 
-  .on-sidebar-update-pill-dismiss:hover {
-    background: hsl(var(--accent) / 0.7);
-    color: hsl(var(--foreground));
+  /* Compact icon-only variant shown next to the sidebar toggle when the
+     sidebar is closed. Expands fluidly from a 1.4rem icon to a 6.5rem bar
+     when downloading, pushing the breadcrumb aside. */
+  .on-sidebar-update-pill-compact {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    overflow: hidden;
+    color: hsl(0 0% 100%);
+    transition: width 280ms cubic-bezier(0.4, 0, 0.2, 1),
+                background 200ms ease;
+  }
+
+  .on-sidebar-update-pill-compact:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .on-sidebar-update-pill-compact:hover,
+  .on-sidebar-update-pill-compact:focus-visible {
+    filter: none;
+    outline: none;
+  }
+
+  .on-sidebar-update-pill-compact-available {
+    background: hsl(var(--ring));
+  }
+
+  .on-sidebar-update-pill-compact-done {
+    background: hsl(142 56% 40%);
+  }
+
+  .on-sidebar-update-pill-compact-bar {
+    width: 6.5rem;
+    height: 0.5rem;
+    background: hsl(var(--ring) / 0.28);
+    cursor: pointer;
+    display: block;
+    justify-content: flex-start;
+  }
+
+  .on-sidebar-update-pill-compact-paused {
+    background: hsl(var(--ring) / 0.42);
+  }
+
+  .on-sidebar-update-pill-compact-icon {
+    width: 0.85rem;
+    height: 0.85rem;
+    stroke-width: 2.4;
+    transition: opacity 180ms ease;
+  }
+
+  .on-sidebar-update-pill-compact-icon-hidden {
+    opacity: 0;
+  }
+
+  .on-sidebar-update-pill-compact-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 999px;
+    background: hsl(var(--ring));
+    opacity: 0;
+    transition: opacity 180ms ease 80ms, width 180ms ease;
+  }
+
+  .on-sidebar-update-pill-compact-bar-fill-visible {
+    opacity: 1;
+  }
+
+  .on-sidebar-update-pill-compact-paused .on-sidebar-update-pill-compact-bar-fill-visible {
+    opacity: 0.7;
   }
 
   .on-sidebar-update-pill-hint {
@@ -2403,7 +2446,6 @@
     box-shadow: 0 16px 40px hsl(0 0% 0% / 0.42);
   }
 
-
   .on-update-result-heading {
     display: flex;
     min-width: 0;
@@ -2411,7 +2453,7 @@
     justify-content: space-between;
     gap: 0.8rem;
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 800;
     color: hsl(var(--foreground));
   }
 

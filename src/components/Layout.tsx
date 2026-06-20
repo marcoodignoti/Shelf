@@ -1,5 +1,6 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
+import { SidebarUpdatePill } from './SidebarUpdatePill';
 import { useUIStore } from '../store/useUIStore';
 import { useShallow } from 'zustand/react/shallow';
 import { PanelLeft } from 'lucide-react';
@@ -17,9 +18,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const sidebarShellWidth = sidebarWidth + sidebarMargin * 2;
   const [shouldRenderSidebar, setShouldRenderSidebar] = React.useState(isSidebarOpen);
   const [isSidebarShellOpen, setIsSidebarShellOpen] = React.useState(isSidebarOpen);
+  const [isPillExpanded, setIsPillExpanded] = React.useState(false);
   const titlebarOffsets = {
     "--on-main-titlebar-action-left": isSidebarShellOpen ? "1.5rem" : "5.25rem",
-    "--on-main-titlebar-content-left": isSidebarShellOpen ? "5.25rem" : "9rem",
+    "--on-main-titlebar-content-left": isSidebarShellOpen
+      ? "5.25rem"
+      : isPillExpanded
+        ? "15rem"
+        : "9rem",
   } as React.CSSProperties;
 
   React.useEffect(() => {
@@ -105,6 +111,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           >
             <PanelLeft className="h-3.5 w-3.5" />
           </button>
+          <SidebarUpdatePill compact={!isSidebarShellOpen} onExpandedChange={setIsPillExpanded} />
         </div>
         {children}
       </main>
