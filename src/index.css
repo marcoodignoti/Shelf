@@ -1124,7 +1124,7 @@
   .on-studio-floating-toolbar {
     min-height: 3.75rem;
     flex-shrink: 0;
-    border-bottom: 1px solid hsl(var(--border) / 0.58);
+    border-bottom: 1px solid hsl(var(--border) / 0.7);
     background: hsl(var(--background));
     box-shadow: 0 1px 0 hsl(0 0% 100% / 0.38);
   }
