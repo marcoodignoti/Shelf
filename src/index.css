@@ -3722,6 +3722,10 @@
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
+
+  .app-window-inactive .on-app-shell {
+    background-color: hsl(var(--background)) !important;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
