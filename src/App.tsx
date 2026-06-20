@@ -4,7 +4,6 @@ import { useAppStore } from "./store/useAppStore";
 import { useUIStore } from "./store/useUIStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppNotice } from "./components/AppNotice";
-import { BetaUpdateNotice } from "./components/BetaUpdateNotice";
 import { DesktopUpdateRestartNotice } from "./components/DesktopUpdateRestartNotice";
 import { SettingsModal } from "./components/SettingsModal";
 import { isNewPageShortcut } from "./lib/shortcuts";
@@ -192,9 +191,7 @@ export default function App() {
         />
         {readyUpdate ? (
           <DesktopUpdateRestartNotice version={readyUpdate.version} onDismiss={() => setReadyUpdate(null)} />
-        ) : (
-          <BetaUpdateNotice />
-        )}
+        ) : null}
         <AppNotice />
       </div>
     );
@@ -250,9 +247,7 @@ export default function App() {
       </Suspense>
       {readyUpdate ? (
         <DesktopUpdateRestartNotice version={readyUpdate.version} onDismiss={() => setReadyUpdate(null)} />
-      ) : (
-        <BetaUpdateNotice />
-      )}
+      ) : null}
       <AppNotice />
     </Layout>
   );

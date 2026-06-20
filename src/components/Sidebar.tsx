@@ -47,6 +47,7 @@ import { useT } from '../lib/i18n';
 import { fileSrc } from '../lib/desktop';
 import type { SettingsSection } from '../lib/settings';
 import type { Theme } from '../store/useUIStore';
+import { SidebarUpdatePill } from './SidebarUpdatePill';
 
 type PendingDelete = {
   page: Page;
@@ -1617,6 +1618,7 @@ export function Sidebar() {
       onKeyDown={handleSidebarKeyDown}
       onMouseDown={() => sidebarRef.current?.focus()}
     >
+      <SidebarUpdatePill />
       <div className="on-sidebar-header-spacer flex-shrink-0" />
       <div className="on-sidebar-nav pl-2.5 pr-0.5">
         <button
