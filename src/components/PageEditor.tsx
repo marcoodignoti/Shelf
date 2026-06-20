@@ -608,7 +608,6 @@ function EditorSurface({
   const showError = useAppStore((state) => state.showError);
   const showSuccess = useAppStore((state) => state.showSuccess);
   const appTheme = useUIStore((state) => state.theme);
-  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const editorFont = useUIStore((state) => state.editorFont);
   const editorFontSize = useUIStore((state) => state.editorFontSize);
   const pageWidth = useUIStore((state) => state.pageWidth);
@@ -1170,7 +1169,7 @@ function EditorSurface({
   return (
     <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
       {!isStudioVariant && (
-        <div className={`h-11 border-b border-border/40 flex items-center justify-between pr-6 shrink-0 bg-background/95 backdrop-blur z-40 select-none ${isSidebarOpen ? "pl-6" : "pl-36"}`}>
+        <div className="h-11 border-b border-border/40 flex items-center justify-between pr-6 pl-36 shrink-0 bg-background/95 backdrop-blur z-40 select-none">
           {/* Breadcrumbs on the left */}
           <nav className="flex items-center gap-1 min-w-0" aria-label={t("editor.pageBreadcrumb")}>
             {breadcrumbs.map((breadcrumb, index) => {
