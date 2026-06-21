@@ -4351,20 +4351,16 @@ body.external-assistant-shell #root {
   --on-win-controls-inset: 142px;
 }
 
-/* Drag region for the top of the main surface on Windows. A thin strip
-   at the very top (10px) — buttons sit at top-3 (12px) so they don't
-   overlap and remain clickable. The breadcrumb header (on-win-titlebar)
-   and studio toolbar provide a taller drag area when present. */
-.platform-win .on-main-surface::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 10px;
+/* Drag region for the top of the main surface on Windows.
+   We avoid -webkit-app-region: drag on pseudo-elements or overlays because
+   Electron's compositor-level hit-testing can intercept clicks even with
+   pointer-events: none. Instead, drag is only enabled on concrete elements
+   that contain no interactive children: the sidebar header spacer, the
+   breadcrumb header (on-win-titlebar), the studio toolbar, and a thin
+   drag bar at the top of HomeView. */
+.platform-win .on-win-home-drag {
+  height: 28px;
   -webkit-app-region: drag;
-  pointer-events: none;
-  z-index: 0;
 }
 
 .platform-win .on-sidebar-header-spacer {

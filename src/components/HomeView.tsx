@@ -50,6 +50,7 @@ export function HomeView({
 
   return (
     <div className="on-scroll-fade h-full overflow-y-auto">
+      <div className="on-win-home-drag" aria-hidden="true" />
       <div className="mx-auto max-w-3xl px-10 py-24">
         <div className="mb-10 flex items-center justify-between gap-4">
           <div>
