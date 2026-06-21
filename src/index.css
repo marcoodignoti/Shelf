@@ -4351,16 +4351,20 @@ body.external-assistant-shell #root {
   --on-win-controls-inset: 142px;
 }
 
-.platform-win .on-win-titlebar-strip {
-  display: block;
+/* Drag region for the top of the main surface on Windows. Uses a
+   pseudo-element with pointer-events: none so the OS-level drag mask
+   is active (window can be dragged) but DOM events pass through to
+   buttons/inputs normally. */
+.platform-win .on-main-surface::before {
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 40px;
-  z-index: 0;
   -webkit-app-region: drag;
-  pointer-events: auto;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .platform-win .on-sidebar-header-spacer {

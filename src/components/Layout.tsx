@@ -113,7 +113,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col"
         style={titlebarOffsets}
       >
-        <div className="on-win-titlebar-strip" aria-hidden="true" />
         <div className="absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2">
           <button
             onClick={toggleSidebar}
