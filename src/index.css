@@ -4351,17 +4351,17 @@ body.external-assistant-shell #root {
   --on-win-controls-inset: 142px;
 }
 
-/* Drag region for the top of the main surface on Windows. Uses a
-   pseudo-element with pointer-events: none so the OS-level drag mask
-   is active (window can be dragged) but DOM events pass through to
-   buttons/inputs normally. */
+/* Drag region for the top of the main surface on Windows. A thin strip
+   at the very top (10px) — buttons sit at top-3 (12px) so they don't
+   overlap and remain clickable. The breadcrumb header (on-win-titlebar)
+   and studio toolbar provide a taller drag area when present. */
 .platform-win .on-main-surface::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 10px;
   -webkit-app-region: drag;
   pointer-events: none;
   z-index: 0;
