@@ -48,8 +48,9 @@
       --accent-c: hsl(var(--ring));
       --card-c: hsl(var(--card));
       --max: 1120px;
-      /* Cron/Notion use a clean grotesque sans. Inter is the closest free analog and
-         is already the app's UI stack. Prefer system Inter if present. */
+      /* Cron/Notion use a clean grotesque sans. Inter (self-hosted variable woff2,
+         see @font-face above) is the closest free analog and is the app's UI stack.
+         System stack is the swap fallback while Inter loads. */
       --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
       --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       --shadow-soft: 0 1px 2px rgba(15,15,15,.04), 0 12px 40px -12px rgba(15,15,15,.12);
@@ -154,7 +155,7 @@
     .btn-fill { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
     .btn-fill:hover {
       transform: translateY(-1px);
-      box-shadow: 0 12px 30px -8px hsl(var(--ring) / .5);
+      box-shadow: 0 12px 30px -8px hsl(var(--foreground) / .3);
     }
     .btn-line { color: var(--ink); border-color: var(--line); background: var(--card-c); }
     .btn-line:hover { border-color: var(--soft); box-shadow: var(--shadow-soft); transform: translateY(-1px); }
@@ -192,6 +193,7 @@
       aspect-ratio: 2784 / 1940;
     }
     .room-media:hover img { transform: translateY(-4px); }
+    @media (hover: none) { .room-media:hover img { transform: none; } }
     @media (max-width: 880px) {
       .room-inner, .room-inner.flip { grid-template-columns: 1fr; gap: 40px; direction: ltr; }
     }
@@ -206,6 +208,7 @@
     .detail-strip figure:nth-child(2) img { aspect-ratio: 1322 / 666; }
     .detail-strip figure:nth-child(3) img { aspect-ratio: 1480 / 856; }
     .detail-strip figure:hover img { transform: translateY(-3px); }
+    @media (hover: none) { .detail-strip figure:hover img { transform: none; } }
     @media (max-width: 680px) { .detail-strip { grid-template-columns: 1fr; } }
 
     /* ---------- Privacy ---------- */
@@ -214,6 +217,7 @@
       padding: 22px 0; border-bottom: 1px solid var(--line); transition: padding-left .2s ease; }
     .privacy-row:first-child { border-top: 1px solid var(--line); }
     .privacy-row:hover { padding-left: 8px; }
+    @media (hover: none) { .privacy-row:hover { padding-left: 0; } }
     .privacy-row .q { font-size: clamp(20px, 2.5vw, 26px); font-weight: 600; letter-spacing: -0.02em; }
     .privacy-row .a { color: hsl(var(--ring)); font-weight: 600; font-size: 15px; white-space: nowrap; }
     @media (max-width: 560px) { .privacy-row .a { white-space: normal; } }
@@ -231,6 +235,7 @@
       padding: 20px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; transition: transform .2s ease; }
     .dl-item:first-child { border-top: 1px solid var(--line); }
     .dl-item:hover { transform: translateX(6px); }
+    @media (hover: none) { .dl-item:hover { transform: none; } }
     .dl-item .name { font-weight: 600; font-size: 17px; }
     .dl-item .note { color: var(--muted-c); font-size: 14px; margin-top: 3px; max-width: 420px; }
     .dl-item .ext { font-family: var(--mono); font-size: 13px; color: var(--muted-c); }
@@ -247,6 +252,16 @@
     .js .pill, .js .lede, .js .cta { opacity: 0; }
     .js .product-shot { opacity: 0; transform: translateY(20px); }
     .js .reveal { opacity: 0; transform: translateY(18px); }
+
+    /* ---------- Mobile ---------- */
+    @media (max-width: 680px) {
+      /* Hide section anchors to keep the nav row single-line; keep GitHub + CTA. */
+      .links a:not(.get):not([href^="https://github"]) { display: none; }
+      header.hero { padding: 80px 0 40px; }
+      section.room { padding: 72px 0; }
+      .finale { padding: 88px 0 80px; }
+      .product-shot { margin-top: 56px; }
+    }
 
     @media (prefers-reduced-motion: reduce) {
       .headline .line > span, .pill, .lede, .cta, .product-shot, .reveal { opacity: 1 !important; transform: none !important; }
