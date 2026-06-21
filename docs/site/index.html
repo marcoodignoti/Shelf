@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <script>document.documentElement.classList.add("js")</script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shelf — Notes and PDFs, kept on your machine</title>
   <meta name="description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
@@ -9,9 +10,10 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="Shelf — Notes and PDFs, kept on your machine">
   <meta property="og:description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
-  <meta property="og:image" content="assets/shelf-social-preview.png">
+  <meta property="og:url" content="https://marcoodignoti.github.io/Shelf/">
+  <meta property="og:image" content="https://marcoodignoti.github.io/Shelf/assets/shelf-social-preview.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="assets/shelf-social-preview.png">
+  <meta name="twitter:image" content="https://marcoodignoti.github.io/Shelf/assets/shelf-social-preview.png">
   <link rel="icon" href="assets/app-icon.png">
   <style>
     /* App design tokens (mirrored from src/index.css) + Cron/Notion editorial language. */
@@ -117,7 +119,7 @@
       display: inline-flex; align-items: center; gap: 8px;
       background: var(--card-c); border: 1px solid var(--line); box-shadow: var(--shadow-soft);
       padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--soft);
-      margin-bottom: 28px; opacity: 0;
+      margin-bottom: 28px;
     }
     .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / .15); }
     .headline {
@@ -126,13 +128,12 @@
     }
     .headline .line { display: block; overflow: hidden; }
     .headline .line > span { display: block; will-change: transform; }
-    .headline .em { color: hsl(var(--ring)); }
     .lede {
       max-width: 560px; color: var(--soft);
       font-size: clamp(18px, 2vw, 22px); line-height: 1.45;
-      margin: 28px auto 0; opacity: 0;
+      margin: 28px auto 0;
     }
-    .cta { margin-top: 36px; opacity: 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .cta { margin-top: 36px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
     .btn {
       display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
       font-size: 15px; font-weight: 600; padding: 13px 26px;
@@ -149,7 +150,7 @@
     .btn-line:hover { border-color: var(--soft); box-shadow: var(--shadow-soft); transform: translateY(-1px); }
 
     /* ---------- Product shot (full-bleed, big, frameless) ---------- */
-    .product-shot { margin: 84px 0 0; opacity: 0; transform: translateY(20px); position: relative; }
+    .product-shot { margin: 84px 0 0; position: relative; }
     .product-shot .frame { overflow: hidden; }
     .product-shot video { width: 100%; height: auto; display: block; }
     /* soft fade at top so the shot blends into the page */
@@ -177,16 +178,16 @@
     .room-text .more { margin-top: 18px; font-size: 15px; color: var(--muted-c); line-height: 1.7; }
     .room-media img {
       width: 100%; transition: transform .35s ease;
+      border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-soft);
     }
     .room-media:hover img { transform: translateY(-4px); }
     @media (max-width: 880px) {
       .room-inner, .room-inner.flip { grid-template-columns: 1fr; gap: 40px; direction: ltr; }
     }
-    .reveal { opacity: 0; transform: translateY(18px); }
 
     /* ---------- Editor detail strip ---------- */
     .detail-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
-    .detail-strip figure { margin: 0; }
+    .detail-strip figure { margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-soft); }
     .detail-strip img {
       width: 100%; transition: transform .25s ease;
     }
@@ -228,6 +229,10 @@
     footer .links a:first-child { margin-left: 0; }
     footer .links a:hover { color: var(--ink); }
 
+    .js .pill, .js .lede, .js .cta { opacity: 0; }
+    .js .product-shot { opacity: 0; transform: translateY(20px); }
+    .js .reveal { opacity: 0; transform: translateY(18px); }
+
     @media (prefers-reduced-motion: reduce) {
       .headline .line > span, .pill, .lede, .cta, .product-shot, .reveal { opacity: 1 !important; transform: none !important; }
       header.hero::before, .finale::before { opacity: 1; }
@@ -259,8 +264,8 @@
     <div class="pill"><span class="dot"></span> Local-first beta · macOS &amp; Windows</div>
     <h1 class="headline">
       <span class="line"><span>Notes and PDFs,</span></span>
-      <span class="line"><span>kept on <em class="em">your</em></span></span>
-      <span class="line"><span>machine.</span></span>
+      <span class="line"><span>kept on</span></span>
+      <span class="line"><span>your machine.</span></span>
     </h1>
     <p class="lede">A calm writing surface and a split-screen PDF reader. Read sources, write linked notes — nothing leaves your computer.</p>
     <div class="cta">
@@ -371,10 +376,13 @@
 <script src="vendor/gsap.min.js"></script>
 <script src="vendor/ScrollTrigger.min.js"></script>
 <script>
-  gsap.registerPlugin(ScrollTrigger);
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  if (!reduce) {
+  if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
+    document.documentElement.classList.remove("js");
+    document.getElementById("hero").classList.add("lit");
+  } else if (!reduce) {
+    gsap.registerPlugin(ScrollTrigger);
     const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
     // Hero entrance: pill, then headline lines rise from behind a mask, then lede/cta.
     tl.to(".pill", { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1)
