@@ -116,12 +116,6 @@
     .btn-line { color: var(--ink); border-color: var(--line); background: transparent; }
     .btn-line:hover { border-color: var(--soft); }
 
-    /* ---------- Single product shot ---------- */
-    .shot { margin: 88px 0 0; }
-    .shot .frame { overflow: hidden; border-radius: 14px; border: 1px solid var(--line); }
-    .shot video, .shot .gif-fallback { width: 100%; height: auto; display: block; }
-    .shot .gif-fallback { border-radius: 13px; }
-
     /* ---------- Rooms (text-led, no decoration) ---------- */
     section.room { padding: 120px 0; border-top: 1px solid var(--line); }
     .room-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
@@ -138,9 +132,13 @@
     }
     .room-text p { color: var(--soft); font-size: 18px; line-height: 1.55; margin: 0; letter-spacing: -0.003em; }
     .room-text .more { margin-top: 16px; font-size: 15px; color: var(--muted); line-height: 1.6; }
+    .room-media .frame { overflow: hidden; border-radius: 12px; border: 1px solid var(--line); }
+    .room-media video, .room-media .gif-fallback, .room-media > img {
+      width: 100%; height: auto; display: block;
+    }
     .room-media > img {
-      width: 100%; border: 1px solid var(--line); border-radius: 10px;
-      aspect-ratio: 2784 / 1940; loading: lazy;
+      border: 1px solid var(--line); border-radius: 10px;
+      aspect-ratio: 2784 / 1940;
     }
     @media (max-width: 820px) {
       .room-inner, .room-inner.flip { grid-template-columns: 1fr; gap: 36px; direction: ltr; }
@@ -191,11 +189,11 @@
     }
 
     /* ---------- JS-gated entrance (single fade, no line-mask) ---------- */
-    .js .hero > *, .js .shot { opacity: 0; }
+    .js .hero > * { opacity: 0; }
     .js .reveal { opacity: 0; }
 
     @media (prefers-reduced-motion: reduce) {
-      .hero > *, .shot, .reveal { opacity: 1 !important; }
+      .hero > *, .reveal { opacity: 1 !important; }
       html { scroll-behavior: auto !important; }
       * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
@@ -230,21 +228,16 @@
     </div>
   </header>
 
-  <!-- Single product shot -->
-  <div class="wrap shot reveal" id="shot">
-    <div class="frame">
-      <video autoplay muted loop playsinline poster="assets/shelf-studio-pdf.png">
-        <source src="assets/shelf-demo.webm" type="video/webm">
-      </video>
-      <img src="assets/shelf-demo.gif" alt="Shelf demo" class="gif-fallback" hidden>
-    </div>
-  </div>
-
   <!-- ROOM: Studio -->
   <section class="room" id="studio">
     <div class="wrap room-inner reveal">
       <div class="room-media">
-        <img src="assets/shelf-studio-pdf.png" alt="Shelf Studio: PDF on the left, linked note on the right" loading="lazy">
+        <div class="frame">
+          <video autoplay muted loop playsinline poster="assets/shelf-studio-pdf.png">
+            <source src="assets/shelf-demo.webm" type="video/webm">
+          </video>
+          <img src="assets/shelf-demo.gif" alt="Shelf demo" class="gif-fallback" hidden>
+        </div>
       </div>
       <div class="room-text">
         <p class="kicker">Studio</p>
@@ -324,7 +317,7 @@
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Safari < 16 can't play WebM — fall back to the GIF.
-  const demoVideo = document.querySelector(".shot video");
+  const demoVideo = document.querySelector(".room-media video");
   if (demoVideo && demoVideo.canPlayType("video/webm") === "") {
     demoVideo.style.display = "none";
     const gif = document.querySelector(".gif-fallback");
@@ -347,7 +340,6 @@
     gsap.registerPlugin(ScrollTrigger);
     // Single fade for hero — no line-mask, no stagger.
     gsap.to(".hero > *", { opacity: 1, duration: 0.7, ease: "power2.out", stagger: 0.06, delay: 0.1 });
-    gsap.to(".shot", { opacity: 1, duration: 0.9, ease: "power2.out", delay: 0.3 });
     // Rooms + finale: simple fade on scroll.
     gsap.utils.toArray(".reveal").forEach((el) => {
       gsap.to(el, {
