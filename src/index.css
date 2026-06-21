@@ -4365,6 +4365,7 @@ body.external-assistant-shell #root {
 
 .platform-win .on-sidebar-header-spacer {
   -webkit-app-region: drag;
+  height: 2.25rem;
 }
 
 .platform-win .on-win-titlebar,

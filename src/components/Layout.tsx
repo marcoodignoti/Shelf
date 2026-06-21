@@ -5,6 +5,7 @@ import { useUIStore } from '../store/useUIStore';
 import { useShallow } from 'zustand/react/shallow';
 import { PanelLeft } from 'lucide-react';
 import { useT } from '../lib/i18n';
+import { isWindowsPlatform } from '../lib/platform';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const t = useT();
@@ -19,13 +20,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [shouldRenderSidebar, setShouldRenderSidebar] = React.useState(isSidebarOpen);
   const [isSidebarShellOpen, setIsSidebarShellOpen] = React.useState(isSidebarOpen);
   const [isPillExpanded, setIsPillExpanded] = React.useState(false);
+  const isWin = isWindowsPlatform();
   const titlebarOffsets = {
-    "--on-main-titlebar-action-left": isSidebarShellOpen ? "1.5rem" : "5.25rem",
-    "--on-main-titlebar-content-left": isSidebarShellOpen
-      ? "5.25rem"
-      : isPillExpanded
-        ? "15rem"
-        : "9rem",
+    "--on-main-titlebar-action-left": isWin
+      ? "0.75rem"
+      : isSidebarShellOpen ? "1.5rem" : "5.25rem",
+    "--on-main-titlebar-content-left": isWin
+      ? isSidebarShellOpen
+        ? "1.5rem"
+        : isPillExpanded
+          ? "11rem"
+          : "5rem"
+      : isSidebarShellOpen
+        ? "5.25rem"
+        : isPillExpanded
+          ? "15rem"
+          : "9rem",
   } as React.CSSProperties;
 
   React.useEffect(() => {
