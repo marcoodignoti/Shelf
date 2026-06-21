@@ -113,7 +113,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col"
         style={titlebarOffsets}
       >
-        <div className="on-win-titlebar-actions absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2">
+        <div className="on-win-titlebar-actions absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2"
+          style={isWin ? { top: "2.25rem" } : undefined}
+        >
           <button
             onClick={toggleSidebar}
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

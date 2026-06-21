@@ -4359,7 +4359,7 @@ body.external-assistant-shell #root {
    breadcrumb header (on-win-titlebar), the studio toolbar, and a thin
    drag bar at the top of HomeView. */
 .platform-win .on-win-home-drag {
-  height: 28px;
+  height: 2rem;
   -webkit-app-region: drag;
 }
 
@@ -4384,6 +4384,11 @@ body.external-assistant-shell #root {
   margin-right: 0;
   border-top-right-radius: 0;
   border-top-left-radius: 0;
+}
+
+/* Push the breadcrumb header below the 32px native titlebar overlay */
+.platform-win .on-win-titlebar {
+  margin-top: 2rem;
 }
 
 .platform-win .on-win-titlebar,

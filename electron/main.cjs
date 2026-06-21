@@ -188,7 +188,7 @@ function appIconPath() {
   return candidates.find((candidate) => fs.existsSync(candidate));
 }
 
-const WIN_TITLE_BAR_HEIGHT = 40;
+const WIN_TITLE_BAR_HEIGHT = 32;
 
 function windowsTitleBarColors() {
   const dark = nativeTheme.shouldUseDarkColors;
