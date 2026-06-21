@@ -80,6 +80,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="on-app-shell relative flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
+      <div className="on-win-titlebar-strip" aria-hidden="true" />
       {shouldRenderSidebar && (
         <div
           className={`on-sidebar-shell ${isSidebarShellOpen ? "on-sidebar-shell-open" : "on-sidebar-shell-closed"}`}

@@ -247,14 +247,12 @@ function createExternalAssistantController({
   function ensureWindow() {
     if (childWindow && !childWindow.isDestroyed()) return childWindow;
     wireFocusTracking();
-    const main = getMainWindow();
     const saved = readState();
     const bounds = saved
       ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
       : defaultBounds();
 
     childWindow = new BrowserWindow({
-      parent: main ?? undefined,
       frame: false,
       resizable: true,
       maximizable: false,
@@ -307,8 +305,7 @@ function createExternalAssistantController({
 
   function show(provider) {
     const win = ensureWindow();
-    win.show();
-    win.focus();
+    win.showInactive();
     wasOpenForUser = true;
     persistState({
       ...currentBounds(),
@@ -339,8 +336,8 @@ function createExternalAssistantController({
     focusTrackedWindow = main;
     main.on("focus", () => {
       clearBlurHideTimer();
-      if (wasOpenForUser && childWindow && !childWindow.isDestroyed()) {
-        childWindow.show();
+      if (wasOpenForUser && childWindow && !childWindow.isDestroyed() && !childWindow.isVisible()) {
+        childWindow.showInactive();
       }
     });
     main.on("blur", () => {

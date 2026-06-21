@@ -1,11 +1,9 @@
-import { useState } from "react";
-import Check from "lucide-react/dist/esm/icons/check.mjs";
+import { useEffect, useRef, useState } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.mjs";
-import ExternalLink from "lucide-react/dist/esm/icons/external-link.mjs";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import type { ProviderId } from "../lib/externalAssistant";
 import { SHELL_PROVIDERS } from "./providers";
+import { ProviderIcon } from "./ProviderIcons";
 
 interface Props {
   provider: ProviderId;
@@ -15,18 +13,8 @@ interface Props {
   onClose: () => void;
 }
 
-const PROVIDER_META: Record<ProviderId, { icon: string; subtitle: string; shortUrl: string }> = {
-  chatgpt: {
-    icon: "◎",
-    subtitle: "Spiegazione Q&A",
-    shortUrl: "https://chatgpt.com",
-  },
-  gemini: {
-    icon: "✦",
-    subtitle: "Immagini e testo",
-    shortUrl: "https://gemini.google.com",
-  },
-};
+const COMPACT_THRESHOLD = 360;
+const COMPACT_RELEASE = 380;
 
 export function ExternalAssistantHeader({
   provider,
@@ -35,74 +23,65 @@ export function ExternalAssistantHeader({
   onOpenExternal,
   onClose,
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const active = SHELL_PROVIDERS.find((p) => p.id === provider) ?? SHELL_PROVIDERS[0];
-  const activeMeta = PROVIDER_META[active.id];
+  const [compact, setCompact] = useState(false);
+  const [actionValue, setActionValue] = useState("");
+  const headerRef = useRef<HTMLDivElement>(null);
 
-  const selectProvider = (next: ProviderId) => {
-    onProviderChange(next);
-    setMenuOpen(false);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      const width = el.clientWidth;
+      setCompact((prev) => (prev ? width < COMPACT_RELEASE : width < COMPACT_THRESHOLD));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleActionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const action = event.target.value;
+    setActionValue("");
+    if (action === "reload") onReload();
+    else if (action === "open") onOpenExternal();
+    else if (action === "close") onClose();
   };
 
+  const headerClass = `ea-popover-header${compact ? " ea-popover-header-compact" : ""}`;
+
   return (
-    <div className="ea-popover-header">
-      <div className="ea-popover-traffic-safe" />
-      <div className="ea-popover-toolbar">
-        <div className="ea-provider-control">
-          <button
-            type="button"
-            className="ea-provider-trigger"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
+    <div className={headerClass} ref={headerRef}>
+      <div className="ea-popover-toolbar ea-popover-toolbar-left">
+        <label className="ea-native-select ea-provider-select">
+          <span className="ea-provider-select-icon" aria-hidden="true">
+            <ProviderIcon providerId={provider} className="ea-provider-select-svg" />
+          </span>
+          <select
+            value={provider}
+            onChange={(event) => onProviderChange(event.target.value as ProviderId)}
+            aria-label="Assistant provider"
           >
-            <span className="ea-provider-icon" aria-hidden="true">{activeMeta.icon}</span>
-            <ChevronDown className="ea-provider-chevron" aria-hidden="true" />
-            <span className="ea-provider-url">{activeMeta.shortUrl}</span>
-          </button>
-          {menuOpen ? (
-            <div className="ea-provider-menu" role="menu">
-              {SHELL_PROVIDERS.map((p) => {
-                const meta = PROVIDER_META[p.id];
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="ea-provider-menu-item"
-                    role="menuitemradio"
-                    aria-checked={p.id === provider}
-                    onClick={() => selectProvider(p.id)}
-                  >
-                    <span className="ea-provider-menu-icon" aria-hidden="true">{meta.icon}</span>
-                    <span className="ea-provider-menu-copy">
-                      <span className="ea-provider-menu-label">{p.label}</span>
-                      <span className="ea-provider-menu-subtitle">{meta.subtitle}</span>
-                    </span>
-                    {p.id === provider ? <Check className="ea-provider-check" aria-hidden="true" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          className="ea-toolbar-button"
-          aria-label="Reload"
-          title="Reload"
-          onClick={onReload}
-        >
-          <RefreshCw className="ea-toolbar-icon" />
-        </button>
-        <button
-          type="button"
-          className="ea-toolbar-button"
-          aria-label="Open in browser"
-          title="Open in browser"
-          onClick={onOpenExternal}
-        >
-          <ExternalLink className="ea-toolbar-icon" />
-        </button>
+            {SHELL_PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="ea-native-select-chevron" aria-hidden="true" />
+        </label>
+      </div>
+      <div className="ea-popover-toolbar ea-popover-toolbar-right">
+        <label className="ea-native-select ea-action-select">
+          <select
+            value={actionValue}
+            onChange={handleActionChange}
+            aria-label="Assistant actions"
+          >
+            <option value="" disabled>⋯</option>
+            <option value="reload">Reload</option>
+            <option value="open">Open in browser</option>
+          </select>
+          <ChevronDown className="ea-native-select-chevron" aria-hidden="true" />
+        </label>
         <button
           type="button"
           className="ea-toolbar-button ea-popover-close"
@@ -113,14 +92,6 @@ export function ExternalAssistantHeader({
           <X className="ea-toolbar-icon" />
         </button>
       </div>
-      {menuOpen ? (
-        <button
-          type="button"
-          className="ea-provider-backdrop"
-          aria-label="Close provider menu"
-          onClick={() => setMenuOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

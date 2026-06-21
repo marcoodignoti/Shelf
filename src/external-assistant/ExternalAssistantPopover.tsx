@@ -49,11 +49,6 @@ export function ExternalAssistantPopover() {
         onOpenExternal={() => void window.externalAssistantShell?.openProviderExternal(provider)}
         onClose={() => window.externalAssistantShell?.close()}
       />
-      <footer className="ea-popover-footer">
-        {provider === "chatgpt"
-          ? "OpenAI provider - chats go to OpenAI servers."
-          : "Google provider - chats go to Google servers."}
-      </footer>
       <div ref={bodyRef} className="ea-popover-body">
         {SHELL_PROVIDERS.map((p) => (
           <AssistantWebview key={p.id} provider={p} visible={p.id === provider} />

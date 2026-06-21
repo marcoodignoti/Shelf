@@ -188,6 +188,30 @@ function appIconPath() {
   return candidates.find((candidate) => fs.existsSync(candidate));
 }
 
+const WIN_TITLE_BAR_HEIGHT = 40;
+
+function windowsTitleBarColors() {
+  const dark = nativeTheme.shouldUseDarkColors;
+  return {
+    color: dark ? "#171717" : "#f7f7f5",
+    symbolColor: dark ? "#e6e6e6" : "#2b2b2b",
+    height: WIN_TITLE_BAR_HEIGHT,
+  };
+}
+
+function applyWindowsTitleBarOverlay(window) {
+  if (process.platform !== "win32") return;
+  if (!window || window.isDestroyed()) return;
+  if (typeof window.setTitleBarOverlay !== "function") return;
+  try {
+    window.setTitleBarOverlay(windowsTitleBarColors());
+  } catch (error) {
+    console.warn(
+      `[titlebar] failed to apply overlay: ${error?.message ?? error}`,
+    );
+  }
+}
+
 function parseStudioPdfDocumentId(requestUrl) {
   let url;
   try {
@@ -624,18 +648,31 @@ function shouldOpenExternal(targetUrl) {
 
 function createMainWindow() {
   const icon = appIconPath();
+  const isMac = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
+  const darkAtBoot = nativeTheme.shouldUseDarkColors;
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 960,
     minHeight: 640,
     title: "Shelf",
-    backgroundColor: process.platform === "darwin" ? "#00000000" : "#f7f7f5",
-    transparent: process.platform === "darwin",
-    vibrancy: process.platform === "darwin" ? "sidebar" : undefined,
-    visualEffectState: process.platform === "darwin" ? "active" : undefined,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 24, y: 24 },
+    backgroundColor: isMac
+      ? "#00000000"
+      : isWindows
+        ? (darkAtBoot ? "#171717" : "#f7f7f5")
+        : "#f7f7f5",
+    transparent: isMac,
+    vibrancy: isMac ? "sidebar" : undefined,
+    visualEffectState: isMac ? "active" : undefined,
+    titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
+    trafficLightPosition: isMac ? { x: 24, y: 24 } : undefined,
+    ...(isWindows
+      ? {
+          titleBarOverlay: windowsTitleBarColors(),
+          backgroundMaterial: "mica",
+        }
+      : {}),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -645,6 +682,8 @@ function createMainWindow() {
       webSecurity: true,
     },
   });
+
+  applyWindowsTitleBarOverlay(mainWindow);
 
   const devRendererUrl = trustedDevRendererUrl();
   if (devRendererUrl) {
@@ -1097,6 +1136,9 @@ app.whenReady().then(async () => {
   createBackend();
   await startStudioPdfServer();
   createMainWindow();
+  nativeTheme.on("updated", () => {
+    if (mainWindow) applyWindowsTitleBarOverlay(mainWindow);
+  });
   externalAssistant = createExternalAssistantController({
     getMainWindow: () => mainWindow,
     backend: createBackend(),

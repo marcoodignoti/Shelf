@@ -4078,7 +4078,7 @@ body.external-assistant-shell #root {
   overflow: hidden;
   background: #000;
   color: hsl(var(--foreground));
-  border-radius: 26px;
+  border-radius: 10px;
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, hsl(var(--border)) 55%, transparent),
     0 24px 80px color-mix(in srgb, #000 34%, transparent);
@@ -4090,12 +4090,14 @@ body.external-assistant-shell #root {
   z-index: 5;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   min-height: 64px;
   padding: 10px 14px 8px;
   flex-shrink: 0;
   background: color-mix(in srgb, #111 80%, transparent);
   backdrop-filter: blur(24px);
+  border-radius: 10px 10px 0 0;
 }
 
 .ea-popover-traffic-safe {
@@ -4109,23 +4111,24 @@ body.external-assistant-shell #root {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  margin: 0 auto;
 }
 
-.ea-provider-control {
+.ea-popover-toolbar-left {
+  margin: 0 auto 0 0;
+}
+
+.ea-popover-toolbar-right {
+  margin: 0 0 0 auto;
+}
+
+.ea-native-select {
   -webkit-app-region: no-drag;
   position: relative;
-}
-
-.ea-provider-trigger {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-width: 176px;
-  max-width: 240px;
   height: 42px;
-  padding: 0 14px;
-  border: 0;
+  padding: 0 10px 0 12px;
   border-radius: 22px;
   color: hsl(var(--foreground));
   background: color-mix(in srgb, #2b2b2b 92%, transparent);
@@ -4133,12 +4136,33 @@ body.external-assistant-shell #root {
   cursor: pointer;
 }
 
-.ea-provider-trigger:hover,
-.ea-toolbar-button:hover {
+.ea-native-select:hover {
   background: color-mix(in srgb, #3a3a3a 94%, transparent);
 }
 
-.ea-provider-icon {
+.ea-native-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0 22px 0 0;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ea-provider-select {
+  min-width: 0;
+  max-width: 220px;
+  padding: 0 8px 0 8px;
+  gap: 6px;
+}
+
+.ea-provider-select-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4146,109 +4170,43 @@ body.external-assistant-shell #root {
   height: 24px;
   border-radius: 9px;
   background: #0f0f0f;
-  font-size: 17px;
-  line-height: 1;
   flex-shrink: 0;
 }
 
-.ea-provider-chevron {
+.ea-provider-select-svg {
   width: 15px;
   height: 15px;
-  flex-shrink: 0;
+  color: hsl(var(--foreground));
 }
 
-.ea-provider-url {
+.ea-provider-select select {
+  flex: 1 1 auto;
+}
+
+.ea-action-select {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.ea-provider-backdrop {
-  -webkit-app-region: no-drag;
-  position: fixed;
-  inset: 0;
-  z-index: 5;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
   padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.ea-provider-menu {
-  -webkit-app-region: no-drag;
-  position: absolute;
-  top: 50px;
-  left: 0;
-  z-index: 10;
-  width: 280px;
-  overflow: hidden;
-  border-radius: 26px;
-  background: color-mix(in srgb, #f7f7f7 90%, transparent);
-  color: #111;
-  border: 1px solid color-mix(in srgb, #000 10%, transparent);
-  box-shadow: 0 24px 80px color-mix(in srgb, #000 18%, transparent);
-  backdrop-filter: blur(30px);
-}
-
-.ea-provider-menu-item {
-  display: grid;
-  grid-template-columns: 34px 1fr 20px;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 74px;
-  padding: 12px 16px;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, hsl(var(--border)) 54%, transparent);
-  color: #111;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ea-provider-menu-item:last-child {
-  border-bottom: 0;
-}
-
-.ea-provider-menu-item:hover {
-  background: color-mix(in srgb, hsl(var(--muted)) 72%, transparent);
-}
-
-.ea-provider-menu-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 20px;
-  line-height: 1;
 }
 
-.ea-provider-menu-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+.ea-action-select select {
+  width: 42px;
+  padding: 0;
+  font-size: 18px;
+  text-align-last: center;
+  text-align: center;
 }
 
-.ea-provider-menu-label {
-  font-size: 17px;
-  font-weight: 700;
+.ea-action-select select option {
+  font-size: 13px;
+  padding: 2px 8px;
 }
 
-.ea-provider-menu-subtitle {
-  font-size: 14px;
-  color: #666;
-  line-height: 1.2;
-}
-
-.ea-provider-check {
-  width: 18px;
-  height: 18px;
+.ea-action-select .ea-native-select-chevron {
+  display: none;
 }
 
 .ea-toolbar-button {
@@ -4264,6 +4222,11 @@ body.external-assistant-shell #root {
   color: hsl(var(--foreground));
   cursor: pointer;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 9%, transparent);
+  flex-shrink: 0;
+}
+
+.ea-toolbar-button:hover {
+  background: color-mix(in srgb, #3a3a3a 94%, transparent);
 }
 
 .ea-toolbar-icon {
@@ -4275,12 +4238,48 @@ body.external-assistant-shell #root {
   background: color-mix(in srgb, #2f2f2f 94%, transparent);
 }
 
+.ea-native-select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.ea-popover-header-compact .ea-provider-select {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ea-popover-header-compact .ea-action-select {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* Light-mode overrides for the native selects. */
+.light .ea-native-select {
+  background: color-mix(in srgb, hsl(var(--secondary)) 92%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 8%, transparent);
+}
+
+.light .ea-native-select:hover {
+  background: color-mix(in srgb, hsl(var(--accent)) 70%, transparent);
+}
+
+.light .ea-provider-select-icon {
+  background: hsl(var(--card));
+}
+
 .ea-popover-body {
   position: relative;
   flex: 1 1 auto;
   overflow: hidden;
   background: #fff;
   padding-bottom: 0;
+  border-radius: 0 0 10px 10px;
 }
 
 .ea-popover-webview {
@@ -4289,6 +4288,7 @@ body.external-assistant-shell #root {
   width: 100%;
   height: 100%;
   border: none;
+  border-radius: 0 0 10px 10px;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -4300,15 +4300,105 @@ body.external-assistant-shell #root {
   pointer-events: auto;
 }
 
-.ea-popover-footer {
-  flex-shrink: 0;
-  padding: 5px 16px 6px;
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
-  color: hsl(var(--muted-foreground));
-  background: color-mix(in srgb, #111 92%, transparent);
-  border-top: 1px solid color-mix(in srgb, #fff 6%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, #fff 6%, transparent);
-  backdrop-filter: blur(18px);
+/* Light-mode overrides for the external assistant popover shell.
+   The base rules above are hardcoded dark (the popover was originally
+   dark-only). When the shell's <html> gets the .light class (set from
+   src/external-assistant/main.tsx based on the user's theme), re-skin the
+   header, root, toolbar buttons and footer to match the light theme. */
+.light .ea-popover-root {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, hsl(var(--border)) 70%, transparent),
+    0 24px 80px color-mix(in srgb, #000 18%, transparent);
+}
+
+.light .ea-popover-header {
+  background: color-mix(in srgb, hsl(var(--card)) 78%, transparent);
+  backdrop-filter: blur(24px);
+}
+
+.light .ea-toolbar-button {
+  background: color-mix(in srgb, hsl(var(--secondary)) 92%, transparent);
+  color: hsl(var(--foreground));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 8%, transparent);
+}
+
+.light .ea-toolbar-button:hover {
+  background: color-mix(in srgb, hsl(var(--accent)) 70%, transparent);
+}
+
+.light .ea-popover-close {
+  background: color-mix(in srgb, hsl(var(--accent)) 70%, transparent);
+}
+
+/* Windows titlebar integration -------------------------------------------------
+   On Windows the native title bar is hidden (titleBarStyle: "hidden" + a native
+   titleBarOverlay for the window controls). We mark dedicated regions as
+   drag handles and keep interactive elements clickable. Mica is opaque, so the
+   macOS backdrop-filter blur on the sidebar has nothing to blur here and is
+   removed in favor of letting the native material show through.
+*/
+:root {
+  --on-win-controls-inset: 0px;
+}
+
+.on-win-titlebar-strip {
+  display: none;
+}
+
+.platform-win {
+  --on-win-controls-inset: 152px;
+}
+
+.platform-win .on-win-titlebar-strip {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: var(--on-win-controls-inset);
+  height: 40px;
+  z-index: 1;
+  -webkit-app-region: drag;
+  pointer-events: auto;
+}
+
+.platform-win .on-sidebar-header-spacer {
+  -webkit-app-region: drag;
+}
+
+.platform-win .on-win-titlebar,
+.platform-win .on-studio-floating-toolbar {
+  -webkit-app-region: drag;
+  padding-right: var(--on-win-controls-inset) !important;
+}
+
+.platform-win .on-studio-floating-toolbar {
+  pointer-events: auto;
+}
+
+.platform-win button,
+.platform-win input,
+.platform-win textarea,
+.platform-win select,
+.platform-win a,
+.platform-win [role="button"],
+.platform-win [role="menuitem"],
+.platform-win [role="menuitemradio"],
+.platform-win [role="menuitemcheckbox"],
+.platform-win [role="option"],
+.platform-win [role="tab"] {
+  -webkit-app-region: no-drag;
+}
+
+/* Mica is an opaque native material; the macOS sidebar blur has nothing to
+   blur behind it on Windows, so drop it and let the material show through. */
+.platform-win .on-sidebar-shell {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.app-window-inactive.platform-win .on-sidebar-shell {
+  background: transparent !important;
 }
