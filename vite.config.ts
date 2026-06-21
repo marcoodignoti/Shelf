@@ -55,7 +55,7 @@ export default defineConfig(async () => ({
     strictPort: true,
     host: host || false,
     watch: {
-      ignored: ["**/dist-electron/**"],
+      ignored: ["**/dist-electron/**", "**/.shelf-dev/**"],
     },
     hmr: host
       ? {
