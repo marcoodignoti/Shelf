@@ -53,6 +53,10 @@ function createHarness() {
       this.visible = true;
     }
 
+    showInactive() {
+      this.visible = true;
+    }
+
     hide() {
       this.visible = false;
     }
