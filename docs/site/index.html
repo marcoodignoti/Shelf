@@ -17,7 +17,15 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://marcoodignoti.github.io/Shelf/assets/shelf-social-preview.png">
   <link rel="icon" href="assets/app-icon.png">
+  <link rel="preload" href="assets/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/Inter-Variable.woff2") format("woff2-variations");
+      font-weight: 100 900;
+      font-display: swap;
+      font-style: normal;
+    }
     /* App design tokens (mirrored from src/index.css) + Cron/Notion editorial language. */
     :root {
       --background: 210 20% 97%;

@@ -46,6 +46,8 @@ jobs:
           cp -v docs/assets/shelf-demo.gif  deploy/assets/
           # App icon (favicon / brand)
           cp -v assets/app-icon.png deploy/assets/
+          # Self-hosted Inter variable font (subsetted, ~130KB)
+          cp -v docs/assets/Inter-Variable.woff2 deploy/assets/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
