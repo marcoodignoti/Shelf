@@ -28,6 +28,7 @@ function spawnProcess(command, args, options = {}) {
     cwd: root,
     stdio: "inherit",
     detached: process.platform !== "win32",
+    shell: process.platform === "win32",
     ...options,
     env: {
       ...process.env,
