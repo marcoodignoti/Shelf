@@ -4348,7 +4348,7 @@ body.external-assistant-shell #root {
 }
 
 .platform-win {
-  --on-win-controls-inset: 152px;
+  --on-win-controls-inset: 142px;
 }
 
 .platform-win .on-win-titlebar-strip {
@@ -4365,7 +4365,17 @@ body.external-assistant-shell #root {
 
 .platform-win .on-sidebar-header-spacer {
   -webkit-app-region: drag;
-  height: 2.25rem;
+  height: 0.5rem;
+}
+
+/* On Windows the main surface extends to the top-right corner so the header
+   background sits cleanly under the native titlebar controls. No top margin,
+   no top-right rounding — the controls overlay the header directly. */
+.platform-win .on-main-surface {
+  margin-top: 0;
+  margin-right: 0;
+  border-top-right-radius: 0;
+  border-top-left-radius: 0;
 }
 
 .platform-win .on-win-titlebar,
