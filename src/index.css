@@ -4356,16 +4356,16 @@ body.external-assistant-shell #root {
   position: absolute;
   top: 0;
   left: 0;
-  right: var(--on-win-controls-inset);
+  right: 0;
   height: 40px;
-  z-index: 1;
+  z-index: 0;
   -webkit-app-region: drag;
   pointer-events: auto;
 }
 
 .platform-win .on-sidebar-header-spacer {
   -webkit-app-region: drag;
-  height: 0.5rem;
+  height: 1rem;
 }
 
 /* On Windows the main surface extends to the top-right corner so the header

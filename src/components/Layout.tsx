@@ -27,7 +27,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       : isSidebarShellOpen ? "1.5rem" : "5.25rem",
     "--on-main-titlebar-content-left": isWin
       ? isSidebarShellOpen
-        ? "1.5rem"
+        ? "2.75rem"
         : isPillExpanded
           ? "11rem"
           : "5rem"
@@ -90,7 +90,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="on-app-shell relative flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
-      <div className="on-win-titlebar-strip" aria-hidden="true" />
       {shouldRenderSidebar && (
         <div
           className={`on-sidebar-shell ${isSidebarShellOpen ? "on-sidebar-shell-open" : "on-sidebar-shell-closed"}`}
@@ -114,6 +113,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col"
         style={titlebarOffsets}
       >
+        <div className="on-win-titlebar-strip" aria-hidden="true" />
         <div className="absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2">
           <button
             onClick={toggleSidebar}
