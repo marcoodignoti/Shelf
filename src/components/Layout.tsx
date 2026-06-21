@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { PanelLeft } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { isWindowsPlatform } from '../lib/platform';
+import { WindowsControls } from './WindowsControls';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const t = useT();
@@ -36,6 +37,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         : isPillExpanded
           ? "15rem"
           : "9rem",
+    "--on-win-controls-inset": isWin ? "142px" : "0px",
   } as React.CSSProperties;
 
   React.useEffect(() => {
@@ -90,6 +92,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="on-app-shell relative flex h-screen overflow-hidden bg-transparent text-foreground font-sans">
+      {isWin && <WindowsControls />}
       {shouldRenderSidebar && (
         <div
           className={`on-sidebar-shell ${isSidebarShellOpen ? "on-sidebar-shell-open" : "on-sidebar-shell-closed"}`}
@@ -113,9 +116,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         className="on-main-surface m-2 flex-1 overflow-hidden relative transition-all duration-300 flex flex-col"
         style={titlebarOffsets}
       >
-        <div className="on-win-titlebar-actions absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2"
-          style={isWin ? { top: "2.25rem" } : undefined}
-        >
+        <div className="on-win-titlebar-actions absolute left-[var(--on-main-titlebar-action-left)] top-3 z-[90] flex items-center gap-2">
           <button
             onClick={toggleSidebar}
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

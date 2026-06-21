@@ -200,16 +200,8 @@ function windowsTitleBarColors() {
 }
 
 function applyWindowsTitleBarOverlay(window) {
-  if (process.platform !== "win32") return;
-  if (!window || window.isDestroyed()) return;
-  if (typeof window.setTitleBarOverlay !== "function") return;
-  try {
-    window.setTitleBarOverlay(windowsTitleBarColors());
-  } catch (error) {
-    console.warn(
-      `[titlebar] failed to apply overlay: ${error?.message ?? error}`,
-    );
-  }
+  // No-op: titleBarOverlay removed in favor of custom HTML window controls.
+  // Kept for the nativeTheme listener compatibility.
 }
 
 function parseStudioPdfDocumentId(requestUrl) {
@@ -669,7 +661,6 @@ function createMainWindow() {
     trafficLightPosition: isMac ? { x: 24, y: 24 } : undefined,
     ...(isWindows
       ? {
-          titleBarOverlay: windowsTitleBarColors(),
           backgroundMaterial: "mica",
         }
       : {}),
@@ -1123,6 +1114,33 @@ function registerIpc() {
     throw new Error(
       "desktop auto update is disabled; use the signed manifest update flow",
     );
+  });
+
+  ipcMain.handle("opennotion:window-minimize", (event) => {
+    requireTrustedSender(event);
+    parentWindowForEvent(event)?.minimize();
+    return null;
+  });
+
+  ipcMain.handle("opennotion:window-toggle-maximize", (event) => {
+    requireTrustedSender(event);
+    const win = parentWindowForEvent(event);
+    if (!win) return null;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    return null;
+  });
+
+  ipcMain.handle("opennotion:window-close", (event) => {
+    requireTrustedSender(event);
+    parentWindowForEvent(event)?.close();
+    return null;
+  });
+
+  ipcMain.handle("opennotion:window-is-maximized", async (event) => {
+    requireTrustedSender(event);
+    const win = parentWindowForEvent(event);
+    return win ? win.isMaximized() : false;
   });
 }
 

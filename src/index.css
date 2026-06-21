@@ -4386,9 +4386,44 @@ body.external-assistant-shell #root {
   border-top-left-radius: 0;
 }
 
-/* Push the breadcrumb header below the 32px native titlebar overlay */
+/* Breadcrumb header: padding-right so content doesn't go under custom controls */
 .platform-win .on-win-titlebar {
-  margin-top: 2rem;
+  padding-right: var(--on-win-controls-inset, 142px) !important;
+}
+
+/* Custom Windows window controls (replaces native titleBarOverlay) */
+.on-win-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  -webkit-app-region: no-drag;
+}
+
+.on-win-control-btn {
+  width: 46px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 120ms;
+  -webkit-app-region: no-drag;
+}
+
+.on-win-control-btn:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.on-win-control-close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 .platform-win .on-win-titlebar,

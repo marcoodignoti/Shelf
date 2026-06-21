@@ -80,6 +80,10 @@ interface ShelfDesktopBridge {
   installUpdateNow?(): Promise<null>;
   setNativeThemeSource?(themeSource: NativeThemeSource): Promise<null>;
   externalAssistant?: { toggle(options?: { provider?: "chatgpt" | "gemini" }): Promise<null> };
+  windowMinimize?(): Promise<null>;
+  windowToggleMaximize?(): Promise<null>;
+  windowClose?(): Promise<null>;
+  windowIsMaximized?(): Promise<boolean>;
 }
 
 declare global {
@@ -198,4 +202,20 @@ export async function setNativeThemeSource(themeSource: NativeThemeSource): Prom
 
 export async function toggleExternalAssistant(options?: { provider?: "chatgpt" | "gemini" }): Promise<void> {
   await window.openNotion?.externalAssistant?.toggle(options);
+}
+
+export async function windowMinimize(): Promise<void> {
+  await window.openNotion?.windowMinimize?.();
+}
+
+export async function windowToggleMaximize(): Promise<void> {
+  await window.openNotion?.windowToggleMaximize?.();
+}
+
+export async function windowClose(): Promise<void> {
+  await window.openNotion?.windowClose?.();
+}
+
+export async function windowIsMaximized(): Promise<boolean> {
+  return await window.openNotion?.windowIsMaximized?.() ?? false;
 }

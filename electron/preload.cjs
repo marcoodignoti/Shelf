@@ -88,6 +88,18 @@ contextBridge.exposeInMainWorld("openNotion", {
   installUpdateNow() {
     return ipcRenderer.invoke("opennotion:install-update-now");
   },
+  windowMinimize() {
+    return ipcRenderer.invoke("opennotion:window-minimize");
+  },
+  windowToggleMaximize() {
+    return ipcRenderer.invoke("opennotion:window-toggle-maximize");
+  },
+  windowClose() {
+    return ipcRenderer.invoke("opennotion:window-close");
+  },
+  windowIsMaximized() {
+    return ipcRenderer.invoke("opennotion:window-is-maximized");
+  },
   setNativeThemeSource(themeSource) {
     return ipcRenderer.invoke("opennotion:native-theme-source", themeSource);
   },
