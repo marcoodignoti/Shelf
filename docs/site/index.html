@@ -7,6 +7,8 @@
   <title>Shelf — Notes and PDFs, kept on your machine</title>
   <meta name="description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Shelf — Notes and PDFs, kept on your machine">
   <meta property="og:description" content="A writing surface and a split-screen PDF reader for students and researchers. Local-first: no account, no cloud, no telemetry.">
@@ -29,7 +31,7 @@
       --accent: 214 30% 86%;
       --border: 214 18% 78%;
       --ring: 217 82% 42%;
-      --radius: 0.7rem;
+      --radius: 0.5rem;
       --bg: hsl(var(--background));
       --ink: hsl(var(--foreground));
       --soft: hsl(215 15% 34%);
@@ -102,7 +104,7 @@
     }
     .links .get:hover {
       transform: translateY(-1px);
-      box-shadow: 0 8px 24px -6px hsl(var(--ring) / .45);
+      box-shadow: 0 8px 24px -6px hsl(var(--foreground) / .3);
       color: hsl(var(--primary-foreground));
     }
 
@@ -176,9 +178,10 @@
     }
     .room-text p { color: var(--soft); font-size: 19px; line-height: 1.5; margin: 0; }
     .room-text .more { margin-top: 18px; font-size: 15px; color: var(--muted-c); line-height: 1.7; }
-    .room-media img {
+    .room-media > img {
       width: 100%; transition: transform .35s ease;
       border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-soft);
+      aspect-ratio: 2784 / 1940;
     }
     .room-media:hover img { transform: translateY(-4px); }
     @media (max-width: 880px) {
@@ -190,7 +193,10 @@
     .detail-strip figure { margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-soft); }
     .detail-strip img {
       width: 100%; transition: transform .25s ease;
+      aspect-ratio: 584 / 222;
     }
+    .detail-strip figure:nth-child(2) img { aspect-ratio: 1322 / 666; }
+    .detail-strip figure:nth-child(3) img { aspect-ratio: 1480 / 856; }
     .detail-strip figure:hover img { transform: translateY(-3px); }
     @media (max-width: 680px) { .detail-strip { grid-template-columns: 1fr; } }
 
@@ -202,6 +208,7 @@
     .privacy-row:hover { padding-left: 8px; }
     .privacy-row .q { font-size: clamp(20px, 2.5vw, 26px); font-weight: 600; letter-spacing: -0.02em; }
     .privacy-row .a { color: hsl(var(--ring)); font-weight: 600; font-size: 15px; white-space: nowrap; }
+    @media (max-width: 560px) { .privacy-row .a { white-space: normal; } }
 
     /* ---------- Finale ---------- */
     .finale { text-align: center; padding: 140px 0 120px; position: relative; }
@@ -279,6 +286,7 @@
         <video autoplay muted loop playsinline poster="assets/shelf-studio-pdf.png">
           <source src="assets/shelf-demo.webm" type="video/webm">
         </video>
+        <img src="assets/shelf-demo.gif" alt="Shelf demo" class="gif-fallback" hidden>
       </div>
     </div>
   </header>
@@ -287,7 +295,7 @@
   <section class="room" id="studio">
     <div class="wrap room-inner reveal">
       <div class="room-media">
-        <img src="assets/shelf-studio-pdf.png" alt="Shelf Studio: PDF on the left, linked note on the right">
+        <img src="assets/shelf-studio-pdf.png" alt="Shelf Studio: PDF on the left, linked note on the right" loading="lazy">
       </div>
       <div class="room-text">
         <p class="eyebrow"><span class="bar"></span> Studio</p>
@@ -302,11 +310,11 @@
   <section class="room" id="editor">
     <div class="wrap room-inner flip reveal">
       <div class="room-media">
-        <img src="assets/shelf-editor.png" alt="The Shelf editor">
+        <img src="assets/shelf-editor.png" alt="The Shelf editor" loading="lazy">
         <div class="detail-strip">
-          <figure><img src="assets/shelf-detail-formula.png" alt="Rendered formula"></figure>
-          <figure><img src="assets/shelf-detail-table.png" alt="Table"></figure>
-          <figure><img src="assets/shelf-detail-code.png" alt="Code block"></figure>
+          <figure><img src="assets/shelf-detail-formula.png" alt="Rendered formula" loading="lazy"></figure>
+          <figure><img src="assets/shelf-detail-table.png" alt="Table" loading="lazy"></figure>
+          <figure><img src="assets/shelf-detail-code.png" alt="Code block" loading="lazy"></figure>
         </div>
       </div>
       <div class="room-text">
@@ -377,6 +385,14 @@
 <script src="vendor/ScrollTrigger.min.js"></script>
 <script>
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Safari < 16 can't play WebM — fall back to the GIF.
+  const demoVideo = document.querySelector(".product-shot video");
+  if (demoVideo && demoVideo.canPlayType("video/webm") === "") {
+    demoVideo.style.display = "none";
+    const gif = document.querySelector(".gif-fallback");
+    if (gif) gif.removeAttribute("hidden");
+  }
 
   if (typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
     document.documentElement.classList.remove("js");
