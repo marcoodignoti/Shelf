@@ -4354,13 +4354,11 @@ body.external-assistant-shell #root {
 /* Drag region for the top of the main surface on Windows.
    We avoid -webkit-app-region: drag on pseudo-elements or overlays because
    Electron's compositor-level hit-testing can intercept clicks even with
-   pointer-events: none. Instead, drag is only enabled on concrete elements
-   that contain no interactive children: the sidebar header spacer, the
-   breadcrumb header (on-win-titlebar), the studio toolbar, and a thin
-   drag bar at the top of HomeView. */
+   pointer-events: none. Instead, drag is only enabled on the sidebar header
+   spacer — a concrete element with no interactive children that never
+   overlaps with the toggle button or breadcrumb. */
 .platform-win .on-win-home-drag {
-  height: 2rem;
-  -webkit-app-region: drag;
+  display: none;
 }
 
 /* Explicitly mark the sidebar toggle + update pill container as no-drag.
@@ -4386,8 +4384,14 @@ body.external-assistant-shell #root {
   border-top-left-radius: 0;
 }
 
-/* Breadcrumb header: padding-right so content doesn't go under custom controls */
+/* Breadcrumb header: padding-right so content doesn't go under custom controls.
+   No -webkit-app-region: drag here because it overlaps with the toggle
+   sidebar button. The window can be dragged from the sidebar header spacer. */
 .platform-win .on-win-titlebar {
+  padding-right: var(--on-win-controls-inset, 142px) !important;
+}
+
+.platform-win .on-studio-floating-toolbar {
   padding-right: var(--on-win-controls-inset, 142px) !important;
 }
 
@@ -4424,12 +4428,6 @@ body.external-assistant-shell #root {
 .on-win-control-close:hover {
   background: #e81123;
   color: #fff;
-}
-
-.platform-win .on-win-titlebar,
-.platform-win .on-studio-floating-toolbar {
-  -webkit-app-region: drag;
-  padding-right: var(--on-win-controls-inset) !important;
 }
 
 .platform-win .on-studio-floating-toolbar {
