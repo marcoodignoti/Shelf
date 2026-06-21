@@ -4363,6 +4363,14 @@ body.external-assistant-shell #root {
   -webkit-app-region: drag;
 }
 
+/* Explicitly mark the sidebar toggle + update pill container as no-drag.
+   The compositor-level drag hit-testing on Windows can intercept clicks
+   even through higher z-index elements; no-drag must be on the container,
+   not just the button inside. */
+.platform-win .on-win-titlebar-actions {
+  -webkit-app-region: no-drag;
+}
+
 .platform-win .on-sidebar-header-spacer {
   -webkit-app-region: drag;
   height: 1rem;
