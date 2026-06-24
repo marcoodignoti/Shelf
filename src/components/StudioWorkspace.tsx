@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeftRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, Link2, PanelLeft, Plus, RotateCcw, Search, Square, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Bookmark, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, FilePlus, FileText, LayoutList, Link2, PanelLeft, Plus, Search, Square, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import type { TouchEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -148,7 +148,6 @@ export function StudioWorkspace({
   const effectiveViewMode: StudioViewMode = viewMode === "note" && !activeLinkedPage ? "pdf" : viewMode;
   const showPdfPanel = effectiveViewMode === "split" || effectiveViewMode === "pdf";
   const showPdfControls = showPdfPanel;
-  const toolbarOverNoteSurface = effectiveViewMode === "note" || (effectiveViewMode === "split" && studioDocument.panel_layout === "pdf-left");
   const visibleLinkedPageLinks = useMemo(
     () => buildVisibleStudioLinkedPageLinks(studioDocument.id, linkedPageLinks, note, t("studio.primaryNote")),
     [studioDocument.id, linkedPageLinks, note, t],
@@ -419,7 +418,7 @@ export function StudioWorkspace({
   };
 
   const pdfPanel = (
-    <section className="on-studio-panel min-w-0 bg-muted/20" aria-label={t("studio.pdfPanelAriaLabel")}>
+    <section className="on-studio-panel min-w-0 t" aria-label={t("studio.pdfPanelAriaLabel")}>
       {pdfLoadFailed ? (
         <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
           <div className="max-w-sm">
@@ -451,13 +450,122 @@ export function StudioWorkspace({
           onRequestPageChange={updatePage}
         />
       )}
+      {showPdfControls && !pdfLoadFailed && (
+        <div className="on-studio-pdf-floating-controls" role="toolbar" aria-label={t("studio.pdfControlsAriaLabel")}>
+          <button
+            className="on-icon-button"
+            title={t("studio.previousPage")}
+            aria-label={t("studio.previousPage")}
+            onClick={() => updatePage(activePdfPage - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="on-studio-page-indicator">
+            <input
+              className="on-studio-page-input"
+              aria-label={pdfPageCount ? t("studio.currentPdfPageOf", { count: String(pdfPageCount) }) : t("studio.currentPdfPage")}
+              inputMode="numeric"
+              value={pageDraft}
+              onChange={(event) => setPageDraft(event.target.value)}
+              onBlur={commitPageDraft}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitPageDraft();
+                }
+                if (event.key === "Escape") {
+                  setPageDraft(String(activePdfPage));
+                }
+              }}
+            />
+            {pdfPageCount ? (
+              <>
+                <span className="on-studio-page-slash">/</span>
+                <span className="on-studio-page-total">{pdfPageCount}</span>
+              </>
+            ) : null}
+          </div>
+          <button
+            className="on-icon-button"
+            title={t("studio.nextPage")}
+            aria-label={t("studio.nextPage")}
+            onClick={() => updatePage(activePdfPage + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <div className="on-studio-pdf-floating-divider" />
+          <button
+            className="on-icon-button"
+            title={t("studio.zoomOut")}
+            aria-label={t("studio.zoomOut")}
+            onClick={() => updateZoom(currentZoom - 25)}
+          >
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <button
+            className="on-studio-zoom-button"
+            title={t("studio.resetZoom")}
+            aria-label={t("studio.resetZoom")}
+            onClick={() => updateZoom(100)}
+          >
+            {currentZoom}%
+          </button>
+          <button
+            className="on-icon-button"
+            title={t("studio.zoomIn")}
+            aria-label={t("studio.zoomIn")}
+            onClick={() => updateZoom(currentZoom + 25)}
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <div className="on-studio-pdf-floating-divider" />
+          <div className="on-studio-pdf-floating-view-mode">
+            <button
+              className="on-icon-button"
+              title={t("studio.pdfViewOptions")}
+              aria-label={t("studio.pdfViewOptions")}
+              aria-haspopup="menu"
+              aria-expanded={isPdfViewMenuOpen}
+              onClick={() => setIsPdfViewMenuOpen((isOpen) => !isOpen)}
+            >
+              {pdfDisplayMode === "two-page" ? (
+                <BookOpen className="h-4 w-4" />
+              ) : pdfDisplayMode === "single" ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <LayoutList className="h-4 w-4" />
+              )}
+            </button>
+            {isPdfViewMenuOpen ? (
+              <div className="on-studio-pdf-view-menu" role="menu" aria-label={t("studio.pdfViewMenuAriaLabel")}>
+                {pdfDisplayModeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    role="menuitemradio"
+                    aria-checked={pdfDisplayMode === option.value}
+                    className="on-studio-pdf-view-menu-item"
+                    onClick={() => updatePdfDisplayMode(option.value)}
+                  >
+                    <span className="on-studio-pdf-view-check">
+                      {pdfDisplayMode === option.value ? <Check className="h-4 w-4" /> : null}
+                    </span>
+                    <option.icon className="h-4 w-4" />
+                    <span className="flex-1 text-left">{option.label}</span>
+                    <span className="on-studio-pdf-view-shortcut">{option.shortcut}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </section>
   );
   const notePanel = (
     <section className="on-studio-panel min-w-0 overflow-hidden" aria-label={t("studio.notesPanelAriaLabel")}>
       {activeLinkedPage ? (
         <div className="flex h-full min-h-0 flex-col">
-          <div className="on-studio-linked-pages-bar">
+          <div className="on-studio-linked-pages-bar group/linked-pages">
             <div className="on-studio-linked-pages-list" aria-label={t("studio.linkedPdfNotesAriaLabel")}>
               {visibleLinkedPageLinks.map((link) => {
                 const isActive = link.page_id === activeLinkedPage.id;
@@ -472,9 +580,8 @@ export function StudioWorkspace({
                       onClick={() => handleSelectLinkedPage(link)}
                       title={link.page.title || t("studio.untitled")}
                     >
-                      <FileText className="h-3.5 w-3.5" />
                       <span className="truncate">{link.page.title || t("studio.untitled")}</span>
-                      {link.pdf_page ? <span className="on-studio-linked-page-badge">p. {link.pdf_page}</span> : null}
+                      {link.pdf_page ? <span className="on-studio-linked-page-page-num">p. {link.pdf_page}</span> : null}
                     </button>
                     <button
                       type="button"
@@ -489,13 +596,14 @@ export function StudioWorkspace({
                 );
               })}
             </div>
-            <div className="on-studio-linked-pages-actions">
+            <div className="on-studio-linked-pages-actions opacity-0 transition-opacity group-hover/linked-pages:opacity-100 focus-within/linked-pages:opacity-100">
               <button
                 type="button"
                 className="on-studio-linked-page-action"
                 disabled={isCreatingLinkedPage}
                 onClick={() => void handleCreateLinkedNote(null)}
                 title={t("studio.newLinkedNote")}
+                aria-label={t("studio.newLinkedNote")}
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -505,6 +613,7 @@ export function StudioWorkspace({
                 disabled={isCreatingLinkedPage}
                 onClick={() => void handleCreateLinkedNote(activePdfPage)}
                 title={t("studio.bookmarkCurrentPage")}
+                aria-label={t("studio.bookmarkCurrentPage")}
               >
                 <Bookmark className="h-3.5 w-3.5" />
               </button>
@@ -514,6 +623,7 @@ export function StudioWorkspace({
                 className="on-studio-linked-page-action"
                 onClick={() => setIsExistingPagePickerOpen((open) => !open)}
                 title={t("studio.linkExistingPage")}
+                aria-label={t("studio.linkExistingPage")}
               >
                 <Link2 className="h-3.5 w-3.5" />
               </button>
@@ -531,6 +641,7 @@ export function StudioWorkspace({
                     <input
                       value={existingPageQuery}
                       placeholder={t("studio.searchPages")}
+                      aria-label={t("studio.searchPages")}
                       spellCheck={false}
                       onChange={(event) => setExistingPageQuery(event.currentTarget.value)}
                       onKeyDown={(event) => {
@@ -557,6 +668,7 @@ export function StudioWorkspace({
                           type="button"
                           className="on-studio-link-picker-bookmark"
                           title={t("studio.bookmarkPage", { page: String(activePdfPage) })}
+                          aria-label={t("studio.bookmarkPage", { page: String(activePdfPage) })}
                           onClick={() => void handleLinkExistingPage(candidate, activePdfPage)}
                         >
                           <Bookmark className="h-3.5 w-3.5" />
@@ -595,121 +707,18 @@ export function StudioWorkspace({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <div className="on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-3 px-4 py-2 pl-[var(--on-main-titlebar-content-left)]">
+      <div className="on-studio-floating-toolbar pointer-events-none z-[80] flex items-center gap-4 px-5 py-2.5 pl-[var(--on-main-titlebar-content-left)]">
         <div className="on-studio-toolbar-title pointer-events-auto min-w-0">
           <div className="on-studio-toolbar-title-primary truncate text-sm font-medium text-foreground">{studioDocument.title}</div>
           <div className="on-studio-toolbar-title-secondary truncate text-xs">{studioDocument.original_filename}</div>
         </div>
-        <div className={`on-studio-toolbar-controls pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 ${toolbarOverNoteSurface ? "on-studio-toolbar-controls-note-surface" : ""}`}>
-          {showPdfControls && (
-            <>
-              <div className="on-studio-toolbar-group on-studio-page-controls">
-                <button
-                  className="on-icon-button"
-                  title={t("studio.previousPage")}
-                  onClick={() => updatePage(activePdfPage - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <div className="on-studio-page-indicator">
-                  <input
-                    className="on-studio-page-input"
-                    aria-label={pdfPageCount ? t("studio.currentPdfPageOf", { count: String(pdfPageCount) }) : t("studio.currentPdfPage")}
-                    inputMode="numeric"
-                    value={pageDraft}
-                    onChange={(event) => setPageDraft(event.target.value)}
-                    onBlur={commitPageDraft}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitPageDraft();
-                      }
-                      if (event.key === "Escape") {
-                        setPageDraft(String(activePdfPage));
-                      }
-                    }}
-                  />
-                  {pdfPageCount ? (
-                    <>
-                      <span className="on-studio-page-slash">/</span>
-                      <span className="on-studio-page-total">{pdfPageCount}</span>
-                    </>
-                  ) : null}
-                </div>
-                <button
-                  className="on-icon-button"
-                  title={t("studio.nextPage")}
-                  onClick={() => updatePage(activePdfPage + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="on-studio-toolbar-group on-studio-zoom-controls">
-                <button
-                  className="on-icon-button"
-                  title={t("studio.zoomOut")}
-                  onClick={() => updateZoom(currentZoom - 25)}
-                >
-                  <ZoomOut className="h-4 w-4" />
-                </button>
-                <button
-                  className="on-studio-zoom-button"
-                  title={t("studio.resetZoom")}
-                  onClick={() => updateZoom(100)}
-                >
-                  {currentZoom}%
-                </button>
-                <button
-                  className="on-icon-button"
-                  title={t("studio.zoomIn")}
-                  onClick={() => updateZoom(currentZoom + 25)}
-                >
-                  <ZoomIn className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="relative">
-                <button
-                  className="on-icon-button"
-                  title={t("studio.pdfViewOptions")}
-                  aria-haspopup="menu"
-                  aria-expanded={isPdfViewMenuOpen}
-                  onClick={() => setIsPdfViewMenuOpen((isOpen) => !isOpen)}
-                >
-                  {pdfDisplayMode === "two-page" ? (
-                    <BookOpen className="h-4 w-4" />
-                  ) : pdfDisplayMode === "single" ? (
-                    <Square className="h-4 w-4" />
-                  ) : (
-                    <LayoutList className="h-4 w-4" />
-                  )}
-                </button>
-                {isPdfViewMenuOpen ? (
-                  <div className="on-studio-pdf-view-menu" role="menu" aria-label={t("studio.pdfViewMenuAriaLabel")}>
-                    {pdfDisplayModeOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        role="menuitemradio"
-                        aria-checked={pdfDisplayMode === option.value}
-                        className="on-studio-pdf-view-menu-item"
-                        onClick={() => updatePdfDisplayMode(option.value)}
-                      >
-                        <span className="on-studio-pdf-view-check">
-                          {pdfDisplayMode === option.value ? <Check className="h-4 w-4" /> : null}
-                        </span>
-                        <option.icon className="h-4 w-4" />
-                        <span className="flex-1 text-left">{option.label}</span>
-                        <span className="on-studio-pdf-view-shortcut">{option.shortcut}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
+        <div className="on-studio-toolbar-controls pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2.5">
           <div className="on-studio-view-switch" role="group" aria-label={t("studio.studioViewAriaLabel")}>
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "pdf" ? "on-studio-view-switch-button-active" : ""}`}
               title={t("studio.pdfOnly")}
+              aria-label={t("studio.pdfOnly")}
+              aria-current={effectiveViewMode === "pdf" ? "true" : "false"}
               onClick={() => updateViewMode("pdf")}
             >
               <PanelLeft className="h-4 w-4" />
@@ -717,6 +726,8 @@ export function StudioWorkspace({
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "split" ? "on-studio-view-switch-button-active" : ""}`}
               title={t("studio.splitView")}
+              aria-label={t("studio.splitView")}
+              aria-current={effectiveViewMode === "split" ? "true" : "false"}
               onClick={() => updateViewMode("split")}
             >
               <Columns2 className="h-4 w-4" />
@@ -724,6 +735,8 @@ export function StudioWorkspace({
             <button
               className={`on-studio-view-switch-button ${effectiveViewMode === "note" ? "on-studio-view-switch-button-active" : ""}`}
               title={activeLinkedPage ? t("studio.notesOnly") : t("studio.linkedNoteMissing")}
+              aria-label={activeLinkedPage ? t("studio.notesOnly") : t("studio.linkedNoteMissing")}
+              aria-current={effectiveViewMode === "note" ? "true" : "false"}
               disabled={!activeLinkedPage}
               onClick={() => {
                 if (activeLinkedPage) updateViewMode("note");
@@ -736,18 +749,10 @@ export function StudioWorkspace({
             <button
               className="on-icon-button"
               title={t("studio.swapPdfAndNotes")}
+              aria-label={t("studio.swapPdfAndNotes")}
               onClick={() => onUpdateViewer(studioDocument.id, { panel_layout: nextLayout })}
             >
               <ArrowLeftRight className="h-4 w-4" />
-            </button>
-          )}
-          {pdfLoadFailed && (
-            <button
-              className="on-icon-button"
-              title={t("studio.retryPdfPreview")}
-              onClick={() => setPdfLoadFailed(false)}
-            >
-              <RotateCcw className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -755,7 +760,7 @@ export function StudioWorkspace({
       <div className="on-studio-split-frame min-h-0 flex-1">
         <div
           ref={splitRef}
-          className="on-studio-split h-full min-h-0 bg-border/70"
+          className="on-studio-split h-full min-h-0 bg-border/40"
           style={{ gridTemplateColumns: effectiveViewMode === "split" ? panelGridColumns : "minmax(0, 1fr)" }}
         >
           {effectiveViewMode === "pdf" ? (
@@ -1225,7 +1230,7 @@ const StudioPdfViewer = memo(function StudioPdfViewer({
   return (
     <div
       ref={scrollRef}
-      className="on-scroll-fade on-scroll-fade-pdf relative h-full w-full overflow-auto bg-zinc-100"
+      className="on-scroll-fade on-scroll-fade-pdf relative h-full w-full overflow-auto on-studio-pdf-surface"
       data-pdf-view-mode={displayMode}
       onScroll={handleScroll}
       onTouchStart={handleTouchStart}

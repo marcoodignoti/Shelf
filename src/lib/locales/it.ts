@@ -336,6 +336,7 @@ export const it: Record<keyof typeof en, string> = {
   "studio.zoomIn": "Aumenta zoom",
   "studio.pdfViewOptions": "Opzioni visualizzazione PDF",
   "studio.pdfViewMenuAriaLabel": "Opzioni visualizzazione PDF",
+  "studio.pdfControlsAriaLabel": "Controlli PDF",
   "studio.studioViewAriaLabel": "Vista Studio",
   "studio.pdfOnly": "Solo PDF",
   "studio.splitView": "Vista divisa",

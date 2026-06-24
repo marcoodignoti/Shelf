@@ -176,6 +176,7 @@ export const PageLinkInlineContent = createReactInlineContentSpec(
                   type="button"
                   className="on-page-link-preview-icon"
                   title={t("editor.changeLinkIcon")}
+                  aria-label={t("editor.changeLinkIcon")}
                   onClick={openNativeIconPicker}
                 >
                   {icon ? <span>{icon}</span> : <FileText className="h-4 w-4" />}

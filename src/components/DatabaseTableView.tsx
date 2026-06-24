@@ -480,6 +480,7 @@ export function DatabaseTableView({
                           ref={rowRenameInputRef}
                           className="w-full rounded-sm bg-transparent px-1 py-0.5 font-medium outline-none focus:bg-muted"
                           value={draftRowTitle}
+                          aria-label={t("editor.db.rename")}
                           onChange={(event) => setDraftRowTitle(event.target.value)}
                           onClick={(event) => event.stopPropagation()}
                           onBlur={() => void commitRowRename(row)}
@@ -598,6 +599,7 @@ export function DatabaseTableView({
                         ref={rowRenameInputRef}
                         className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none focus:bg-muted"
                         value={draftRowTitle}
+                        aria-label={t("editor.db.rename")}
                         onChange={(event) => setDraftRowTitle(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
                         onBlur={() => void commitRowRename(row)}
@@ -874,6 +876,7 @@ function DatabasePropertyValueControl({
         type="checkbox"
         className="h-4 w-4"
         checked={value === true}
+        aria-label={property.name}
         onChange={(event) => onChange(event.target.checked)}
       />
     );
@@ -884,6 +887,7 @@ function DatabasePropertyValueControl({
       <select
         className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
         value={String(value ?? "")}
+        aria-label={property.name}
         onChange={(event) => onChange(event.target.value)}
       >
         <option value="">{t("editor.db.empty")}</option>
@@ -901,6 +905,7 @@ function DatabasePropertyValueControl({
       type={property.type === "date" ? "date" : "text"}
       className="w-full rounded-sm bg-transparent px-1 py-1 text-sm outline-none hover:bg-muted focus:bg-muted"
       value={String(value ?? "")}
+      aria-label={property.name}
       onChange={(event) => onChange(event.target.value)}
     />
   );
@@ -1136,6 +1141,7 @@ function FilterValueControl({
         <select
           className="rounded-md border border-border bg-background px-2 py-1 outline-none"
           value={filter.operator}
+          aria-label={t("editor.db.filterProperty")}
           onChange={(event) =>
             onChange({
               propertyId: property.id,
@@ -1152,6 +1158,7 @@ function FilterValueControl({
             type="date"
             className="rounded-md border border-border bg-background px-2 py-1 outline-none"
             value={String(filter.value ?? "")}
+            aria-label={property.name}
             onChange={(event) => onChange({ propertyId: property.id, operator: "equals", value: event.target.value })}
           />
         )}
@@ -1163,6 +1170,7 @@ function FilterValueControl({
     <input
       className="rounded-md border border-border bg-background px-2 py-1 outline-none"
       placeholder={t("editor.db.containsPlaceholder")}
+      aria-label={property.name}
       value={String(filter.value ?? "")}
       onChange={(event) => onChange({ propertyId: property.id, operator: "contains", value: event.target.value })}
     />

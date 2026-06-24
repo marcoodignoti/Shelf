@@ -121,6 +121,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             onClick={toggleSidebar}
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             title={t("layout.toggleSidebar")}
+            aria-label={t("layout.toggleSidebar")}
           >
             <PanelLeft className="h-3.5 w-3.5" />
           </button>

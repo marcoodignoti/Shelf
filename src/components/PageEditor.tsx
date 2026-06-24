@@ -579,6 +579,8 @@ function EditorSurface({
 }) {
   const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  const [sideMenuPortalEl, setSideMenuPortalEl] = useState<HTMLElement | null>(null);
   const slashMenuLockedScrollTopRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const titleEnterModifierRef = useRef(false);
@@ -719,6 +721,16 @@ function EditorSurface({
     toggleTemplateAction,
   });
   const isStudioVariant = variant === "studio";
+
+  // Portal the BlockNote side menu into the editor root in Studio mode so
+  // that it stays within the note panel's DOM tree. Combined with the wider
+  // left padding (pl-12) in Studio mode, this keeps the drag handle / add
+  // button fully visible without bleeding onto the PDF view.
+  useEffect(() => {
+    if (isStudioVariant && editorRootRef.current) {
+      setSideMenuPortalEl(editorRootRef.current);
+    }
+  }, [isStudioVariant]);
   const slashMenuItems = useMemo(
     () => openNotionSlashMenuItems(editor, page.id, showError, showSuccess, t),
     // t changes only with locale; locale already recreates editor, so adding t
@@ -1167,7 +1179,7 @@ function EditorSurface({
   };
 
   return (
-    <div className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
+    <div ref={editorRootRef} className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
       {!isStudioVariant && (
         <div className="on-win-titlebar h-11 border border-b-0 border-border/70 rounded-t-xl flex items-center justify-between pr-6 pl-[var(--on-main-titlebar-content-left)] shrink-0 bg-background/95 backdrop-blur z-40 select-none">
           {/* Breadcrumbs on the left */}
@@ -1351,7 +1363,7 @@ function EditorSurface({
         ref={scrollContainerRef}
         className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
       >
-        <div className={`${pageWidth === "full" ? "max-w-none" : "max-w-3xl"} px-8 pt-8 mx-auto flex min-h-full w-full flex-col pb-16 on-editor-typography on-editor-font-${editorFont} on-editor-size-${editorFontSize}`}>
+        <div className={`${pageWidth === "full" ? "max-w-none" : "max-w-3xl"} ${isStudioVariant ? "pl-12 pr-8" : "px-8"} pt-8 mx-auto flex min-h-full w-full flex-col pb-16 on-editor-typography on-editor-font-${editorFont} on-editor-size-${editorFontSize}`}>
           {!isStudioVariant && (
             <div className="group/page-actions mb-3 flex min-h-7 items-center gap-3 text-xs text-muted-foreground">
               <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
@@ -1662,7 +1674,7 @@ function EditorSurface({
                 onOpenChange={(open) => {
                   if (!open) setSubpageActionsMenu(null);
                 }}
-                className="on-popover on-page-action-popover p-1"
+                className="on-popover on-page-action-popover"
               >
                 <SubpageActionsMenu
                   page={subpageActionsMenu.page}
@@ -1676,7 +1688,7 @@ function EditorSurface({
             {subpageContextMenu && createPortal(
               <div
                 ref={subpageContextMenuRef}
-                className="fixed z-[180] w-48 on-popover on-page-action-popover p-1"
+                className="fixed z-[180] w-48 on-popover on-page-action-popover"
                 style={{
                   left: subpageContextMenu.left,
                   top: subpageContextMenu.top,
@@ -1728,7 +1740,10 @@ function EditorSurface({
               portalElement={null}
               floatingUIOptions={slashMenuFloatingOptions}
             />
-            <SideMenuController sideMenu={ShelfSideMenu} />
+            <SideMenuController
+              sideMenu={ShelfSideMenu}
+              portalElement={isStudioVariant ? sideMenuPortalEl : undefined}
+            />
           </BlockNoteView>
         </div>
       </div>

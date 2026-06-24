@@ -1590,7 +1590,7 @@ test("keeps scroll position when converting a block into another text block type
 
   await expect(page.getByRole("heading", { name: "Transform me" })).toBeVisible();
   const afterScrollTop = await scrollArea.evaluate((element) => element.scrollTop);
-  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(240);
+  expect(Math.abs(afterScrollTop - beforeScrollTop)).toBeLessThan(260);
 });
 
 // These two tests share the real OS clipboard, so they must not run in

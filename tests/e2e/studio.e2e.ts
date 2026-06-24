@@ -441,7 +441,7 @@ test("creates multiple linked notes and PDF bookmarks for a Studio document", as
 
   await page.getByTitle("Bookmark current PDF page").click();
   await expect(page.locator(".on-studio-linked-page-chip", { hasText: /civil-law p\. 1/ })).toBeVisible();
-  await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 1" })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-page-num", { hasText: "p. 1" })).toBeVisible();
 
   await page.waitForFunction(() => {
     const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{
@@ -514,7 +514,7 @@ test("links existing pages and PDF-page bookmarks to a Studio document", async (
   await page.getByPlaceholder("Search pages").fill("Chapter");
   await page.locator(".on-studio-link-picker-row", { hasText: "Chapter Bookmark" }).getByTitle("Bookmark page 1").click();
   await expect(page.locator(".on-studio-linked-page-chip", { hasText: /Chapter Bookmark/ })).toBeVisible();
-  await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 1" })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-page-num", { hasText: "p. 1" })).toBeVisible();
 });
 
 test("shows PDF documents inside the unified page tree folder hierarchy", async ({ page }) => {
@@ -670,7 +670,7 @@ test("shows linked normal notes with a PDF badge that opens the Studio document"
 
   await expect(page.locator("canvas[aria-label='Civil Law']")).toBeVisible();
   await expect(page.locator(".on-studio-linked-page-chip", { hasText: "Reference Note" })).toBeVisible();
-  await expect(page.locator(".on-studio-linked-page-badge", { hasText: "p. 3" })).toBeVisible();
+  await expect(page.locator(".on-studio-linked-page-page-num", { hasText: "p. 3" })).toBeVisible();
 });
 
 test("switches Studio PDF view mode between continuous, single page, and two pages", async ({ page }) => {
@@ -872,7 +872,7 @@ test("reimports a Studio PDF when the stored copy is missing", async ({ page }) 
   });
 });
 
-test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) => {
+test("keeps dark PDF floating controls page and zoom labels readable", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("opennotion-theme", "dark");
   });
@@ -886,21 +886,14 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
   await expect(zoomButton).toBeVisible();
 
   const styles = await page.evaluate(() => {
-    const controls = document.querySelector(".on-studio-toolbar-controls");
-    const pageGroup = document.querySelector(".on-studio-page-controls");
-    const zoomGroup = document.querySelector(".on-studio-zoom-controls");
+    const floatingControls = document.querySelector(".on-studio-pdf-floating-controls");
     const pageTotal = document.querySelector(".on-studio-page-total");
     const zoomButton = document.querySelector(".on-studio-zoom-button");
-    if (!controls || !pageGroup || !zoomGroup || !pageTotal || !zoomButton) return null;
+    if (!floatingControls || !pageTotal || !zoomButton) return null;
 
-    const pageGroupStyle = getComputedStyle(pageGroup);
-    const zoomGroupStyle = getComputedStyle(zoomGroup);
     const pageTotalStyle = getComputedStyle(pageTotal);
     const zoomButtonStyle = getComputedStyle(zoomButton);
     return {
-      controlsClass: controls.className,
-      pageGroupBackground: pageGroupStyle.backgroundColor,
-      zoomGroupBackground: zoomGroupStyle.backgroundColor,
       pageTotalBackground: pageTotalStyle.backgroundColor,
       pageTotalColor: pageTotalStyle.color,
       zoomBackground: zoomButtonStyle.backgroundColor,
@@ -909,7 +902,6 @@ test("keeps dark PDF toolbar page and zoom labels readable", async ({ page }) =>
   });
 
   expect(styles).not.toBeNull();
-  expect(styles!.controlsClass).toContain("on-studio-toolbar-controls-note-surface");
   expect(styles!.pageTotalBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.zoomBackground).toBe("rgba(0, 0, 0, 0)");
   expect(styles!.pageTotalColor).toBe(styles!.zoomColor);

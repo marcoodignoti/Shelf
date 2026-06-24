@@ -334,6 +334,7 @@ export const en = {
   "studio.zoomIn": "Zoom in",
   "studio.pdfViewOptions": "PDF view options",
   "studio.pdfViewMenuAriaLabel": "PDF view options",
+  "studio.pdfControlsAriaLabel": "PDF controls",
   "studio.studioViewAriaLabel": "Studio view",
   "studio.pdfOnly": "PDF only",
   "studio.splitView": "Split view",
