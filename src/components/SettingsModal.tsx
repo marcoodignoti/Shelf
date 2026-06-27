@@ -10,6 +10,7 @@ import { ShortcutsSection } from './settings/ShortcutsSection';
 import { UpdatesSection } from './settings/UpdatesSection';
 import { DataSection } from './settings/DataSection';
 import { AboutSection } from './settings/AboutSection';
+import { MobileSyncSection } from './settings/MobileSyncSection';
 import {
   ArrowLeft,
   Download,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Smartphone,
   UserCircle,
   X,
 } from 'lucide-react';
@@ -50,6 +52,7 @@ const NAV_GROUPS: SettingsNavGroup[] = [
     entries: [
       { section: 'updates', labelKey: 'settings.nav.updates', icon: RefreshCw },
       { section: 'data', labelKey: 'settings.nav.data', icon: Download },
+      { section: 'mobile-sync', labelKey: 'settings.nav.mobileSync', icon: Smartphone },
       { section: 'about', labelKey: 'settings.nav.about', icon: Info },
     ],
   },
@@ -62,6 +65,7 @@ const SECTION_COMPONENTS: Record<SettingsSection, ComponentType> = {
   shortcuts: ShortcutsSection,
   updates: UpdatesSection,
   data: DataSection,
+  'mobile-sync': MobileSyncSection,
   about: AboutSection,
 };
 

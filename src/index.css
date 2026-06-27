@@ -3111,6 +3111,54 @@
     outline: none;
   }
 
+  .on-settings-note {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .on-settings-pairing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    align-items: flex-start;
+    padding: 0.75rem 0;
+  }
+
+  .on-settings-pairing-qr {
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 0.45rem;
+  }
+
+  .on-settings-pairing-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .on-settings-pairing-copy div {
+    font-weight: 500;
+    letter-spacing: 0.15em;
+  }
+
+  .on-settings-pairing-copy p {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .on-settings-device-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
   .on-settings-select:focus-visible {
     border-color: hsl(var(--ring) / 0.7);
     box-shadow: 0 0 0 2px hsl(var(--ring) / 0.18);

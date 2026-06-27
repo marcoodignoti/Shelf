@@ -1,1 +1,1 @@
-export type SettingsSection = 'profile' | 'preferences' | 'appearance' | 'shortcuts' | 'updates' | 'data' | 'about';
+export type SettingsSection = 'profile' | 'preferences' | 'appearance' | 'shortcuts' | 'updates' | 'data' | 'about' | 'mobile-sync';
