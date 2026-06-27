@@ -111,8 +111,18 @@ export const createPagesSlice: StateCreator<AppState, [], [], PagesSlice> = (set
     set((state) => ({
       pages: optimisticPages,
       studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => !deletedIds.has(link.page_id)),
-      currentPageId: resolveCurrentPageIdAfterDeletion(optimisticPages, state.currentPageId, id, deletedIds, previousPages)
+      currentPageId: resolveCurrentPageIdAfterDeletion(optimisticPages, state.currentPageId, id, deletedIds, previousPages),
+      // Auto-close the split view if either pane's page is being deleted.
+      secondaryPageId: deletedIds.has(state.currentPageId ?? "") || deletedIds.has(state.secondaryPageId ?? "")
+        ? null
+        : state.secondaryPageId,
+      activePane: deletedIds.has(state.currentPageId ?? "") || deletedIds.has(state.secondaryPageId ?? "")
+        ? "primary"
+        : state.activePane,
     }));
+    if (deletedIds.has(get().currentPageId ?? "") || deletedIds.has(get().secondaryPageId ?? "")) {
+      localStorage.removeItem('opennotion-secondary-page-id');
+    }
 
     try {
       await deletePage(id);

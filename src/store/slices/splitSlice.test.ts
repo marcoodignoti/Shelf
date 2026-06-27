@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Page } from "../../lib/db";
 import { useAppStore } from "../useAppStore";
 
 function resetStore() {
@@ -71,5 +72,59 @@ describe("splitSlice", () => {
     expect(useAppStore.getState().isSplitPickerOpen).toBe(true);
     useAppStore.getState().closeSplitPicker();
     expect(useAppStore.getState().isSplitPickerOpen).toBe(false);
+  });
+});
+
+/**
+ * Delete-cleanup characterization: removing a page that participates in the
+ * split must auto-close the split so the editor never tries to render a page
+ * that no longer exists.
+ */
+describe("splitSlice deletion cleanup", () => {
+  const pages: Page[] = [
+    { id: "p1", title: "A", parent_id: null, content: null, search_text: null, icon: null, cover_url: null, is_deleted: 0, is_favorite: 0, is_template: 0, is_database: 0, sort_order: 0, page_kind: "note", created_at: "", updated_at: "" },
+    { id: "p2", title: "B", parent_id: null, content: null, search_text: null, icon: null, cover_url: null, is_deleted: 0, is_favorite: 0, is_template: 0, is_database: 0, sort_order: 1, page_kind: "note", created_at: "", updated_at: "" },
+  ];
+
+  function installInvoke() {
+    const w = window as unknown as Record<string, unknown>;
+    w.openNotion = {
+      invoke: vi.fn(async (command: string) => {
+        if (command === "list_pages") return pages;
+        if (command === "list_all_studio_document_page_links") return [];
+        return undefined;
+      }),
+      onDesktopUpdate: () => () => {},
+      fileSrc: (p: string) => `app://asset/${p}`,
+      studioPdfSrc: () => "",
+      importStudioDocument: () => Promise.resolve(null),
+      replaceStudioDocumentFile: () => Promise.resolve(null),
+      importProfileAvatar: () => Promise.resolve(null),
+      exportFiles: () => Promise.resolve(null),
+      importPageFile: () => Promise.resolve(null),
+    };
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    installInvoke();
+    useAppStore.setState({
+      pages: [...pages],
+      currentPageId: "p1",
+      secondaryPageId: "p2",
+      splitViewRatio: 0.5,
+      activePane: "primary",
+      studioDocumentPageLinks: [],
+    });
+  });
+
+  it("removing the secondary page auto-closes the split", async () => {
+    await useAppStore.getState().removePage("p2");
+    expect(useAppStore.getState().secondaryPageId).toBeNull();
+  });
+
+  it("removing the primary page closes the split", async () => {
+    await useAppStore.getState().removePage("p1");
+    expect(useAppStore.getState().secondaryPageId).toBeNull();
   });
 });
