@@ -533,6 +533,7 @@ export function Editor(props: {
   pages: Page[];
   onSelectPage: (id: string) => void;
   variant?: "page" | "studio";
+  inSplit?: boolean;
 }) {
   const { page } = props;
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
@@ -572,11 +573,13 @@ function EditorSurface({
   pages,
   onSelectPage,
   variant = "page",
+  inSplit = false,
 }: {
   page: Page;
   pages: Page[];
   onSelectPage: (id: string) => void;
   variant?: "page" | "studio";
+  inSplit?: boolean;
 }) {
   const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1192,7 +1195,7 @@ function EditorSurface({
   return (
     <div ref={editorRootRef} className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
       {!isStudioVariant && (
-        <div className="on-win-titlebar h-11 border border-b-0 border-border/70 rounded-t-xl flex items-center justify-between pr-6 pl-[var(--on-main-titlebar-content-left)] shrink-0 bg-background/95 backdrop-blur z-40 select-none">
+        <div className={`on-win-titlebar h-11 flex items-center justify-between pr-6 pl-[var(--on-main-titlebar-content-left)] shrink-0 bg-background/95 backdrop-blur z-40 select-none ${inSplit ? "" : "border border-b-0 border-border/70 rounded-t-xl"}`}>
           {/* Breadcrumbs on the left */}
           <nav className="flex items-center gap-1 min-w-0" aria-label={t("editor.pageBreadcrumb")}>
             {breadcrumbs.map((breadcrumb, index) => {

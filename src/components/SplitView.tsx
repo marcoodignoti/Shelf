@@ -69,7 +69,7 @@ export function SplitView({
         onFocus={markActive("primary")}
         onPointerDown={markActive("primary")}
       >
-        <Editor page={primary} pages={pages} onSelectPage={onSelectPrimaryPage} />
+        <Editor page={primary} pages={pages} onSelectPage={onSelectPrimaryPage} inSplit />
       </div>
       <div
         data-testid="split-divider"
@@ -89,7 +89,7 @@ export function SplitView({
         onFocus={markActive("secondary")}
         onPointerDown={markActive("secondary")}
       >
-        <Editor page={secondary} pages={pages} onSelectPage={onSelectSecondaryPage} />
+        <Editor page={secondary} pages={pages} onSelectPage={onSelectSecondaryPage} inSplit />
       </div>
     </div>
   );

@@ -1759,13 +1759,9 @@
     margin: 0.2rem 0;
   }
 
-  /* Inside a split pane, strip the editor titlebar's own borders entirely —
-     the divider already separates the two panes, and the titlebar borders
-     create visible lines through the toolbar in split view. */
-  .on-split-pane .on-win-titlebar {
-    border: 0;
-    border-radius: 0;
-  }
+  /* Inside a split pane, the editor titlebar borders are stripped via the
+     `inSplit` prop on <Editor> (removing the utility classes at the source),
+     since Tailwind utility classes otherwise override plain CSS here. */
 
   .on-split-divider::after {
     content: "";
