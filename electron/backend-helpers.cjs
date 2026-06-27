@@ -9,6 +9,16 @@ const APP_SCHEMA_VERSION = "1";
 const STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION = "2";
 const PAGE_SEARCH_INDEX_VERSION = "1";
 const APP_ASSET_PROTOCOL = "opennotion-app";
+// Mobile sync server tuning constants. Exposed so electron/main.cjs and the
+// sync modules can share them without duplicating magic numbers.
+const SYNC_DEVICE_TOKEN_BYTES = 32;
+const SYNC_PAIRING_TOKEN_BYTES = 24;
+const SYNC_PAIRING_TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SYNC_PIN_DIGITS = 6;
+const SYNC_RATE_LIMIT_MAX_PER_MINUTE = 600;
+const SYNC_CERT_VALIDITY_YEARS = 10;
+const SYNC_PORT_RANGE_START = 43200;
+const SYNC_PORT_RANGE_END = 43299;
 const COVER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const PROFILE_TEXT_MAX_LENGTH = 120;
 const PROFILE_METADATA_KEYS = {
@@ -329,6 +339,23 @@ function runMigrations(db) {
     )
     SELECT lower(hex(randomblob(16))), id, note_page_id, NULL, 'Primary note', 0, created_at, updated_at
     FROM studio_documents
+  `);
+}
+
+// Mobile sync: paired device registry. Tokens are stored as SHA-256 hashes
+// (see sync-tokens.cjs); the plaintext never touches the database. Idempotent
+// so it is safe to call on every backend construction.
+function runSyncDeviceMigration(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_devices (
+      device_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      paired_at TEXT NOT NULL,
+      last_seen TEXT,
+      revoked INTEGER NOT NULL DEFAULT 0
+    );
   `);
 }
 
@@ -1243,6 +1270,14 @@ module.exports = {
   EDITOR_VIDEO_MAX_BYTES,
   UPDATE_MANIFEST_MAX_BYTES,
   UPDATE_ARTIFACT_MAX_BYTES,
+  SYNC_DEVICE_TOKEN_BYTES,
+  SYNC_PAIRING_TOKEN_BYTES,
+  SYNC_PAIRING_TOKEN_TTL_MS,
+  SYNC_PIN_DIGITS,
+  SYNC_RATE_LIMIT_MAX_PER_MINUTE,
+  SYNC_CERT_VALIDITY_YEARS,
+  SYNC_PORT_RANGE_START,
+  SYNC_PORT_RANGE_END,
   UPDATE_SIGNATURE_ALGORITHM,
   UPDATE_DOWNLOAD_TOKEN_BYTES,
   BACKUP_MAX_BYTES,
@@ -1273,6 +1308,7 @@ module.exports = {
   restrictDatabaseFilePermissions,
   hasColumn,
   runMigrations,
+  runSyncDeviceMigration,
   CURRENT_APP_VERSION,
   DB_BACKUP_RETENTION,
   readStoredAppVersion,

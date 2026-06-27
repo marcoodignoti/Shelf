@@ -41,6 +41,7 @@ const {
   restrictDatabaseFilePermissions,
   hasColumn,
   runMigrations,
+  runSyncDeviceMigration,
   CURRENT_APP_VERSION,
   DB_BACKUP_RETENTION,
   readStoredAppVersion,
@@ -82,6 +83,7 @@ class ShelfBackend {
     this.verifiedDownloadsByFingerprint = new Map();
     this.activeUpdateDownloads = new Map();
     this.db = openDatabase(appConfigDir);
+    runSyncDeviceMigration(this.db);
     this.openPath = openPath || (() => Promise.resolve(""));
     this.revealPath = revealPath || (() => {});
     this.openExternal = openExternalUrl || (() => Promise.resolve(""));
