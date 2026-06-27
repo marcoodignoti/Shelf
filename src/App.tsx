@@ -14,6 +14,7 @@ import { setNativeThemeSource, type DesktopUpdateInfo } from "./lib/desktop";
 import { isStudioPageUnified } from "./lib/studioDocuments";
 
 const Editor = lazy(() => import("./components/PageEditor").then((module) => ({ default: module.Editor })));
+const SplitView = lazy(() => import("./components/SplitView").then((module) => ({ default: module.SplitView })));
 const StudioWorkspace = lazy(() => import("./components/StudioWorkspace").then((module) => ({ default: module.StudioWorkspace })));
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((module) => ({ default: module.CommandPalette })));
 
@@ -151,6 +152,9 @@ export default function App() {
     [pages]
   );
   const currentPage = currentPageId ? pagesById.get(currentPageId) : undefined;
+  const secondaryPageId = useAppStore((state) => state.secondaryPageId);
+  const setSecondaryPageId = useAppStore((state) => state.setSecondaryPageId);
+  const secondaryPage = secondaryPageId ? pagesById.get(secondaryPageId) : undefined;
   const currentStudioDocument = useMemo(
     () => studioDocuments.find((document) => document.id === currentStudioDocumentId),
     [currentStudioDocumentId, studioDocuments]
@@ -221,11 +225,25 @@ export default function App() {
           onSelectPage={setCurrentPageId}
         />
       ) : currentPage ? (
-        <ErrorBoundary key={currentPage.id}>
-          <Suspense fallback={<WorkspaceLoadingFallback />}>
-            <Editor page={currentPage} pages={pages} onSelectPage={setCurrentPageId} />
-          </Suspense>
-        </ErrorBoundary>
+        secondaryPageId && secondaryPage ? (
+          <ErrorBoundary key={`${currentPage.id}-${secondaryPage.id}`}>
+            <Suspense fallback={<WorkspaceLoadingFallback />}>
+              <SplitView
+                primary={currentPage}
+                secondary={secondaryPage}
+                pages={pages}
+                onSelectPrimaryPage={setCurrentPageId}
+                onSelectSecondaryPage={setSecondaryPageId}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        ) : (
+          <ErrorBoundary key={currentPage.id}>
+            <Suspense fallback={<WorkspaceLoadingFallback />}>
+              <Editor page={currentPage} pages={pages} onSelectPage={setCurrentPageId} />
+            </Suspense>
+          </ErrorBoundary>
+        )
       ) : (
         <div className="flex h-full items-center justify-center px-8 text-center">
           <div className="max-w-sm">
