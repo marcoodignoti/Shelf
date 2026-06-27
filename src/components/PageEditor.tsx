@@ -18,7 +18,7 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, ChevronUp, Columns2, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
@@ -61,6 +61,7 @@ import { handleEditorPasteWithMedia, uploadEditorMediaFile, useEditorMediaDrop }
 import { usePageActions } from "./usePageActions";
 import { useSubpageActions } from "./useSubpageActions";
 import { useSubpageDrag } from "./useSubpageDrag";
+import { SplitPagePicker } from "./SplitPagePicker";
 
 const ICON_OPTIONS = ["📄", "✅", "💡", "📌", "🚀", "🧠", "🛠️", "📚", "🎯", "✨", "🔥", "📝"];
 
@@ -596,6 +597,16 @@ function EditorSurface({
   const [subpageMenuOpen, setSubpageMenuOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
+  const [isSplitMenuOpen, setIsSplitMenuOpen] = useState(false);
+  const splitButtonRef = useRef<HTMLButtonElement>(null);
+  const secondaryPageId = useAppStore((state) => state.secondaryPageId);
+  const openInSplit = useAppStore((state) => state.openInSplit);
+  const swapSplit = useAppStore((state) => state.swapSplit);
+  const closeSplit = useAppStore((state) => state.closeSplit);
+  const isSplitPickerOpen = useAppStore((state) => state.isSplitPickerOpen);
+  const openSplitPicker = useAppStore((state) => state.openSplitPicker);
+  const closeSplitPicker = useAppStore((state) => state.closeSplitPicker);
+  const isInSplit = secondaryPageId !== null;
   const updatePageOptimistically = useAppStore((state) => state.updatePageOptimistically);
   const addPage = useAppStore((state) => state.addPage);
   const addPageFromTemplate = useAppStore((state) => state.addPageFromTemplate);
@@ -1219,6 +1230,27 @@ function EditorSurface({
             </div>
             <button
               type="button"
+              ref={splitButtonRef}
+              className={`rounded-md p-1 transition-colors ${
+                isInSplit
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              aria-label={t("editor.splitView")}
+              aria-pressed={isInSplit}
+              title={t("editor.splitView")}
+              onClick={() => {
+                if (isInSplit) {
+                  setIsSplitMenuOpen((open) => !open);
+                } else {
+                  openSplitPicker();
+                }
+              }}
+            >
+              <Columns2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               ref={pageMenuButtonRef}
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={t("editor.pageActions")}
@@ -1348,6 +1380,73 @@ function EditorSurface({
                   <div className="px-2 py-2 text-xs text-muted-foreground">{t("sidebar.noPagesFound")}</div>
                 )}
               </div>
+            </FloatingPopover>
+            <FloatingPopover
+              anchorElement={splitButtonRef.current}
+              open={isSplitMenuOpen}
+              width={240}
+              placement="bottom-end"
+              onOpenChange={setIsSplitMenuOpen}
+              className="on-popover"
+            >
+              <button
+                type="button"
+                className="on-menu-item"
+                onClick={() => {
+                  setIsSplitMenuOpen(false);
+                  openSplitPicker();
+                }}
+              >
+                <Columns2 className="h-3.5 w-3.5 text-muted-foreground" />
+                {t("editor.chooseSplitPage")}
+              </button>
+              <button
+                type="button"
+                className="on-menu-item justify-between"
+                onClick={() => {
+                  swapSplit();
+                  setIsSplitMenuOpen(false);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t("editor.swapPanels")}
+                </span>
+                <span className="text-xs text-muted-foreground">⌘⇧\</span>
+              </button>
+              <div className="on-menu-separator" />
+              <button
+                type="button"
+                className="on-menu-item justify-between"
+                onClick={() => {
+                  closeSplit();
+                  setIsSplitMenuOpen(false);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t("editor.closeSecondary")}
+                </span>
+                <span className="text-xs text-muted-foreground">⌘\</span>
+              </button>
+            </FloatingPopover>
+            <FloatingPopover
+              anchorElement={splitButtonRef.current}
+              open={isSplitPickerOpen}
+              width={340}
+              placement="bottom-end"
+              onOpenChange={(open) => {
+                if (!open) closeSplitPicker();
+              }}
+              className="on-popover"
+            >
+              <SplitPagePicker
+                currentPageId={page.id}
+                onChoose={(id) => {
+                  openInSplit(id);
+                  closeSplitPicker();
+                }}
+              />
             </FloatingPopover>
           </div>
         </div>
