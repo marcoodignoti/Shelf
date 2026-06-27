@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Page } from "./db";
+import type { Page } from "./types";
 import { childPagesForParent, moveTargetPages, visiblePageIds } from "./pageTree";
 
 function page(id: string, parent_id: string | null = null): Page {

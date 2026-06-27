@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     environment: "node",
     exclude: [...configDefaults.exclude, "dist-electron/**", ".secrets/**"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "packages/shared/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
