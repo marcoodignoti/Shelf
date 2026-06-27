@@ -8,6 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./pageTree": "./src/pageTree.ts",
-    "./breadcrumb": "./src/breadcrumb.ts"
+    "./breadcrumb": "./src/breadcrumb.ts",
+    "./i18n": "./src/i18n/index.ts",
+    "./i18n/locales/*": "./src/i18n/locales/*"
   }
 }

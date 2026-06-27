@@ -18,6 +18,7 @@ export default defineConfig({
         "src/vite-env.d.ts",
         "src/main.tsx",
         "src/lib/locales/**",
+        "packages/shared/src/i18n/locales/**",
       ],
     },
     pool: process.platform === "win32" ? "threads" : "vmForks",

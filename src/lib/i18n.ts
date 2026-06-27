@@ -1,41 +1,45 @@
 import { useCallback } from "react";
-import { en } from "./locales/en";
-import { it } from "./locales/it";
-import type { LocalePreference } from "./preferences";
 import { useUIStore } from "../store/useUIStore";
+import {
+  resolveLocale as resolveLocaleCore,
+  translate as translateCore,
+  type Locale,
+  type LocalePreference as SharedLocalePreference,
+  type TranslationKey,
+  type TranslationParams,
+} from "@shelf/shared";
 
-export type Locale = "en" | "it";
-export type TranslationKey = keyof typeof en;
-export type TranslationParams = Record<string, string>;
+// Re-export everything consumers currently import from this module so existing
+// imports keep resolving unchanged. The pure core (locale resolution,
+// dictionaries, lookup + interpolation) now lives in @shelf/shared; only the
+// React hooks (`useLocale`, `useT`) stay here, since shared code must remain
+// framework-free.
+export {
+  resolveLocaleCore as resolveLocale,
+  translateCore as translate,
+  type Locale,
+  type TranslationKey,
+  type TranslationParams,
+};
 
-const dictionaries: Record<Locale, Record<TranslationKey, string>> = { en, it };
+export type { LocalePreference } from "./preferences";
 
-export function resolveLocale(preference: LocalePreference, navigatorLanguage: string | undefined): Locale {
-  if (preference === "en" || preference === "it") return preference;
-  return navigatorLanguage?.toLowerCase().startsWith("it") ? "it" : "en";
-}
-
-export function translate(
-  locale: Locale,
-  key: TranslationKey,
-  params?: TranslationParams,
-  dictionaryOverride?: Record<TranslationKey, string>,
-): string {
-  const dictionary = dictionaryOverride ?? dictionaries[locale];
-  const template = dictionary[key] || en[key];
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name) => params[name] ?? match);
-}
+// Re-export the dictionaries so any consumer that imported them transitively
+// can still reach them.
+export { en, it } from "@shelf/shared";
 
 export function useLocale(): Locale {
   const preference = useUIStore((state) => state.localePreference);
-  return resolveLocale(preference, typeof navigator !== "undefined" ? navigator.language : undefined);
+  return resolveLocaleCore(
+    preference as SharedLocalePreference,
+    typeof navigator !== "undefined" ? navigator.language : undefined,
+  );
 }
 
 export function useT(): (key: TranslationKey, params?: TranslationParams) => string {
   const locale = useLocale();
   return useCallback(
-    (key: TranslationKey, params?: TranslationParams) => translate(locale, key, params),
+    (key: TranslationKey, params?: TranslationParams) => translateCore(locale, key, params),
     [locale],
   );
 }
