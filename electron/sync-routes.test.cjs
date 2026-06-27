@@ -29,10 +29,47 @@ test("GET /pages maps to list_pages", async () => {
   assert.strictEqual(calls[0].command, "list_pages");
 });
 
-test("GET /pages?since= accepts the param and returns the full list in MVP", async () => {
-  const { resolver } = makeResolver();
+test("GET /pages?since= filters pages by updated_at", async () => {
+  const backend = {
+    invoke: async (command) => {
+      if (command === "list_pages") {
+        return [
+          { id: "old", title: "Old", updated_at: "2025-01-01T00:00:00Z" },
+          { id: "recent", title: "Recent", updated_at: "2026-06-01T00:00:00Z" },
+          { id: "missing", title: "No Date" },
+        ];
+      }
+      return null;
+    },
+  };
+  const devices = { lookupByToken: () => ({ device_id: "dev:1" }), touchLastSeen: () => {} };
+  const resolver = createRouteResolver({ backend, devices });
+  // Pages updated after the cursor.
   const res = await resolver.resolve({ method: "GET", path: "/pages?since=2026-01-01T00:00:00Z", headers: {}, body: null, authToken: "good" });
   assert.strictEqual(res.status, 200);
+  const ids = res.body.map((p) => p.id);
+  assert.ok(ids.includes("recent"));
+  assert.ok(!ids.includes("old"));
+  assert.ok(!ids.includes("missing"), "pages without updated_at cannot be newer than the cursor");
+});
+
+test("GET /pages without since returns all pages", async () => {
+  const backend = {
+    invoke: async (command) => {
+      if (command === "list_pages") {
+        return [
+          { id: "p1", updated_at: "2025-01-01T00:00:00Z" },
+          { id: "p2", updated_at: "2026-01-01T00:00:00Z" },
+        ];
+      }
+      return null;
+    },
+  };
+  const devices = { lookupByToken: () => ({ device_id: "dev:1" }), touchLastSeen: () => {} };
+  const resolver = createRouteResolver({ backend, devices });
+  const res = await resolver.resolve({ method: "GET", path: "/pages", headers: {}, body: null, authToken: "good" });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.length, 2);
 });
 
 test("GET /pages/:id maps to get_page", async () => {

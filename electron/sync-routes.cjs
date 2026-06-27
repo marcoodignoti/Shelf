@@ -25,7 +25,7 @@ function createRouteResolver({ backend, devices, pairing }) {
   }
 
   async function resolve({ method, path, headers, body, authToken }) {
-    const { pathname } = parsePath(path);
+    const { pathname, query } = parsePath(path);
 
     // Pairing is the only unauthenticated route.
     if (method === "POST" && pathname === "/pair") {
@@ -50,14 +50,12 @@ function createRouteResolver({ backend, devices, pairing }) {
 
     try {
       if (method === "GET" && pathname === "/pages") {
-        // MVP: `since` is accepted for forward compatibility but IGNORED — we
-        // return the full active page list. Spec §4 calls for incremental sync
-        // (GET /pages?since=<cursor>); the desktop-side filter by updated_at is
-        // deferred to a Phase 2.5 task. The mobile client already supports
-        // incremental pull locally (compares updated_at against its own
-        // last_pulled_cursor), so no wire-format change will be needed when the
-        // server-side filter lands.
         const pages = await backend.invoke("list_pages", {});
+        const { since } = query;
+        if (since && typeof since === "string") {
+          const filtered = pages.filter((page) => page.updated_at > since);
+          return { status: 200, body: filtered };
+        }
         return { status: 200, body: pages };
       }
       if (method === "GET" && pathname.startsWith("/pages/")) {
