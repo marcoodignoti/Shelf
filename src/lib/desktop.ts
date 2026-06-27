@@ -60,6 +60,17 @@ export interface ImportedFile {
   content: string;
 }
 
+interface ShelfSyncBridge {
+  enable(): Promise<SyncStatus>;
+  disable(): Promise<null>;
+  getStatus(): Promise<SyncStatus>;
+  getDevices(): Promise<SyncDevice[]>;
+  revokeDevice(deviceId: string): Promise<null>;
+  startPairing(): Promise<SyncPairing>;
+  cancelPairing(): Promise<null>;
+  getPairing(): Promise<SyncPairing | null>;
+}
+
 interface ShelfDesktopBridge {
   invoke<C extends DesktopCommandName>(command: C, args?: DesktopCommandArgs<C>): Promise<DesktopCommandResult<C>>;
   open(options?: OpenDialogOptions): Promise<OpenDialogResult>;
@@ -84,6 +95,7 @@ interface ShelfDesktopBridge {
   windowToggleMaximize?(): Promise<null>;
   windowClose?(): Promise<null>;
   windowIsMaximized?(): Promise<boolean>;
+  sync?: ShelfSyncBridge;
 }
 
 declare global {
@@ -218,4 +230,73 @@ export async function windowClose(): Promise<void> {
 
 export async function windowIsMaximized(): Promise<boolean> {
   return await window.openNotion?.windowIsMaximized?.() ?? false;
+}
+
+// --- Mobile sync -------------------------------------------------------------
+// These wrappers call the dedicated sync_* IPC channels (handled in
+// electron/main.cjs). They do NOT go through the backend.invoke command layer.
+
+export interface SyncDevice {
+  device_id: string;
+  name: string;
+  platform: string;
+  paired_at: string;
+  last_seen: string | null;
+}
+
+export interface SyncStatus {
+  enabled: boolean;
+  port: number | null;
+  host: string | null;
+  certFingerprint: string | null;
+}
+
+export interface SyncPairing {
+  pairingToken: string;
+  pin: string;
+  qrPayload: string;
+  expiresAt: number;
+}
+
+export async function syncEnable(): Promise<SyncStatus> {
+  const sync = window.openNotion?.sync;
+  if (!sync) throw new Error("mobile sync is not available in this build");
+  return await sync.enable();
+}
+
+export async function syncDisable(): Promise<void> {
+  await window.openNotion?.sync?.disable();
+}
+
+export async function syncGetStatus(): Promise<SyncStatus> {
+  return (
+    (await window.openNotion?.sync?.getStatus?.()) ?? {
+      enabled: false,
+      port: null,
+      host: null,
+      certFingerprint: null,
+    }
+  );
+}
+
+export async function syncGetDevices(): Promise<SyncDevice[]> {
+  return (await window.openNotion?.sync?.getDevices?.()) ?? [];
+}
+
+export async function syncRevokeDevice(deviceId: string): Promise<void> {
+  await window.openNotion?.sync?.revokeDevice(deviceId);
+}
+
+export async function syncStartPairing(): Promise<SyncPairing> {
+  const sync = window.openNotion?.sync;
+  if (!sync) throw new Error("mobile sync is not available in this build");
+  return await sync.startPairing();
+}
+
+export async function syncCancelPairing(): Promise<void> {
+  await window.openNotion?.sync?.cancelPairing();
+}
+
+export async function syncGetPairing(): Promise<SyncPairing | null> {
+  return (await window.openNotion?.sync?.getPairing?.()) ?? null;
 }

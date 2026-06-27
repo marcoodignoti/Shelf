@@ -128,3 +128,20 @@ export type DesktopCommandResult<C extends DesktopCommandName> =
 export function isDesktopCommandName(value: string): value is DesktopCommandName {
   return DESKTOP_COMMAND_NAME_SET.has(value);
 }
+
+// Mobile sync server control. These are NOT backend.invoke commands — they are
+// dedicated IPC channels handled in electron/main.cjs that manage the local
+// sync server lifecycle, pairing, and the paired-device registry. Kept here so
+// the channel names live in one typed place alongside the desktop commands.
+export const SYNC_COMMANDS = {
+  enable: "sync_enable",
+  disable: "sync_disable",
+  getStatus: "sync_get_status",
+  getDevices: "sync_get_devices",
+  revokeDevice: "sync_revoke_device",
+  startPairing: "sync_start_pairing",
+  cancelPairing: "sync_cancel_pairing",
+  getPairing: "sync_get_pairing",
+} as const;
+
+export type SyncCommandName = (typeof SYNC_COMMANDS)[keyof typeof SYNC_COMMANDS];

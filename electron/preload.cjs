@@ -108,6 +108,33 @@ contextBridge.exposeInMainWorld("openNotion", {
       return ipcRenderer.invoke("external-assistant:toggle", isRecord(options) ? options : {});
     },
   },
+  sync: {
+    enable() {
+      return ipcRenderer.invoke("opennotion:sync-enable");
+    },
+    disable() {
+      return ipcRenderer.invoke("opennotion:sync-disable");
+    },
+    getStatus() {
+      return ipcRenderer.invoke("opennotion:sync-get-status");
+    },
+    getDevices() {
+      return ipcRenderer.invoke("opennotion:sync-get-devices");
+    },
+    revokeDevice(deviceId) {
+      if (typeof deviceId !== "string") throw new Error("deviceId must be a string");
+      return ipcRenderer.invoke("opennotion:sync-revoke-device", deviceId);
+    },
+    startPairing() {
+      return ipcRenderer.invoke("opennotion:sync-start-pairing");
+    },
+    cancelPairing() {
+      return ipcRenderer.invoke("opennotion:sync-cancel-pairing");
+    },
+    getPairing() {
+      return ipcRenderer.invoke("opennotion:sync-get-pairing");
+    },
+  },
   onDesktopUpdate(callback) {
     if (typeof callback !== "function") throw new Error("callback must be a function");
     const listeners = [];

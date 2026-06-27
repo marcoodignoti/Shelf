@@ -2,6 +2,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const crypto = require("node:crypto");
+const os = require("node:os");
 const {
   app,
   BrowserWindow,
@@ -16,6 +17,18 @@ const {
 const { pathToFileURL } = require("node:url");
 const { ShelfBackend } = require("./backend.cjs");
 const { createExternalAssistantController } = require("./external-assistant.cjs");
+const {
+  SYNC_PORT_RANGE_START,
+  SYNC_PORT_RANGE_END,
+  CURRENT_APP_VERSION,
+} = require("./backend-helpers.cjs");
+const { createSyncServer } = require("./sync-server.cjs");
+const { createMdnsAdvertiser } = require("./sync-mdns.cjs");
+const { createSyncDeviceStore } = require("./sync-devices.cjs");
+const { createPairingController } = require("./sync-pairing.cjs");
+const { createRouteResolver } = require("./sync-routes.cjs");
+const { isPrivateHost } = require("./sync-network.cjs");
+const { ensureSyncCert } = require("./sync-certs.cjs");
 
 const APP_PROTOCOL = "opennotion-app";
 const APP_RENDERER_HOST = "renderer";
@@ -57,6 +70,99 @@ let studioPdfPort = null;
 let studioPdfAccessToken = null;
 let trustedDevRendererUrlResolved = false;
 let trustedDevRendererUrlValue = null;
+// Mobile sync server state. Null when sync is disabled. See docs/sync.md.
+let syncState = null;
+
+function privateHostCandidates() {
+  const interfaces = os.networkInterfaces();
+  const hosts = [];
+  for (const list of Object.values(interfaces)) {
+    for (const iface of list || []) {
+      if (!iface.internal && iface.family === "IPv4" && isPrivateHost(iface.address)) {
+        hosts.push(iface.address);
+      }
+    }
+  }
+  return hosts;
+}
+
+function syncStatusInternal() {
+  if (!syncState) {
+    return { enabled: false, port: null, host: null, certFingerprint: null };
+  }
+  return {
+    enabled: true,
+    port: syncState.port,
+    host: syncState.host,
+    certFingerprint: syncState.fingerprint,
+  };
+}
+
+async function syncEnableInternal() {
+  if (syncState) return syncStatusInternal();
+  const backend = createBackend();
+  const hosts = privateHostCandidates();
+  if (hosts.length === 0) {
+    throw new Error("No private network interface found; sync cannot advertise safely.");
+  }
+  const host = hosts[0];
+  const fingerprint = ensureSyncCert(backend.appConfigDir).fingerprint;
+  const devices = createSyncDeviceStore(backend.db);
+  // Pairing controller is created after the server binds (it needs the real
+  // port for the QR payload). The resolver gets a forwarder so /pair requests
+  // before pairing is wired (none in practice — pairing starts on user action)
+  // throw cleanly instead of crashing.
+  let pairingImpl = null;
+  const pairingForwarder = {
+    consumePairing: (args) => {
+      if (!pairingImpl) throw new Error("pairing is not ready");
+      return pairingImpl.consumePairing(args);
+    },
+    startPairing: () => pairingImpl.startPairing(),
+    currentSession: () => (pairingImpl ? pairingImpl.currentSession() : null),
+    cancel: () => {
+      if (pairingImpl) pairingImpl.cancel();
+    },
+  };
+  const resolver = createRouteResolver({ backend, devices, pairing: pairingForwarder });
+  const server = createSyncServer({
+    configDir: backend.appConfigDir,
+    resolver,
+    portRange: { start: SYNC_PORT_RANGE_START, end: SYNC_PORT_RANGE_END },
+  });
+  const { port } = await server.start();
+  pairingImpl = createPairingController({
+    port,
+    hostCandidates: [host],
+    certFingerprint: fingerprint,
+  });
+  const advertiser = createMdnsAdvertiser({
+    name: `Shelf on ${os.hostname()}`,
+    port,
+    txt: { v: CURRENT_APP_VERSION },
+  });
+  advertiser.start();
+  syncState = {
+    server,
+    advertiser,
+    devices,
+    pairing: pairingForwarder,
+    resolver,
+    host,
+    port,
+    fingerprint,
+  };
+  return syncStatusInternal();
+}
+
+async function syncDisableInternal() {
+  if (!syncState) return;
+  const state = syncState;
+  syncState = null;
+  state.pairing.cancel();
+  await state.advertiser.stop();
+  await state.server.stop();
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -1142,6 +1248,56 @@ function registerIpc() {
     const win = parentWindowForEvent(event);
     return win ? win.isMaximized() : false;
   });
+
+  // --- Mobile sync server control -------------------------------------------
+  // Dedicated IPC channels (not backend.invoke). The server lifecycle, pairing,
+  // and paired-device registry live entirely in this file. See docs/sync.md.
+  ipcMain.handle("opennotion:sync-enable", async (event) => {
+    requireTrustedSender(event);
+    return await syncEnableInternal();
+  });
+
+  ipcMain.handle("opennotion:sync-disable", async (event) => {
+    requireTrustedSender(event);
+    await syncDisableInternal();
+    return null;
+  });
+
+  ipcMain.handle("opennotion:sync-get-status", async (event) => {
+    requireTrustedSender(event);
+    return syncStatusInternal();
+  });
+
+  ipcMain.handle("opennotion:sync-get-devices", async (event) => {
+    requireTrustedSender(event);
+    return syncState ? syncState.devices.listDevices() : [];
+  });
+
+  ipcMain.handle("opennotion:sync-revoke-device", async (event, deviceId) => {
+    requireTrustedSender(event);
+    if (typeof deviceId !== "string" || deviceId.trim() === "") {
+      throw new Error("deviceId must be a string");
+    }
+    if (syncState) syncState.devices.revokeDevice(deviceId);
+    return null;
+  });
+
+  ipcMain.handle("opennotion:sync-start-pairing", async (event) => {
+    requireTrustedSender(event);
+    if (!syncState) throw new Error("mobile sync is not enabled");
+    return syncState.pairing.startPairing();
+  });
+
+  ipcMain.handle("opennotion:sync-cancel-pairing", async (event) => {
+    requireTrustedSender(event);
+    if (syncState) syncState.pairing.cancel();
+    return null;
+  });
+
+  ipcMain.handle("opennotion:sync-get-pairing", async (event) => {
+    requireTrustedSender(event);
+    return syncState ? syncState.pairing.currentSession() : null;
+  });
 }
 
 configureAppIdentity();
@@ -1174,6 +1330,10 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  // Stop the sync server before tearing down the backend it depends on.
+  // Fire-and-forget: server.close() owns its own sockets; awaiting here would
+  // block quit unnecessarily.
+  void syncDisableInternal();
   externalAssistant?.destroy();
   externalAssistant = null;
   studioPdfServer?.close();
