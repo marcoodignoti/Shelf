@@ -18,6 +18,7 @@ npm run build          # tsc + vite build (frontend only)
 npm run check          # Full Electron gate: build + unit + smoke/runtime/visual/parity + audit
 npm run perf           # Frontend perf suite
 npm run perf:native    # macOS release-binary RSS + startup profiling (perf/profile-macos.sh)
+npm run sync:test      # Focused electron/sync-*.test.cjs suite (certs, tokens, devices, routes, server, mdns)
 ```
 
 - Perf specs use a separate `playwright.perf.config.ts`. Reference baselines/budgets are tracked in the repo — update them deliberately when a regression is intentional.
@@ -42,6 +43,8 @@ The app is a thin React UI over an Electron/SQLite backend. **All persistence go
 - **`src/lib/`** — pure, framework-free logic with co-located `*.test.ts` files (page tree/ordering, navigation, math/LaTeX normalization, tables, database schema, breadcrumbs, etc.). New non-trivial logic belongs here as a tested pure function, kept out of components. This is the bulk of the unit-test surface.
 
 - **`src/components/PageEditor.tsx` + `src/lib/editorMath.tsx`** — the BlockNote editor and its formula handling. `editorMath` detects pasted LaTeX, normalizes split/bracketed display-math fences into single `formula` blocks, and prepares formulas for KaTeX. It is regex-heavy and well-covered by both unit tests and e2e tests in `tests/e2e/persistence.e2e.ts` — extend the tests when changing detection heuristics.
+
+- **`electron/sync-*.cjs`** — the local-network mobile sync server (Phase 2). Self-signed TLS (`sync-certs`), device-token hashing + constant-time verify (`sync-tokens`), the `sync_devices` table CRUD (`sync-devices`), ephemeral QR pairing (`sync-pairing`), the REST route table mapping HTTP → `backend.invoke` (`sync-routes`), private-host check + free-port picker (`sync-network`), the HTTPS server lifecycle (`sync-server`), and mDNS advertisement (`sync-mdns`). Wiring lives in `electron/main.cjs` (`opennotion:sync-*` IPC) + `electron/preload.cjs` (`window.openNotion.sync.*`) + `src/lib/desktop.ts`. See `docs/sync.md`. Test with `npm run sync:test`.
 
 ## Data model notes
 
