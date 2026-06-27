@@ -1760,6 +1760,16 @@
     margin: 0.2rem 0;
   }
 
+  /* Inside a split pane, drop the editor titlebar's own left/right borders and
+     top rounding — the divider already separates the two panes, and keeping the
+     per-pane borders creates a visible double line along the divider. */
+  .on-split-pane .on-win-titlebar {
+    border-left: 0;
+    border-right: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
   .on-split-divider::after {
     content: "";
     position: absolute;
