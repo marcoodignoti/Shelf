@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { ensureSyncCert, fingerprintOf } = require("./sync-certs.cjs");
+const { ensureSyncCert, fingerprintOf, generatePair } = require("./sync-certs.cjs");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "shelf-cert-"));
@@ -31,9 +31,25 @@ test("ensureSyncCert reloads the same cert on subsequent calls (stable fingerpri
 test("fingerprintOf matches the certificate's DER", async () => {
   const dir = tempDir();
   const { cert, fingerprint } = await ensureSyncCert(dir);
-  const der = new crypto.X509Certificate(cert).raw;
-  assert.strictEqual(crypto.createHash("sha256").update(der).digest("hex"), fingerprint);
+  const x509 = new crypto.X509Certificate(cert);
+  assert.strictEqual(crypto.createHash("sha256").update(x509.raw).digest("hex"), fingerprint);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("generated cert is a self-signed ECDSA P-256 X.509 that verifies against its own public key", () => {
+  const { cert, key } = generatePair();
+  const x509 = new crypto.X509Certificate(cert);
+  assert.strictEqual(x509.publicKey.asymmetricKeyType, "ec");
+  const fingerprint = fingerprintOf(cert);
+  assert.match(fingerprint, /^[0-9a-f]{64}$/);
+  // Self-signature must verify with the embedded public key.
+  assert.strictEqual(x509.verify(x509.publicKey), true);
+  // And the private key must match that public key.
+  const pubFromKey = crypto.createPublicKey(key);
+  assert.strictEqual(
+    crypto.createHash("sha256").update(pubFromKey.export({ type: "spki", format: "der" })).digest("hex"),
+    crypto.createHash("sha256").update(x509.publicKey.export({ type: "spki", format: "der" })).digest("hex"),
+  );
 });
 
 test("ensureSyncCert writes files with restrictive permissions", async () => {

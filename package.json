@@ -115,14 +115,12 @@
     "@blocknote/react": "0.51.4",
     "@mantine/core": "9.3.2",
     "@mantine/hooks": "9.3.2",
-    "bonjour-service": "^1.4.2",
     "katex": "0.17.0",
     "lucide-react": "1.21.0",
     "pdfjs-dist": "6.0.227",
     "qrcode.react": "^4.2.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "selfsigned": "^5.5.0",
     "zustand": "5.0.14"
   },
   "devDependencies": {

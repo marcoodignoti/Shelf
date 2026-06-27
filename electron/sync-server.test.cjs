@@ -60,6 +60,7 @@ function request(server, { method, path, body, token }) {
     const payload = body ? JSON.stringify(body) : null;
     const req = https.request(
       {
+        agent: false, // avoid TLS session reuse across test runs (each server has a distinct cert)
         method,
         hostname: "127.0.0.1",
         port: server.port,
