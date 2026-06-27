@@ -1384,10 +1384,10 @@ function EditorSurface({
             <FloatingPopover
               anchorElement={splitButtonRef.current}
               open={isSplitMenuOpen}
-              width={280}
+              width={200}
               placement="bottom-end"
               onOpenChange={setIsSplitMenuOpen}
-              className="on-popover"
+              className="on-popover on-split-menu"
             >
               <button
                 type="button"

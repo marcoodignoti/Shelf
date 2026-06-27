@@ -226,7 +226,7 @@ export const it: Record<keyof typeof en, string> = {
   "editor.turnIntoDatabase": "Converti in database",
   "editor.splitView": "Dividi vista",
   "editor.splitViewOpen": "Apri a fianco",
-  "editor.chooseSplitPage": "Cambia pagina…",
+  "editor.chooseSplitPage": "Cambia pagina",
   "editor.swapPanels": "Scambia",
   "editor.closeSecondary": "Chiudi pannello",
   "editor.alreadyOpen": "Già aperta",

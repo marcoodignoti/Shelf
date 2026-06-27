@@ -224,7 +224,7 @@ export const en = {
   "editor.turnIntoDatabase": "Turn into Database",
   "editor.splitView": "Split view",
   "editor.splitViewOpen": "Open beside",
-  "editor.chooseSplitPage": "Change page…",
+  "editor.chooseSplitPage": "Change page",
   "editor.swapPanels": "Swap",
   "editor.closeSecondary": "Close panel",
   "editor.alreadyOpen": "Already open",
