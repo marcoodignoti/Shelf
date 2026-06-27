@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { Page } from "./types";
 import { pageBreadcrumb } from "./breadcrumb";
-import { Page } from "./db";
 
 function page(id: string, title: string, parentId: string | null = null): Page {
   return {
