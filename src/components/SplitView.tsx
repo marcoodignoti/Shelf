@@ -19,6 +19,7 @@ export function SplitView({
 }) {
   const splitViewRatio = useAppStore((s) => s.splitViewRatio);
   const setSplitViewRatio = useAppStore((s) => s.setSplitViewRatio);
+  const activePane = useAppStore((s) => s.activePane);
   const setActivePane = useAppStore((s) => s.setActivePane);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -59,7 +60,7 @@ export function SplitView({
   return (
     <div ref={containerRef} data-testid="split-container" className="flex h-full w-full flex-row">
       <div
-        className="flex min-w-0 flex-1 flex-col"
+        className={`flex min-w-0 flex-1 flex-col ${activePane === "primary" ? "on-split-pane on-split-pane-active" : "on-split-pane"}`}
         style={{
           flexBasis: `${splitViewRatio * 100}%`,
           flexGrow: splitViewRatio,
@@ -74,11 +75,12 @@ export function SplitView({
         data-testid="split-divider"
         role="separator"
         aria-orientation="vertical"
-        className="w-1 shrink-0 cursor-col-resize bg-border/60 transition-colors hover:bg-border"
+        aria-label="Resize split panels"
+        className="on-split-divider"
         onPointerDown={handleDividerPointerDown}
       />
       <div
-        className="flex min-w-0 flex-1 flex-col border-l border-border/40"
+        className={`flex min-w-0 flex-1 flex-col ${activePane === "secondary" ? "on-split-pane on-split-pane-active" : "on-split-pane"}`}
         style={{
           flexBasis: `${(1 - splitViewRatio) * 100}%`,
           flexGrow: 1 - splitViewRatio,

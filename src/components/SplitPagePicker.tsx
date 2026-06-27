@@ -53,18 +53,18 @@ export function SplitPagePicker({
   }, [query, t]);
 
   return (
-    <div className="on-command-panel flex flex-col">
-      <div className="on-command-input-row">
-        <Search className="h-4 w-4 text-muted-foreground" />
+    <div className="on-split-picker flex flex-col">
+      <div className="on-split-picker-input">
+        <Search className="h-3.5 w-3.5 text-muted-foreground" />
         <input
           ref={inputRef}
-          className="min-w-0 flex-1 border-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
           placeholder={t("commandPalette.searchSplit")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
-      <div className="on-command-results overflow-y-auto" style={{ maxHeight: 320 }}>
+      <div className="on-split-picker-results">
         <PageSearchResults
           query={query}
           pages={pages}
