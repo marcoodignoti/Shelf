@@ -91,6 +91,7 @@ describe("splitSlice deletion cleanup", () => {
     w.openNotion = {
       invoke: vi.fn(async (command: string) => {
         if (command === "list_pages") return pages;
+        if (command === "list_studio_documents") return [];
         if (command === "list_all_studio_document_page_links") return [];
         return undefined;
       }),
