@@ -56,7 +56,8 @@
     "release:update-manifest:compat": "node scripts/write-beta-compat-manifest.cjs",
     "release:verify:macos": "node scripts/electron-verify-macos.cjs",
     "release:checksums": "node scripts/write-release-checksums.cjs",
-    "test:scripts": "node --test scripts/*.test.cjs electron/*.test.cjs"
+    "test:scripts": "node --test scripts/*.test.cjs electron/*.test.cjs",
+    "sync:test": "node --test electron/sync-*.test.cjs"
   },
   "build": {
     "appId": "com.marcodignoti.shelf",

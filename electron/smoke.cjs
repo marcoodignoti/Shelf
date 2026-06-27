@@ -10,6 +10,10 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opennotion-electron-"));
 const updateSigningKey = crypto.generateKeyPairSync("ed25519");
 const updateManifestPublicKey = updateSigningKey.publicKey.export({ format: "pem", type: "spki" });
 const backend = new ShelfBackend({ appConfigDir: tempRoot, updateManifestPublicKey });
+assert.ok(
+  backend.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_devices'").get(),
+  "sync_devices table should exist after backend construction",
+);
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axL6wAAAABJRU5ErkJggg==",
   "base64"
