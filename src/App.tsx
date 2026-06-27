@@ -97,6 +97,29 @@ export default function App() {
         return;
       }
 
+      // Split view shortcuts
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key === "]") {
+        event.preventDefault();
+        const state = useAppStore.getState();
+        state.setActivePane(state.activePane === "primary" ? "secondary" : "primary");
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key === "\\") {
+        event.preventDefault();
+        useAppStore.getState().swapSplit();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "\\") {
+        event.preventDefault();
+        const state = useAppStore.getState();
+        if (state.secondaryPageId) {
+          state.closeSplit();
+        } else {
+          state.openSplitPicker();
+        }
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
         && event.key.toLowerCase() === "a") {
         event.preventDefault();
