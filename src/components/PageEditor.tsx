@@ -1384,7 +1384,7 @@ function EditorSurface({
             <FloatingPopover
               anchorElement={splitButtonRef.current}
               open={isSplitMenuOpen}
-              width={240}
+              width={280}
               placement="bottom-end"
               onOpenChange={setIsSplitMenuOpen}
               className="on-popover"
@@ -1398,7 +1398,7 @@ function EditorSurface({
                 }}
               >
                 <Columns2 className="h-3.5 w-3.5 text-muted-foreground" />
-                {t("editor.chooseSplitPage")}
+                <span className="whitespace-nowrap">{t("editor.chooseSplitPage")}</span>
               </button>
               <button
                 type="button"
@@ -1410,7 +1410,7 @@ function EditorSurface({
               >
                 <span className="flex items-center gap-2">
                   <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t("editor.swapPanels")}
+                  <span className="whitespace-nowrap">{t("editor.swapPanels")}</span>
                 </span>
                 <span className="text-xs text-muted-foreground">⌘⇧\</span>
               </button>
@@ -1425,7 +1425,7 @@ function EditorSurface({
               >
                 <span className="flex items-center gap-2">
                   <X className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t("editor.closeSecondary")}
+                  <span className="whitespace-nowrap">{t("editor.closeSecondary")}</span>
                 </span>
                 <span className="text-xs text-muted-foreground">⌘\</span>
               </button>
