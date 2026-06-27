@@ -173,7 +173,10 @@ function PageItem({
     renamePageAction,
     toggleFavoriteAction,
     toggleTemplateAction,
-    importStudioPdfAction
+    importStudioPdfAction,
+    secondaryPageId,
+    activePane,
+    setSecondaryPageId
   } = useAppStore(useShallow((s) => ({
     currentPageId: s.currentPageId,
     setCurrentPageId: s.setCurrentPageId,
@@ -184,9 +187,23 @@ function PageItem({
     renamePageAction: s.renamePageAction,
     toggleFavoriteAction: s.toggleFavoriteAction,
     toggleTemplateAction: s.toggleTemplateAction,
-    importStudioPdfAction: s.importStudioPdfAction
+    importStudioPdfAction: s.importStudioPdfAction,
+    secondaryPageId: s.secondaryPageId,
+    activePane: s.activePane,
+    setSecondaryPageId: s.setSecondaryPageId
   })));
   const t = useT();
+  // In split view the sidebar highlights and targets the pane that currently has focus.
+  const effectiveActivePageId = secondaryPageId
+    ? (activePane === "secondary" ? secondaryPageId : currentPageId)
+    : currentPageId;
+  const handleRowSelect = (id: string) => {
+    if (secondaryPageId && activePane === "secondary") {
+      setSecondaryPageId(id);
+    } else {
+      setCurrentPageId(id);
+    }
+  };
   const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState('');
@@ -425,9 +442,9 @@ function PageItem({
     <div>
       <div
         data-page-id={page.id}
-        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${currentPageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
+        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${effectiveActivePageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
         style={{ paddingLeft: `${(depth * 12) + 5}px`, paddingRight: '6px' }}
-        onClick={() => setCurrentPageId(page.id)}
+        onClick={() => handleRowSelect(page.id)}
         onDoubleClick={startRename}
         onContextMenu={handleContextMenu}
         onPointerDown={(event) => onPointerDownPage(event, page)}

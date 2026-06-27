@@ -1666,6 +1666,126 @@
     box-shadow: 0 22px 60px hsl(222 28% 12% / 0.16);
   }
 
+  /* ── Split view page picker — compact, popover-sized (not the full modal) ── */
+  .on-split-picker {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .on-split-picker-input {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.4);
+  }
+
+  .on-split-picker-input input {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent;
+    outline: 0 !important;
+  }
+
+  .on-split-picker-input input:focus,
+  .on-split-picker-input input:focus-visible {
+    border: 0 !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+
+  .on-split-picker-results {
+    max-height: 20rem;
+    overflow-y: auto;
+    padding: 0.3rem 0.5rem 0.5rem;
+  }
+
+  /* Compact the command items when rendered inside the split picker popover */
+  .on-split-picker .on-command-section {
+    gap: 0.1rem;
+    padding-top: 0.25rem;
+  }
+
+  .on-split-picker .on-command-section + .on-command-section {
+    margin-top: 0.25rem;
+  }
+
+  .on-split-picker .on-command-section-title {
+    padding: 0.25rem 0.3rem 0.1rem;
+    font-size: 0.7rem;
+  }
+
+  .on-split-picker .on-command-item {
+    min-height: 2rem;
+    gap: 0.55rem;
+    border-radius: 0.65rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.84rem;
+  }
+
+  /* ── Split view divider — clear, grabbable affordance ── */
+  .on-split-divider {
+    position: relative;
+    width: 5px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: hsl(var(--border) / 0.45);
+    transition: background-color 140ms ease;
+  }
+
+  /* Faint background tint on the pane that currently has focus, so the user
+     can tell which pane the sidebar / keyboard will target. */
+  .on-split-pane-active {
+    position: relative;
+    background: hsl(var(--background));
+  }
+
+  /* ── Split view menu popover — compact, tighter than the page-action menu ── */
+  .on-split-menu {
+    padding: 0.3rem;
+  }
+
+  .on-split-menu .on-menu-item {
+    min-height: 1.75rem;
+    gap: 0.5rem;
+    border-radius: 0.55rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.76rem;
+  }
+
+  .on-split-menu .on-menu-separator {
+    margin: 0.2rem 0;
+  }
+
+  /* Inside a split pane, the editor titlebar borders are stripped via the
+     `inSplit` prop on <Editor> (removing the utility classes at the source),
+     since Tailwind utility classes otherwise override plain CSS here. */
+
+  .on-split-divider::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    height: 28px;
+    width: 3px;
+    border-radius: 999px;
+    background: hsl(var(--border));
+    transform: translate(-50%, -50%);
+    transition: background-color 140ms ease;
+  }
+
+  .on-split-divider:hover,
+  .on-split-divider:active {
+    background: hsl(var(--border) / 0.8);
+  }
+
+  .on-split-divider:hover::after,
+  .on-split-divider:active::after {
+    background: hsl(var(--foreground) / 0.4);
+  }
+
   .on-settings-overlay {
     background:
       radial-gradient(circle at 28% 78%, hsl(145 55% 72% / 0.12), transparent 17rem),
