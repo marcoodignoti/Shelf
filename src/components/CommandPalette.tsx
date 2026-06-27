@@ -203,6 +203,8 @@ export function CommandPalette() {
             onSelectPage={handleSelect}
             isSearching={isSearching}
             searchError={searchError}
+            selectedIndex={Math.max(0, selectedIndex - commandItems.length)}
+            setSelectedIndex={(i) => setSelectedIndex(i + commandItems.length)}
             emptyKey="commandPalette.noPagesYet"
             noResultsKey="commandPalette.noResults"
             searchingKey="commandPalette.searching"
