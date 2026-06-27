@@ -1,31 +1,10 @@
 import { fileSrc, importCoverImageWithDialog, importEditorMediaFilesWithDialog, invoke } from './desktop';
 
-export type PageKind = 'note' | 'studio_note' | 'project';
-
-export interface Page {
-  id: string;
-  title: string;
-  parent_id: string | null;
-  content: string | null;
-  search_text: string | null;
-  icon: string | null;
-  cover_url: string | null;
-  is_deleted: number;
-  is_favorite: number;
-  is_template: number;
-  is_database?: number;
-  database_schema?: string | null;
-  properties?: string | null;
-  sort_order: number;
-  page_kind: PageKind;
-  created_at: string;
-  updated_at: string;
-  content_loaded?: number;
-}
-
-export interface SearchResult extends Page {
-  matched_content: string | null;
-}
+// Types live in @shelf/shared so the mobile app can reuse them without
+// depending on the desktop renderer. Re-exported here to keep the public API
+// of this module (and every existing `import { Page } from './db'`) unchanged.
+export type { Page, PageKind, SearchResult } from "@shelf/shared";
+import type { Page, SearchResult } from "@shelf/shared";
 
 export async function getPages(): Promise<Page[]> {
   return await invoke('list_pages');

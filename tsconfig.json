@@ -9,6 +9,8 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "paths": {
+      "@shelf/shared": ["./packages/shared/src/index.ts"],
+      "@shelf/shared/*": ["./packages/shared/src/*"],
       "@blocknote/core": ["./src/types/blocknote-core.d.ts"],
       "@blocknote/core/extensions": ["./src/types/blocknote-core-extensions.d.ts"],
       "@blocknote/mantine": ["./src/types/blocknote-mantine.d.ts"],
