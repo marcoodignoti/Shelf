@@ -588,6 +588,7 @@ function EditorSurface({
   const slashMenuLockedScrollTopRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const titleEnterModifierRef = useRef(false);
+  const lastInteractionTypeRef = useRef<"pointer" | "keyboard">("pointer");
   const iconMenuButtonRef = useRef<HTMLButtonElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -1058,6 +1059,7 @@ function EditorSurface({
 
     queueContentSave();
     if (activeElementIsNativeTextInput()) return;
+    if (lastInteractionTypeRef.current !== "keyboard") return;
     keepEditorCaretInView(editor, scrollContainerRef.current);
   };
 
@@ -1193,7 +1195,13 @@ function EditorSurface({
   };
 
   return (
-    <div ref={editorRootRef} className="flex flex-col h-full w-full relative" onKeyDown={handleKeyDown}>
+    <div
+      ref={editorRootRef}
+      className="flex flex-col h-full w-full relative"
+      onKeyDown={handleKeyDown}
+      onKeyDownCapture={() => { lastInteractionTypeRef.current = "keyboard"; }}
+      onPointerDownCapture={() => { lastInteractionTypeRef.current = "pointer"; }}
+    >
       {!isStudioVariant && (
         <div className={`on-win-titlebar h-11 flex items-center justify-between pr-6 pl-[var(--on-main-titlebar-content-left)] shrink-0 bg-background/95 backdrop-blur z-40 select-none ${inSplit ? "" : "border border-b-0 border-border/70 rounded-t-xl"}`}>
           {/* Breadcrumbs on the left */}
