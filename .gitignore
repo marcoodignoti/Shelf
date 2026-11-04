@@ -47,3 +47,8 @@ src-tauri/gen/schemas
 # Landing preview staging + raw demo recording
 docs/.stage-landing/
 docs/assets/shelf-demo.mov
+
+# Personal course exports (Fisica 2) — local only
+exports/
+scripts/export-fisica2.test.ts
+vitest.export.config.ts
