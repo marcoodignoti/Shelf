@@ -6,12 +6,16 @@ import { DataSection } from "./DataSection";
 import { exportWorkspaceBackupWithDialog, importWorkspaceBackupWithDialog } from "../../lib/backup";
 
 const mockFetchPages = vi.fn();
+const mockFetchProfile = vi.fn();
+const mockFetchStudioDocuments = vi.fn();
 const mockShowSuccess = vi.fn();
 const mockShowError = vi.fn();
 
 vi.mock("../../store/useAppStore", () => ({
   useAppStore: vi.fn(() => ({
     fetchPages: mockFetchPages,
+    fetchProfile: mockFetchProfile,
+    fetchStudioDocuments: mockFetchStudioDocuments,
     showSuccess: mockShowSuccess,
     showError: mockShowError,
   })),
@@ -55,7 +59,7 @@ describe("DataSection Component", () => {
     fireEvent.click(exportButton);
 
     await waitFor(() => {
-      expect(exportWorkspaceBackupWithDialog).toHaveBeenCalled();
+      expect(exportWorkspaceBackupWithDialog).toHaveBeenCalledWith(expect.stringMatching(/^shelf-backup-\d{4}-\d{2}-\d{2}\.shelf$/));
       expect(mockShowSuccess).toHaveBeenCalledWith("settings.data.exported", { count: "5" });
       expect(screen.getByText("Exported 5 pages.")).toBeInTheDocument();
     });
@@ -71,6 +75,8 @@ describe("DataSection Component", () => {
     await waitFor(() => {
       expect(importWorkspaceBackupWithDialog).toHaveBeenCalled();
       expect(mockFetchPages).toHaveBeenCalled();
+      expect(mockFetchStudioDocuments).toHaveBeenCalled();
+      expect(mockFetchProfile).toHaveBeenCalled();
       expect(mockShowSuccess).toHaveBeenCalledWith("settings.data.imported", { count: "10" });
       expect(screen.getByText("Imported 10 pages as duplicates.")).toBeInTheDocument();
     });

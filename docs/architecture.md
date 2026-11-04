@@ -197,7 +197,10 @@ flowchart TD
 
 There are two export paths:
 
-- Workspace backup: JSON backup import/export is handled by backend backup commands and native dialogs.
+- Workspace backup: native dialogs create/import `.shelf` portable archives with
+  metadata plus managed media and Studio PDFs. Every archive manifest and asset
+  carries a SHA-256 checksum; imports verify in staging before moving assets and
+  committing the SQLite transaction. Legacy JSON backup import remains supported.
 - Page/tree export: renderer builds Markdown/JSON content, then main-process file helpers write selected files after a save dialog.
 
 ```mermaid

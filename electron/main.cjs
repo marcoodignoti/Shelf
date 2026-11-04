@@ -29,7 +29,8 @@ const IMAGE_DIALOG_FILTER = {
   extensions: ["png", "jpg", "jpeg", "webp", "gif"],
 };
 const PDF_DIALOG_FILTER = { name: "PDF", extensions: ["pdf"] };
-const BACKUP_DIALOG_FILTER = { name: "Shelf Backup", extensions: ["json"] };
+const PORTABLE_BACKUP_DIALOG_FILTER = { name: "Shelf Portable Archive", extensions: ["shelf"] };
+const LEGACY_BACKUP_DIALOG_FILTER = { name: "Legacy Shelf Backup", extensions: ["json"] };
 const EDITOR_MEDIA_DIALOG_FILTERS = {
   image: [
     { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
@@ -905,7 +906,7 @@ function registerIpc() {
           typeof safeOptions.defaultPath === "string"
             ? safeOptions.defaultPath
             : undefined,
-        filters: [BACKUP_DIALOG_FILTER],
+        filters: [PORTABLE_BACKUP_DIALOG_FILTER],
       }),
     );
     if (result.canceled || !result.filePath) return null;
@@ -925,7 +926,7 @@ function registerIpc() {
       parentWindowForEvent(event),
       normalizeOpenDialogOptions({
         multiple: false,
-        filters: [BACKUP_DIALOG_FILTER],
+        filters: [PORTABLE_BACKUP_DIALOG_FILTER, LEGACY_BACKUP_DIALOG_FILTER],
       }),
     );
     if (result.canceled || !result.filePaths[0]) return null;

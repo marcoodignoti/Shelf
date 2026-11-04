@@ -62,8 +62,10 @@ account.
   KaTeX formulas, quotes, tables, images, video, drag-and-drop blocks.
 - **A real PDF workflow**: read a source and write the linked note side by
   side, with viewer position, zoom, and layout remembered per document.
-- **Your data stays portable**: export any page or page tree as Markdown or
-  JSON, and the database is backed up automatically before every app update.
+- **Your data stays portable**: export complete workspaces as portable `.shelf`
+  archives — pages, managed media, Studio PDFs, projects, and links, all
+  checksum-verified — plus individual pages or trees as Markdown or JSON.
+  The database is also backed up automatically before every app update.
 - **Private beta updates**: signed manifests and SHA-256 checks keep assisted
   update downloads tied to official Shelf releases.
 

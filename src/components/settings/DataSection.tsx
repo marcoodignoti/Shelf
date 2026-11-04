@@ -6,12 +6,12 @@ import { Download, Upload } from 'lucide-react';
 
 export function DataSection() {
   const t = useT();
-  const { fetchPages, showSuccess, showError } = useAppStore();
+  const { fetchPages, fetchProfile, fetchStudioDocuments, showSuccess, showError } = useAppStore();
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   const handleExport = async () => {
     try {
-      const exportedCount = await exportWorkspaceBackupWithDialog(`shelf-backup-${new Date().toISOString().slice(0, 10)}.json`);
+      const exportedCount = await exportWorkspaceBackupWithDialog(`shelf-backup-${new Date().toISOString().slice(0, 10)}.shelf`);
       if (exportedCount === null) return;
       const message = t('settings.data.exported', { count: String(exportedCount) });
       setBackupStatus(message);
@@ -26,7 +26,7 @@ export function DataSection() {
     try {
       const importedCount = await importWorkspaceBackupWithDialog();
       if (importedCount === null) return;
-      await fetchPages();
+      await Promise.all([fetchPages(), fetchStudioDocuments(), fetchProfile()]);
       const message = t('settings.data.imported', { count: String(importedCount) });
       setBackupStatus(message);
       showSuccess('settings.data.imported', { count: String(importedCount) });
