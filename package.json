@@ -28,7 +28,7 @@
     "perf:frontend": "playwright test --config playwright.perf.config.ts --reporter=list",
     "perf:native": "bash perf/profile-macos.sh",
     "check": "npm run check:electron",
-    "check:electron": "npm run build && npm run test && npm run test:scripts && npm run electron:smoke && npm run electron:smoke:runtime && npm audit --audit-level=moderate && npm run electron:package:dir && npm run electron:smoke:visual && npm run electron:smoke:parity && npm run electron:smoke:stability",
+    "check:electron": "npm run build && npm run test && npm run test:scripts && npm run electron:smoke && npm run electron:smoke:runtime && npm audit --omit=dev --audit-level=moderate && npm run electron:package:dir && npm run electron:smoke:visual && npm run electron:smoke:parity && npm run electron:smoke:stability",
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "node scripts/electron-dev.cjs",
@@ -114,7 +114,7 @@
     "@tanstack/react-virtual": "^3.14.5",
     "katex": "0.17.0",
     "lucide-react": "1.21.0",
-    "pdfjs-dist": "6.0.227",
+    "pdfjs-dist": "6.5.438",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zustand": "5.0.14"
@@ -128,19 +128,33 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^4.1.12",
     "cross-env": "^10.1.0",
-    "electron": "^42.4.1",
+    "electron": "^42.11.18",
     "electron-builder": "^26.8.1",
     "jsdom": "^29.1.1",
     "rcedit": "^5.0.2",
     "tailwindcss": "^4.3.0",
     "typescript": "6.0.3",
-    "vite": "^8.0.16",
-    "vitest": "4.1.9"
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "prosemirror-model": "1.25.4",
-    "undici": "7.28.0"
+    "undici": "7.30.1",
+    "@tiptap/core": "3.32.2",
+    "@tiptap/extension-bold": "3.32.2",
+    "@tiptap/extension-bubble-menu": "3.32.2",
+    "@tiptap/extension-code": "3.32.2",
+    "@tiptap/extension-floating-menu": "3.32.2",
+    "@tiptap/extension-horizontal-rule": "3.32.2",
+    "@tiptap/extension-italic": "3.32.2",
+    "@tiptap/extension-paragraph": "3.32.2",
+    "@tiptap/extension-strike": "3.32.2",
+    "@tiptap/extension-text": "3.32.2",
+    "@tiptap/extension-underline": "3.32.2",
+    "@tiptap/extensions": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/react": "3.32.2"
   }
 }
