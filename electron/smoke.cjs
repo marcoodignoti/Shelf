@@ -398,13 +398,25 @@ async function run() {
   if (!linkedPageAfterUnlink) {
     throw new Error("unlink_studio_document_page deleted the linked page");
   }
-  try {
-    await backend.invoke("delete_page", { id: "studio-note-1" });
-    throw new Error("delete_page accepted a Studio primary note");
-  } catch (error) {
-    if (!String(error?.message || error).includes("Studio document")) {
-      throw error;
-    }
+  await backend.invoke("delete_page", {
+    id: "studio-note-1",
+    deletedAt: createdAt,
+  });
+  const trashedStudioDocuments = await backend.invoke("list_studio_documents");
+  const trashedPrimaryPage = await backend.invoke("get_page", { id: "studio-note-1" });
+  const trash = await backend.invoke("list_trash_pages", { now: createdAt });
+  if (
+    trashedStudioDocuments.some((document) => document.id === "studio-note-1") ||
+    !trashedPrimaryPage ||
+    trashedPrimaryPage.is_deleted !== 1 ||
+    !trash.some((page) => page.id === "studio-note-1")
+  ) {
+    throw new Error("delete_page did not move the Studio primary note to Trash");
+  }
+  await backend.invoke("restore_page", { id: "studio-note-1", restoredAt: createdAt });
+  const restoredStudioDocuments = await backend.invoke("list_studio_documents");
+  if (!restoredStudioDocuments.some((document) => document.id === "studio-note-1")) {
+    throw new Error("restore_page did not restore the Studio document");
   }
 
   await backend.invoke("open_external_url", { url: "https://github.com/marcoodignoti/Shelf" });

@@ -363,7 +363,7 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
 
   await expect(menu).toBeVisible();
   await expect.poll(async () => menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await expect(menu.getByText("Delete")).toBeVisible();
+  await expect(menu.getByText("Move to Trash")).toBeVisible();
 });
 
 test("keeps custom icon input focused and selected when opening the native picker", async ({ page }) => {

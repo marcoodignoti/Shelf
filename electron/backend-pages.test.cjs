@@ -22,6 +22,7 @@ test("page backend module creates, updates, moves, and lists pages", () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-pages-"));
   const db = openDatabase(dataDir, "0.0.1-test");
   const pages = createPageBackend({
+    appConfigDir: dataDir,
     db,
     withTransaction: (work) => withTransaction(db, work),
   });
@@ -111,6 +112,139 @@ test("page backend module creates, updates, moves, and lists pages", () => {
           updatedAt: "2026-01-01T00:00:05.000Z",
         }),
       /remote cover images are not allowed/,
+    );
+  } finally {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("page backend trashes and restores trees, retains versions, and purges after 30 days", () => {
+  const { createPageBackend } = require("./backend-pages.cjs");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-trash-history-"));
+  const db = openDatabase(dataDir, "0.0.1-test");
+  const pages = createPageBackend({
+    appConfigDir: dataDir,
+    db,
+    withTransaction: (work) => withTransaction(db, work),
+  });
+
+  try {
+    const root = pages.createPage({
+      id: "trash-root",
+      title: "Trash root",
+      parentId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const child = pages.createPage({
+      id: "trash-child",
+      title: "Trash child",
+      parentId: root.id,
+      createdAt: "2026-01-01T00:00:01.000Z",
+    });
+    pages.updatePage({
+      id: child.id,
+      updates: { content: "Find me after restore" },
+      updatedAt: "2026-01-01T00:00:02.000Z",
+    });
+    assert.equal(pages.searchPages({ query: "restore" })[0].id, child.id);
+
+    pages.deletePage({
+      id: root.id,
+      deletedAt: "2026-01-02T00:00:00.000Z",
+    });
+    assert.equal(pages.listPages().some((page) => page.id === root.id), false);
+    assert.equal(pages.searchPages({ query: "restore" }).length, 0);
+    assert.equal(pages.getPage({ id: root.id }).is_deleted, 1);
+    assert.deepEqual(
+      pages.listTrashPages({ now: "2026-01-02T00:00:00.000Z" }).map((page) => ({ id: page.id, count: page.trashed_descendant_count })),
+      [{ id: root.id, count: 2 }],
+    );
+
+    pages.restorePage({ id: child.id, restoredAt: "2026-01-03T00:00:00.000Z" });
+    assert.equal(pages.getPage({ id: root.id }).is_deleted, 0);
+    assert.equal(pages.getPage({ id: child.id }).parent_id, root.id);
+    assert.equal(pages.searchPages({ query: "restore" })[0].id, child.id);
+
+    const project = pages.createProject({
+      id: "restorable-project",
+      title: "Restorable project",
+      createdAt: "2026-01-03T01:00:00.000Z",
+    });
+    const projectPage = pages.createPage({
+      id: "project-page",
+      title: "Project page",
+      parentId: project.id,
+      createdAt: "2026-01-03T01:00:01.000Z",
+    });
+    // delete_page accepts project pages too and must follow the recoverable
+    // project path rather than bypassing Trash metadata.
+    pages.deletePage({ id: project.id, deletedAt: "2026-01-03T01:01:00.000Z" });
+    assert.equal(pages.getPage({ id: project.id }).is_deleted, 1);
+    assert.equal(pages.getPage({ id: projectPage.id }).parent_id, null);
+    pages.restorePage({ id: project.id, restoredAt: "2026-01-03T01:02:00.000Z" });
+    assert.equal(pages.getPage({ id: projectPage.id }).parent_id, project.id);
+
+    const history = pages.createPage({
+      id: "history",
+      title: "History",
+      parentId: null,
+      createdAt: "2026-01-04T00:00:00.000Z",
+    });
+    pages.updatePage({
+      id: history.id,
+      updates: { content: "first draft" },
+      updatedAt: "2026-01-04T00:00:01.000Z",
+    });
+    pages.updatePage({
+      id: history.id,
+      updates: { content: "second draft" },
+      updatedAt: "2026-01-04T00:06:01.000Z",
+    });
+    const version = pages
+      .listPageVersions({ pageId: history.id })
+      .find((candidate) => candidate.snapshot.content === "first draft");
+    assert.ok(version, "stores a checkpoint before the second important edit");
+    pages.restorePageVersion({ id: version.id, restoredAt: "2026-01-04T00:07:00.000Z" });
+    assert.equal(pages.getPage({ id: history.id }).content, "first draft");
+
+    const parent = pages.createPage({
+      id: "cycle-parent",
+      title: "Parent",
+      parentId: null,
+      createdAt: "2026-01-05T00:00:00.000Z",
+    });
+    const nested = pages.createPage({
+      id: "cycle-child",
+      title: "Child",
+      parentId: parent.id,
+      createdAt: "2026-01-05T00:00:01.000Z",
+    });
+    pages.movePage({ id: nested.id, parentId: null, updatedAt: "2026-01-05T00:01:00.000Z" });
+    pages.movePage({ id: parent.id, parentId: nested.id, updatedAt: "2026-01-05T00:02:00.000Z" });
+    const cycleVersion = pages
+      .listPageVersions({ pageId: nested.id })
+      .find((candidate) => candidate.snapshot.parent_id === parent.id);
+    assert.ok(cycleVersion, "keeps the original parent relationship in history");
+    pages.restorePageVersion({ id: cycleVersion.id, restoredAt: "2026-01-05T00:03:00.000Z" });
+    assert.equal(pages.getPage({ id: nested.id }).parent_id, null, "does not restore a cyclic parent");
+
+    const expired = pages.createPage({
+      id: "expired",
+      title: "Expired",
+      parentId: null,
+      createdAt: "2020-01-01T00:00:00.000Z",
+    });
+    pages.deletePage({ id: expired.id, deletedAt: "2020-01-01T00:00:00.000Z" });
+    assert.equal(
+      pages.purgeExpiredTrash({ now: "2020-01-31T00:00:00.000Z" }),
+      1,
+    );
+    assert.equal(pages.getPage({ id: expired.id }), null);
+
+    assert.throws(
+      () => pages.updatePage({ id: history.id, updates: { is_deleted: 1 } }),
+      /use delete_page/,
     );
   } finally {
     db.close();

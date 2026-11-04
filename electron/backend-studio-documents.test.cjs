@@ -97,13 +97,14 @@ test("Studio document backend updates, opens, reveals, and deletes managed docum
   const {
     createStudioDocumentBackend,
   } = require("./backend-studio-documents.cjs");
+  const { createPageBackend } = require("./backend-pages.cjs");
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-studio-docs-"));
   const db = openDatabase(dataDir, "0.0.1-test");
   const storedDir = path.join(dataDir, "studio-documents", "doc");
   const storedPath = path.join(storedDir, "source.pdf");
   const openedPaths = [];
   const revealedPaths = [];
-  const studioDocuments = createStudioDocumentBackend({
+  const context = {
     appConfigDir: dataDir,
     db,
     openPath: async (filePath) => {
@@ -116,7 +117,10 @@ test("Studio document backend updates, opens, reveals, and deletes managed docum
     withTransaction: (work) => withTransaction(db, work),
     isStudioPageUnified: () => true,
     mirrorStudioDocumentPageParent: () => {},
-  });
+  };
+  Object.assign(context, createPageBackend(context));
+  const studioDocuments = createStudioDocumentBackend(context);
+  Object.assign(context, studioDocuments);
 
   try {
     fs.mkdirSync(storedDir, { recursive: true });
@@ -181,7 +185,47 @@ test("Studio document backend updates, opens, reveals, and deletes managed docum
     assert.deepEqual(openedPaths, [resolvedStoredPath]);
     assert.deepEqual(revealedPaths, [resolvedStoredPath]);
 
-    studioDocuments.deleteStudioDocument({ id: "doc" });
+    studioDocuments.deleteStudioDocument({
+      id: "doc",
+      deletedAt: "2026-01-02T00:00:00.000Z",
+    });
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS value FROM studio_documents").get().value,
+      1,
+    );
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS value FROM pages").get().value,
+      2,
+    );
+    assert.ok(
+      db.prepare("SELECT deleted_at FROM studio_documents WHERE id = ?").get("doc").deleted_at,
+    );
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS value FROM pages WHERE is_deleted = 1").get().value,
+      2,
+    );
+    assert.equal(studioDocuments.listStudioDocuments().length, 0);
+    assert.equal(fs.existsSync(storedPath), true);
+
+    context.restorePage({ id: "note", restoredAt: "2026-01-03T00:00:00.000Z" });
+    assert.equal(
+      db.prepare("SELECT deleted_at FROM studio_documents WHERE id = ?").get("doc").deleted_at,
+      null,
+    );
+    assert.equal(studioDocuments.listStudioDocuments().length, 1);
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS value FROM pages WHERE is_deleted = 0").get().value,
+      2,
+    );
+
+    studioDocuments.deleteStudioDocument({
+      id: "doc",
+      deletedAt: "2026-01-02T00:00:00.000Z",
+    });
+    assert.equal(
+      context.purgeExpiredTrash({ now: "2026-02-01T00:00:00.000Z" }),
+      2,
+    );
     assert.equal(
       db.prepare("SELECT COUNT(*) AS value FROM studio_documents").get().value,
       0,

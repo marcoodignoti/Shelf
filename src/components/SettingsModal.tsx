@@ -9,6 +9,7 @@ import { AppearanceSection } from './settings/AppearanceSection';
 import { ShortcutsSection } from './settings/ShortcutsSection';
 import { UpdatesSection } from './settings/UpdatesSection';
 import { DataSection } from './settings/DataSection';
+import { TrashSection } from './settings/TrashSection';
 import { AboutSection } from './settings/AboutSection';
 import {
   ArrowLeft,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Trash2,
   UserCircle,
   X,
 } from 'lucide-react';
@@ -50,6 +52,7 @@ const NAV_GROUPS: SettingsNavGroup[] = [
     entries: [
       { section: 'updates', labelKey: 'settings.nav.updates', icon: RefreshCw },
       { section: 'data', labelKey: 'settings.nav.data', icon: Download },
+      { section: 'trash', labelKey: 'settings.nav.trash', icon: Trash2 },
       { section: 'about', labelKey: 'settings.nav.about', icon: Info },
     ],
   },
@@ -62,6 +65,7 @@ const SECTION_COMPONENTS: Record<SettingsSection, ComponentType> = {
   shortcuts: ShortcutsSection,
   updates: UpdatesSection,
   data: DataSection,
+  trash: TrashSection,
   about: AboutSection,
 };
 

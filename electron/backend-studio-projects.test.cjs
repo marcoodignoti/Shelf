@@ -73,3 +73,46 @@ test("Studio project backend mirrors nested projects into unified page tree", ()
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("direct Studio project deletion uses Trash and can be restored", () => {
+  const { createPageBackend } = require("./backend-pages.cjs");
+  const { createStudioProjectBackend } = require("./backend-studio-projects.cjs");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-studio-project-trash-"));
+  const db = openDatabase(dataDir, "0.0.1-test");
+  db.prepare("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'")
+    .run(STUDIO_PAGE_UNIFICATION_SCHEMA_VERSION);
+  const context = {
+    appConfigDir: dataDir,
+    db,
+    withTransaction: (work) => withTransaction(db, work),
+    isStudioPageUnified: () => true,
+  };
+  Object.assign(context, createPageBackend(context));
+  Object.assign(context, createStudioProjectBackend(context));
+
+  try {
+    const project = context.createStudioProject({
+      id: "recoverable-project",
+      name: "Recoverable",
+      parentId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const pageId = studioProjectPageId(project.id);
+    context.deleteStudioProject({
+      id: project.id,
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
+    assert.equal(context.listStudioProjects().length, 0);
+    assert.equal(context.getPage({ id: pageId }).is_deleted, 1);
+    assert.ok(
+      db.prepare("SELECT deleted_at FROM studio_projects WHERE id = ?").get(project.id).deleted_at,
+    );
+
+    context.restorePage({ id: pageId, restoredAt: "2026-01-03T00:00:00.000Z" });
+    assert.equal(context.listStudioProjects()[0].id, project.id);
+    assert.equal(context.getPage({ id: pageId }).is_deleted, 0);
+  } finally {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});

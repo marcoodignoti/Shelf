@@ -94,6 +94,12 @@ class ShelfBackend {
     Object.assign(this, createStudioProjectBackend(this));
     Object.assign(this, createStudioLinkBackend(this));
     Object.assign(this, createStudioDocumentBackend(this));
+    try {
+      this.purgeExpiredTrash();
+    } catch (error) {
+      // Retention cleanup must never prevent the local workspace from opening.
+      console.error("Failed to purge expired trash:", error);
+    }
     this.commands = createBackendCommandRegistry(this);
     this.autoMigrateStudioPageUnification();
   }

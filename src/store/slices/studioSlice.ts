@@ -185,17 +185,28 @@ export const createStudioSlice: StateCreator<AppState, [], [], StudioSlice> = (s
       await deleteStudioDocument(id);
       let nextCurrentPageId = HOME_PAGE_ID;
       set((state) => {
-        const studioDocuments = state.studioDocuments.filter((candidate) => candidate.id !== id);
-        const currentStudioDocumentId = state.currentStudioDocumentId === id
-          ? studioDocuments[0]?.id ?? null
-          : state.currentStudioDocumentId;
         const deletedPageIds = pageTreeIds(state.pages, document.note_page_id);
+        const studioDocuments = state.studioDocuments.filter(
+          (candidate) => !deletedPageIds.has(candidate.note_page_id),
+        );
+        const deletedStudioDocumentIds = new Set(
+          state.studioDocuments
+            .filter((candidate) => deletedPageIds.has(candidate.note_page_id))
+            .map((candidate) => candidate.id),
+        );
+        const currentStudioDocumentId = studioDocuments.some(
+          (candidate) => candidate.id === state.currentStudioDocumentId,
+        )
+          ? state.currentStudioDocumentId
+          : studioDocuments[0]?.id ?? null;
         const pages = state.pages.filter((page) => !deletedPageIds.has(page.id));
         nextCurrentPageId = resolveCurrentPageIdAfterDeletion(pages, state.currentPageId, document.note_page_id, deletedPageIds, state.pages);
 
         return {
           studioDocuments,
-          studioDocumentPageLinks: state.studioDocumentPageLinks.filter((link) => link.document_id !== id),
+          studioDocumentPageLinks: state.studioDocumentPageLinks.filter(
+            (link) => !deletedStudioDocumentIds.has(link.document_id) && !deletedPageIds.has(link.page_id),
+          ),
           currentStudioDocumentId,
           currentPageId: nextCurrentPageId,
           pages,

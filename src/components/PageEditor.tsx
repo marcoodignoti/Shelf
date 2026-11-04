@@ -18,7 +18,7 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, ChevronUp, Columns2, Copy, Download, FileText, FolderInput, GripVertical, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, ChevronUp, Columns2, Copy, Download, FileText, FolderInput, GripVertical, History, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
@@ -43,6 +43,7 @@ import { OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/
 import { formulaInputFromBlockContent, normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
 import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
+import { readPendingPageUpdates } from "../lib/pendingPageSaves";
 import { titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
 import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
@@ -55,6 +56,7 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { useUIStore } from "../store/useUIStore";
 import { FloatingPopover } from "./FloatingPopover";
+import { PageHistoryDialog } from "./PageHistoryDialog";
 import { SubpageActionsMenu } from "./SubpageActionsMenu";
 import { useEditorAutosave } from "./useEditorAutosave";
 import { handleEditorPasteWithMedia, uploadEditorMediaFile, useEditorMediaDrop } from "./useEditorMediaImport";
@@ -565,7 +567,10 @@ export function Editor(props: {
     );
   }
 
-  return <EditorSurface {...props} />;
+  // A restored version changes updated_at. Recreate BlockNote from that
+  // canonical content so its previous in-memory document cannot be saved on
+  // top of the restored version.
+  return <EditorSurface key={`${page.id}:${page.updated_at}`} {...props} />;
 }
 
 function EditorSurface({
@@ -593,13 +598,28 @@ function EditorSurface({
   const iconInputRef = useRef<HTMLInputElement>(null);
   const pageMenuButtonRef = useRef<HTMLButtonElement>(null);
   const subpageMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const [title, setTitle] = useState(page.title || "");
-  const [icon, setIcon] = useState(page.icon || "");
-  const [coverUrl, setCoverUrl] = useState(page.cover_url || "");
+  // A failed autosave is restored from localStorage before the editor is
+  // created, so a reload immediately shows the user's last local edits.
+  const pendingPageUpdates = useMemo(() => readPendingPageUpdates(page.id), [page.id]);
+  const hasPendingField = (field: keyof Page) =>
+    pendingPageUpdates !== null && Object.prototype.hasOwnProperty.call(pendingPageUpdates, field);
+  const pendingTitle = hasPendingField("title") && typeof pendingPageUpdates?.title === "string"
+    ? pendingPageUpdates.title
+    : page.title;
+  const pendingIcon = hasPendingField("icon")
+    ? (typeof pendingPageUpdates?.icon === "string" ? pendingPageUpdates.icon : null)
+    : page.icon;
+  const pendingCoverUrl = hasPendingField("cover_url")
+    ? (typeof pendingPageUpdates?.cover_url === "string" ? pendingPageUpdates.cover_url : null)
+    : page.cover_url;
+  const [title, setTitle] = useState(pendingTitle || "");
+  const [icon, setIcon] = useState(pendingIcon || "");
+  const [coverUrl, setCoverUrl] = useState(pendingCoverUrl || "");
   const [isIconMenuOpen, setIsIconMenuOpen] = useState(false);
   const [isCoverInputOpen, setIsCoverInputOpen] = useState(false);
   const [subpageMenuOpen, setSubpageMenuOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
+  const [isPageHistoryOpen, setIsPageHistoryOpen] = useState(false);
   const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
   const [isSplitMenuOpen, setIsSplitMenuOpen] = useState(false);
   const splitButtonRef = useRef<HTMLButtonElement>(null);
@@ -635,7 +655,11 @@ function EditorSurface({
   // `locale` is a dependency because a language change recreates the editor:
   // re-parse the latest store content so the new editor does not reset the
   // document to the snapshot taken when the page was opened.
-  const initialContent = useMemo(() => parsePageBlocks(page.content), [page.id, locale]);
+  const pendingContent = typeof pendingPageUpdates?.content === "string" ? pendingPageUpdates.content : null;
+  const initialContent = useMemo(
+    () => parsePageBlocks(pendingContent ?? page.content),
+    [page.id, locale, pendingContent],
+  );
   const breadcrumbs = useMemo(() => pageBreadcrumb(pages, page.id), [page.id, pages]);
   const databaseParentPage = useMemo(() => databaseParentPageForEditor(pages, page), [page, pages]);
   const childPages = useMemo(() => childPagesForParent(pages, page.id), [page.id, pages]);
@@ -815,14 +839,15 @@ function EditorSurface({
   }, [onSelectPage]);
 
   useEffect(() => {
-    setTitle(page.title || "");
-    setIcon(page.icon || "");
-    setCoverUrl(page.cover_url || "");
+    setTitle(pendingTitle || "");
+    setIcon(pendingIcon || "");
+    setCoverUrl(pendingCoverUrl || "");
     setIsIconMenuOpen(false);
     setIsCoverInputOpen(false);
     setSubpageMenuOpen(false);
     setPageMenuOpen(false);
-  }, [page.id]);
+    setIsPageHistoryOpen(false);
+  }, [page.id, pendingCoverUrl, pendingIcon, pendingTitle]);
 
   useEffect(() => {
     if (!isIconMenuOpen) return;
@@ -1236,9 +1261,20 @@ function EditorSurface({
             <div
               className={`text-xs text-muted-foreground/60 transition-colors ${saveState.status === "error" ? "text-destructive" : ""}`}
               title={saveState.status === "error" ? saveState.message : t("editor.saveStatus")}
+              role="status"
+              aria-live="polite"
             >
               {saveStatusLabel(saveState, t)}
             </div>
+            {saveState.status === "error" && (
+              <button
+                type="button"
+                className="text-xs text-destructive underline underline-offset-2 hover:text-foreground"
+                onClick={flushSaveNow}
+              >
+                {t("editor.retrySave")}
+              </button>
+            )}
             <button
               type="button"
               ref={splitButtonRef}
@@ -1292,6 +1328,17 @@ function EditorSurface({
               >
                 <FolderInput className="h-3.5 w-3.5 text-muted-foreground" />
                 {t("sidebar.moveTo")}
+              </button>
+              <button
+                type="button"
+                className="on-menu-item"
+                onClick={() => {
+                  setPageMenuOpen(false);
+                  setIsPageHistoryOpen(true);
+                }}
+              >
+                <History className="h-3.5 w-3.5 text-muted-foreground" />
+                {t("editor.versionHistory")}
               </button>
               <div className="on-menu-separator" />
               <button
@@ -1473,7 +1520,19 @@ function EditorSurface({
         ref={scrollContainerRef}
         className={`on-scroll-fade on-page-editor-scroll flex-1 w-full overflow-y-auto${isSlashMenuOpen ? " on-editor-scroll-locked" : ""}`}
       >
-        <div className={`${pageWidth === "full" ? "max-w-none" : "max-w-3xl"} ${isStudioVariant ? "pl-12 pr-8" : "px-8"} pt-8 mx-auto flex min-h-full w-full flex-col pb-16 on-editor-typography on-editor-font-${editorFont} on-editor-size-${editorFontSize}`}>
+        <div className={`relative ${pageWidth === "full" ? "max-w-none" : "max-w-3xl"} ${isStudioVariant ? "pl-12 pr-8" : "px-8"} pt-8 mx-auto flex min-h-full w-full flex-col pb-16 on-editor-typography on-editor-font-${editorFont} on-editor-size-${editorFontSize}`}>
+          {isStudioVariant && (
+            // Overlaid in the right gutter so it never pushes the title down.
+            <button
+              type="button"
+              className="absolute right-1 top-9 z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={t("editor.versionHistory")}
+              aria-label={t("editor.versionHistory")}
+              onClick={() => setIsPageHistoryOpen(true)}
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
           {!isStudioVariant && (
             <div className="group/page-actions mb-3 flex min-h-7 items-center gap-3 text-xs text-muted-foreground">
               <div className="flex min-w-0 flex-1 items-center gap-2 opacity-0 transition-opacity group-hover/page-actions:opacity-100 focus-within:opacity-100">
@@ -1893,6 +1952,12 @@ function EditorSurface({
           </div>
         </div>
       )}
+      <PageHistoryDialog
+        pageId={page.id}
+        open={isPageHistoryOpen}
+        onClose={() => setIsPageHistoryOpen(false)}
+        onBeforeRestore={flushSaveNow}
+      />
     </div>
   );
 }

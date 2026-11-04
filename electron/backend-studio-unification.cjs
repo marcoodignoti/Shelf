@@ -57,7 +57,7 @@ function createStudioUnificationBackend(context) {
         SELECT COUNT(*) AS value
         FROM studio_documents documents
         LEFT JOIN pages ON pages.id = documents.note_page_id AND pages.is_deleted = 0
-        WHERE pages.id IS NULL
+        WHERE documents.deleted_at IS NULL AND pages.id IS NULL
       `);
       const missingPrimaryLinks = scalar(`
         SELECT COUNT(*) AS value
@@ -65,14 +65,15 @@ function createStudioUnificationBackend(context) {
         LEFT JOIN studio_document_page_links links
           ON links.document_id = documents.id
          AND links.page_id = documents.note_page_id
-        WHERE links.id IS NULL
+        WHERE documents.deleted_at IS NULL AND links.id IS NULL
       `);
       const orphanLinks = scalar(`
         SELECT COUNT(*) AS value
         FROM studio_document_page_links links
-        LEFT JOIN studio_documents documents ON documents.id = links.document_id
+        JOIN studio_documents documents
+          ON documents.id = links.document_id AND documents.deleted_at IS NULL
         LEFT JOIN pages ON pages.id = links.page_id AND pages.is_deleted = 0
-        WHERE documents.id IS NULL OR pages.id IS NULL
+        WHERE pages.id IS NULL
       `);
       const blockers = [];
       if (missingPrimaryPages > 0) blockers.push("missing_primary_pages");
@@ -81,28 +82,35 @@ function createStudioUnificationBackend(context) {
 
       return {
         schema_version: schemaVersion,
-        project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects"),
+        project_count: scalar("SELECT COUNT(*) AS value FROM studio_projects WHERE deleted_at IS NULL"),
         nested_project_count: scalar(
-          "SELECT COUNT(*) AS value FROM studio_projects WHERE parent_id IS NOT NULL",
+          "SELECT COUNT(*) AS value FROM studio_projects WHERE deleted_at IS NULL AND parent_id IS NOT NULL",
         ),
         document_count: scalar(
-          "SELECT COUNT(*) AS value FROM studio_documents",
+          "SELECT COUNT(*) AS value FROM studio_documents WHERE deleted_at IS NULL",
         ),
         document_without_project_count: scalar(
-          "SELECT COUNT(*) AS value FROM studio_documents WHERE project_id IS NULL",
+          "SELECT COUNT(*) AS value FROM studio_documents WHERE deleted_at IS NULL AND project_id IS NULL",
         ),
         link_count: scalar(
-          "SELECT COUNT(*) AS value FROM studio_document_page_links",
+          `SELECT COUNT(*) AS value
+           FROM studio_document_page_links links
+           JOIN studio_documents documents
+             ON documents.id = links.document_id AND documents.deleted_at IS NULL`,
         ),
         linked_regular_page_count: scalar(`
           SELECT COUNT(*) AS value
           FROM studio_document_page_links links
+          JOIN studio_documents documents
+            ON documents.id = links.document_id AND documents.deleted_at IS NULL
           JOIN pages ON pages.id = links.page_id
           WHERE pages.is_deleted = 0 AND pages.page_kind = 'note'
         `),
         linked_studio_note_count: scalar(`
           SELECT COUNT(*) AS value
           FROM studio_document_page_links links
+          JOIN studio_documents documents
+            ON documents.id = links.document_id AND documents.deleted_at IS NULL
           JOIN pages ON pages.id = links.page_id
           WHERE pages.is_deleted = 0 AND pages.page_kind = 'studio_note'
         `),
@@ -181,7 +189,7 @@ function createStudioUnificationBackend(context) {
 
         const projects = context.db
           .prepare(
-            `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`,
+            `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
           )
           .all();
         for (const project of projects) {
@@ -190,7 +198,7 @@ function createStudioUnificationBackend(context) {
 
         const documents = context.db
           .prepare(
-            `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY created_at ASC`,
+            `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE deleted_at IS NULL ORDER BY created_at ASC`,
           )
           .all();
         for (const document of documents) {

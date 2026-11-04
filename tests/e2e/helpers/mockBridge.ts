@@ -104,6 +104,36 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
         if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
         return b.created_at.localeCompare(a.created_at);
       });
+    const pageTreeIds = (items: any[], rootId: string) => {
+      const ids = new Set([rootId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const item of items) {
+          if (item.parent_id && ids.has(item.parent_id) && !ids.has(item.id)) {
+            ids.add(item.id);
+            changed = true;
+          }
+        }
+      }
+      return ids;
+    };
+    const trashPageTree = (items: any[], rootId: string, deletedAt: string) => {
+      const ids = pageTreeIds(items, rootId);
+      return items.map((item) => ids.has(item.id)
+        ? { ...item, is_deleted: 1, deleted_at: deletedAt, trash_root_id: rootId, updated_at: deletedAt }
+        : item,
+      );
+    };
+    const trashProject = (items: any[], projectId: string, deletedAt: string) => items.map((item) => {
+      if (item.id === projectId) {
+        return { ...item, is_deleted: 1, deleted_at: deletedAt, trash_root_id: projectId, updated_at: deletedAt };
+      }
+      if (item.parent_id === projectId && item.is_deleted === 0) {
+        return { ...item, parent_id: null, __trash_project_id: projectId, updated_at: deletedAt };
+      }
+      return item;
+    });
 
     const invokedCommands: string[] = [];
     (window as any).__opennotionE2eInvokedCommands = invokedCommands;
@@ -118,7 +148,7 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
         const projects = load<any>(projectsKey);
 
         if (cmd === "list_pages") {
-          return sortPages(pages).filter((p) => p.page_kind === "note" || p.page_kind === "studio_note");
+          return sortPages(pages);
         }
         if (cmd === "list_all_pages") {
           return pages;
@@ -187,20 +217,73 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
           const id = args.id as string;
           const target = pages.find((p) => p.id === id);
           if (target) {
-            // Reparent children if it's a project
-            const updated = pages.map((p) => {
-              if (p.id === id) {
-                return { ...p, is_deleted: 1 };
+            const deletedAt = args.deletedAt as string || new Date().toISOString();
+            if (target.page_kind === "project") {
+              save(pagesKey, trashProject(pages, id, deletedAt));
+            } else {
+              const document = docs.find((doc) => doc.note_page_id === id && !doc.deleted_at);
+              const pageIds = pageTreeIds(pages, id);
+              if (document) {
+                save(documentsKey, docs.map((doc) => pageIds.has(doc.note_page_id)
+                  ? { ...doc, deleted_at: deletedAt, updated_at: deletedAt }
+                  : doc,
+                ));
               }
-              if (p.parent_id === id) {
-                return { ...p, parent_id: null };
-              }
-              return p;
-            });
-            save(pagesKey, updated);
+              save(pagesKey, trashPageTree(pages, id, deletedAt));
+            }
           }
           return null;
         }
+        if (cmd === "delete_project") {
+          const id = args.id as string;
+          const deletedAt = args.updatedAt as string || new Date().toISOString();
+          save(pagesKey, trashProject(pages, id, deletedAt));
+          return null;
+        }
+        if (cmd === "list_trash_pages") {
+          return pages
+            .filter((item) => item.is_deleted === 1 && item.trash_root_id === item.id)
+            .map((item) => ({
+              ...item,
+              trashed_descendant_count: pages.filter((candidate) => candidate.is_deleted === 1 && candidate.trash_root_id === item.id).length,
+            }));
+        }
+        if (cmd === "restore_page") {
+          const requested = pages.find((item) => item.id === args.id && item.is_deleted === 1);
+          if (!requested) throw new Error("trashed page not found");
+          const rootId = requested.trash_root_id || requested.id;
+          const restoredAt = args.restoredAt as string || new Date().toISOString();
+          const restoredIds = new Set(
+            pages
+              .filter((item) => item.is_deleted === 1 && item.trash_root_id === rootId)
+              .map((item) => item.id),
+          );
+          const restoredPages = pages.map((item) => {
+            if (item.is_deleted === 1 && item.trash_root_id === rootId) {
+              return { ...item, is_deleted: 0, deleted_at: null, trash_root_id: null, updated_at: restoredAt };
+            }
+            if (item.__trash_project_id === rootId && item.parent_id === null) {
+              const { __trash_project_id, ...page } = item;
+              return { ...page, parent_id: rootId, updated_at: restoredAt };
+            }
+            return item;
+          });
+          save(pagesKey, restoredPages);
+          save(documentsKey, docs.map((document) => restoredIds.has(document.note_page_id)
+            ? { ...document, deleted_at: null, updated_at: restoredAt }
+            : document,
+          ));
+          return restoredPages.find((item) => item.id === rootId);
+        }
+        if (cmd === "empty_trash") {
+          const trashIds = new Set(pages.filter((item) => item.is_deleted === 1).map((item) => item.id));
+          save(pagesKey, pages.filter((item) => !trashIds.has(item.id)));
+          save(documentsKey, docs.filter((document) => !trashIds.has(document.note_page_id)));
+          save(linksKey, links.filter((link) => !trashIds.has(link.page_id)));
+          return trashIds.size;
+        }
+        if (cmd === "list_page_versions") return [];
+        if (cmd === "restore_page_version") throw new Error("page version not found");
         if (cmd === "reorder_pages") {
           const orderedIds = args.orderedIds as string[];
           const parentId = (args.parentId ?? null) as string | null;
@@ -222,13 +305,13 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
 
         // Studio Documents / Projects
         if (cmd === "list_studio_documents") {
-          return docs;
+          return docs.filter((document) => !document.deleted_at);
         }
         if (cmd === "list_studio_projects") {
-          return projects;
+          return projects.filter((project) => !project.deleted_at);
         }
         if (cmd === "list_studio_document_page_links") {
-          const document = docs.find((d) => d.id === args.documentId);
+          const document = docs.find((d) => d.id === args.documentId && !d.deleted_at);
           if (!document) return [];
           const storedLinks = links.filter((l) => l.document_id === document.id);
           const primaryLink = {
@@ -245,10 +328,10 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
             .filter((l) => l.page_id !== document.note_page_id || !unlinkedPrimaryLinks.includes(l.page_id))
             .filter((l, index, self) => self.findIndex((cand) => cand.page_id === l.page_id) === index)
             .map((l) => ({ ...l, page: pages.find((item) => item.id === l.page_id) }))
-            .filter((l) => Boolean(l.page));
+            .filter((l) => Boolean(l.page) && l.page.is_deleted === 0);
         }
         if (cmd === "list_all_studio_document_page_links") {
-          const allLinks = docs.flatMap((document) => {
+          const allLinks = docs.filter((document) => !document.deleted_at).flatMap((document) => {
             const storedLinks = links.filter((l) => l.document_id === document.id);
             const primaryLink = {
               id: `link-${document.id}-${document.note_page_id}`,
@@ -261,10 +344,10 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
               updated_at: document.updated_at,
             };
             return [primaryLink, ...storedLinks]
-              .filter((l) => l.page_id !== document.note_page_id || !unlinkedPrimaryLinks.includes(l.page_id))
-              .filter((l, index, self) => self.findIndex((cand) => cand.page_id === l.page_id) === index)
-              .map((l) => ({ ...l, page: pages.find((item) => item.id === l.page_id) }))
-              .filter((l) => Boolean(l.page));
+            .filter((l) => l.page_id !== document.note_page_id || !unlinkedPrimaryLinks.includes(l.page_id))
+            .filter((l, index, self) => self.findIndex((cand) => cand.page_id === l.page_id) === index)
+            .map((l) => ({ ...l, page: pages.find((item) => item.id === l.page_id) }))
+            .filter((l) => Boolean(l.page) && l.page.is_deleted === 0);
           });
           return allLinks;
         }
@@ -387,11 +470,15 @@ export async function installMockBridge(page: Page, options: MockBridgeOptions =
         }
         if (cmd === "delete_studio_document") {
           const id = args.id as string;
-          save(documentsKey, docs.filter(d => d.id !== id));
-          save(linksKey, links.filter(l => l.document_id !== id));
-          // Delete note pages too
-          const notePageIds = pages.filter(p => p.parent_id === id || p.id === id).map(p => p.id);
-          save(pagesKey, pages.filter(p => !notePageIds.includes(p.id)));
+          const document = docs.find((candidate) => candidate.id === id && !candidate.deleted_at);
+          if (!document) return null;
+          const deletedAt = args.deletedAt as string || new Date().toISOString();
+          const notePageIds = pageTreeIds(pages, document.note_page_id);
+          save(documentsKey, docs.map((candidate) => notePageIds.has(candidate.note_page_id)
+            ? { ...candidate, deleted_at: deletedAt, updated_at: deletedAt }
+            : candidate,
+          ));
+          save(pagesKey, trashPageTree(pages, document.note_page_id, deletedAt));
           return null;
         }
 

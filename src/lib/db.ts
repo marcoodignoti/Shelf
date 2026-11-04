@@ -21,6 +21,38 @@ export interface Page {
   created_at: string;
   updated_at: string;
   content_loaded?: number;
+  deleted_at?: string | null;
+  trash_root_id?: string | null;
+}
+
+export interface TrashPage extends Page {
+  deleted_at: string;
+  trash_root_id: string;
+  trashed_descendant_count: number;
+}
+
+export interface PageVersionSnapshot {
+  title?: string | null;
+  parent_id?: string | null;
+  content?: string | null;
+  search_text?: string | null;
+  icon?: string | null;
+  cover_url?: string | null;
+  is_favorite?: number;
+  is_template?: number;
+  is_database?: number;
+  database_schema?: string | null;
+  properties?: string | null;
+  sort_order?: number;
+  page_kind?: PageKind;
+}
+
+export interface PageVersion {
+  id: string;
+  page_id: string;
+  snapshot: PageVersionSnapshot;
+  reason: "update" | "trash" | "restore" | string;
+  created_at: string;
 }
 
 export interface SearchResult extends Page {
@@ -88,7 +120,6 @@ export async function updatePage(id: string, updates: Partial<Page>): Promise<vo
     'search_text',
     'icon',
     'cover_url',
-    'is_deleted',
     'is_favorite',
     'is_template',
     'is_database',
@@ -117,6 +148,32 @@ export async function deleteProject(id: string): Promise<void> {
   await invoke('delete_project', {
     id,
     updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function listTrashPages(): Promise<TrashPage[]> {
+  return await invoke("list_trash_pages");
+}
+
+export async function restorePage(id: string): Promise<Page> {
+  return await invoke("restore_page", {
+    id,
+    restoredAt: new Date().toISOString(),
+  });
+}
+
+export async function emptyTrash(): Promise<number> {
+  return await invoke("empty_trash");
+}
+
+export async function listPageVersions(pageId: string): Promise<PageVersion[]> {
+  return await invoke("list_page_versions", { pageId });
+}
+
+export async function restorePageVersion(id: string): Promise<Page> {
+  return await invoke("restore_page_version", {
+    id,
+    restoredAt: new Date().toISOString(),
   });
 }
 

@@ -23,7 +23,8 @@ function createStudioProjectBackend(context) {
           .prepare(
             `
           UPDATE pages
-          SET title = ?, parent_id = ?, is_deleted = 0, page_kind = 'project', sort_order = ?, updated_at = ?
+          SET title = ?, parent_id = ?, is_deleted = 0, deleted_at = NULL,
+              trash_root_id = NULL, page_kind = 'project', sort_order = ?, updated_at = ?
           WHERE id = ?
         `,
           )
@@ -53,17 +54,23 @@ function createStudioProjectBackend(context) {
       if (!isUnified()) return;
       const document = context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(documentId);
       if (!document) return;
       const parentPageId = projectId ? studioProjectPageId(projectId) : null;
+      const notePage = context.db
+        .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0`)
+        .get(document.note_page_id);
+      if (notePage && notePage.parent_id !== parentPageId) {
+        context.createPageVersionSnapshot?.(notePage, { reason: "update", createdAt: updatedAt });
+      }
       context.db
         .prepare(
           `
         UPDATE pages
         SET parent_id = ?, page_kind = 'note', updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND is_deleted = 0
       `,
         )
         .run(parentPageId, updatedAt, document.note_page_id);
@@ -72,7 +79,7 @@ function createStudioProjectBackend(context) {
     listStudioProjects() {
       return context.db
         .prepare(
-          `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects ORDER BY sort_order ASC, name ASC`,
+          `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
         )
         .all();
     },
@@ -92,7 +99,7 @@ function createStudioProjectBackend(context) {
       if (parent) {
         const count = rowValue(
           context.db
-            .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+            .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ? AND deleted_at IS NULL")
             .get(parent),
           "value",
         );
@@ -104,7 +111,8 @@ function createStudioProjectBackend(context) {
             `
         SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
         FROM studio_projects
-        WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?
+        WHERE deleted_at IS NULL
+          AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
       `,
           )
           .get(parent, parent),
@@ -130,7 +138,7 @@ function createStudioProjectBackend(context) {
       }
       return context.db
         .prepare(
-          `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE id = ?`,
+          `SELECT ${STUDIO_PROJECT_COLUMNS} FROM studio_projects WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
     },
@@ -139,16 +147,25 @@ function createStudioProjectBackend(context) {
       const trimmed = String(name ?? "").trim();
       if (!trimmed) throw new Error("project name cannot be empty");
       const updated = updatedAt ?? updated_at;
+      const pageId = studioProjectPageId(id);
+      const mirroredPage = isUnified()
+        ? context.db
+          .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0`)
+          .get(pageId)
+        : null;
+      if (mirroredPage && mirroredPage.title !== trimmed) {
+        context.createPageVersionSnapshot?.(mirroredPage, { reason: "update", createdAt: updated });
+      }
       const result = context.db
         .prepare(
-          "UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ?",
+          "UPDATE studio_projects SET name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
         )
         .run(trimmed, updated, id);
       if (result.changes === 0) throw new Error("project not found");
       if (isUnified()) {
         context.db
-          .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
-          .run(trimmed, updated, studioProjectPageId(id));
+          .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ? AND is_deleted = 0")
+          .run(trimmed, updated, pageId);
       }
     },
 
@@ -165,7 +182,7 @@ function createStudioProjectBackend(context) {
       if (parent) {
         const parentExists = rowValue(
           context.db
-            .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+            .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ? AND deleted_at IS NULL")
             .get(parent),
           "value",
         );
@@ -175,11 +192,12 @@ function createStudioProjectBackend(context) {
             .prepare(
               `
           WITH RECURSIVE ancestors(id, parent_id) AS (
-            SELECT id, parent_id FROM studio_projects WHERE id = ?
+            SELECT id, parent_id FROM studio_projects WHERE id = ? AND deleted_at IS NULL
             UNION ALL
             SELECT studio_projects.id, studio_projects.parent_id
             FROM studio_projects
             INNER JOIN ancestors ON studio_projects.id = ancestors.parent_id
+            WHERE studio_projects.deleted_at IS NULL
           )
           SELECT COUNT(*) AS value FROM ancestors WHERE id = ?
         `,
@@ -191,7 +209,7 @@ function createStudioProjectBackend(context) {
       }
       const projectExists = rowValue(
         context.db
-          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ? AND deleted_at IS NULL")
           .get(id),
         "value",
       );
@@ -202,7 +220,8 @@ function createStudioProjectBackend(context) {
             `
         SELECT COALESCE(MAX(sort_order), -1) + 1 AS value
         FROM studio_projects
-        WHERE (? IS NULL AND parent_id IS NULL) OR parent_id = ?
+        WHERE deleted_at IS NULL
+          AND ((? IS NULL AND parent_id IS NULL) OR parent_id = ?)
       `,
           )
           .get(parent, parent),
@@ -210,14 +229,21 @@ function createStudioProjectBackend(context) {
       );
       const result = context.db
         .prepare(
-          "UPDATE studio_projects SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+          "UPDATE studio_projects SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
         )
         .run(parent, sortOrder, updated, id);
       if (result.changes === 0) throw new Error("project not found");
       if (isUnified()) {
+        const pageId = studioProjectPageId(id);
+        const mirroredPage = context.db
+          .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0`)
+          .get(pageId);
+        if (mirroredPage && (mirroredPage.parent_id !== (parent ? studioProjectPageId(parent) : null) || mirroredPage.sort_order !== sortOrder)) {
+          context.createPageVersionSnapshot?.(mirroredPage, { reason: "update", createdAt: updated });
+        }
         context.db
           .prepare(
-            "UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+            "UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ? AND is_deleted = 0",
           )
           .run(
             parent ? studioProjectPageId(parent) : null,
@@ -229,45 +255,37 @@ function createStudioProjectBackend(context) {
     },
 
     deleteStudioProject({ id, updatedAt, updated_at }) {
-      const updated = updatedAt ?? updated_at;
+      const updated = updatedAt ?? updated_at ?? new Date().toISOString();
+      if (isUnified() && typeof context.deleteProject === "function") {
+        return context.deleteProject({ id: studioProjectPageId(id), updatedAt: updated });
+      }
       let deleted = 0;
       context.withTransaction(() => {
         context.db
           .prepare(
-            "UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ?",
+            "UPDATE studio_documents SET project_id = NULL, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL",
           )
           .run(updated, id);
-        if (isUnified()) {
-          context.db
-            .prepare(
-              `
-            UPDATE pages
-            SET parent_id = NULL, updated_at = ?
-            WHERE id IN (SELECT note_page_id FROM studio_documents WHERE project_id IS NULL)
-          `,
-            )
-            .run(updated);
-        }
         context.db
           .prepare(
-            "UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+            "UPDATE studio_projects SET parent_id = NULL, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL",
           )
           .run(updated, id);
         if (isUnified()) {
           context.db
             .prepare(
-              "UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ?",
+              "UPDATE pages SET parent_id = NULL, updated_at = ? WHERE parent_id = ? AND is_deleted = 0",
             )
             .run(updated, studioProjectPageId(id));
           context.db
             .prepare(
-              "UPDATE pages SET is_deleted = 1, updated_at = ? WHERE id = ?",
+              "UPDATE pages SET is_deleted = 1, deleted_at = ?, trash_root_id = ?, updated_at = ? WHERE id = ? AND is_deleted = 0",
             )
-            .run(updated, studioProjectPageId(id));
+            .run(updated, studioProjectPageId(id), updated, studioProjectPageId(id));
         }
         deleted = context.db
-          .prepare("DELETE FROM studio_projects WHERE id = ?")
-          .run(id).changes;
+          .prepare("UPDATE studio_projects SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
+          .run(updated, updated, id).changes;
       });
       if (deleted === 0) throw new Error("project not found");
     },
@@ -283,7 +301,7 @@ function createStudioProjectBackend(context) {
       if (project) {
         const projectExists = rowValue(
           context.db
-            .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ?")
+          .prepare("SELECT COUNT(*) AS value FROM studio_projects WHERE id = ? AND deleted_at IS NULL")
             .get(project),
           "value",
         );
@@ -292,7 +310,7 @@ function createStudioProjectBackend(context) {
       const updated = updatedAt ?? updated_at;
       const result = context.db
         .prepare(
-          "UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ?",
+          "UPDATE studio_documents SET project_id = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
         )
         .run(project, updated, id);
       if (result.changes === 0) throw new Error("document not found");

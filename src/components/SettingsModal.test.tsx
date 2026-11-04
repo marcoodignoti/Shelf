@@ -11,6 +11,7 @@ vi.mock("./settings/AppearanceSection", () => ({ AppearanceSection: () => <div>A
 vi.mock("./settings/ShortcutsSection", () => ({ ShortcutsSection: () => <div>Shortcuts Section Content</div> }));
 vi.mock("./settings/UpdatesSection", () => ({ UpdatesSection: () => <div>Updates Section Content</div> }));
 vi.mock("./settings/DataSection", () => ({ DataSection: () => <div>Data Section Content</div> }));
+vi.mock("./settings/TrashSection", () => ({ TrashSection: () => <div>Trash Section Content</div> }));
 vi.mock("./settings/AboutSection", () => ({ AboutSection: () => <div>About Section Content</div> }));
 
 let mockProfileValue: any = {
@@ -78,6 +79,7 @@ describe("SettingsModal Component", () => {
     expect(navigation.getByText("Shortcuts")).toBeInTheDocument();
     expect(navigation.getByText("Updates")).toBeInTheDocument();
     expect(navigation.getByText("Import / Export")).toBeInTheDocument();
+    expect(navigation.getByText("Trash")).toBeInTheDocument();
     expect(navigation.getByText("About")).toBeInTheDocument();
 
     // Default active section (Profile) content is shown
@@ -109,6 +111,9 @@ describe("SettingsModal Component", () => {
     fireEvent.click(aboutBtn);
 
     expect(screen.getByText("About Section Content")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Trash" }));
+    expect(screen.getByText("Trash Section Content")).toBeInTheDocument();
   });
 
   it("triggers onClose when close button is clicked", () => {

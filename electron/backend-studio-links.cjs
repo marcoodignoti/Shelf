@@ -81,7 +81,9 @@ function createStudioLinkBackend(context) {
         .prepare(
           `
         ${studioLinkBackend.studioDocumentPageLinkSelectSql()}
+        JOIN studio_documents documents ON documents.id = links.document_id
         WHERE links.document_id = ?
+          AND documents.deleted_at IS NULL
           AND pages.is_deleted = 0
         ORDER BY links.sort_order ASC, links.created_at ASC
       `,
@@ -96,7 +98,8 @@ function createStudioLinkBackend(context) {
           `
         ${studioLinkBackend.studioDocumentPageLinkSelectSql()}
         JOIN studio_documents documents ON documents.id = links.document_id
-        WHERE pages.is_deleted = 0
+        WHERE documents.deleted_at IS NULL
+          AND pages.is_deleted = 0
         ORDER BY documents.title COLLATE NOCASE ASC, links.sort_order ASC, links.created_at ASC
       `,
         )
@@ -126,7 +129,7 @@ function createStudioLinkBackend(context) {
       const labelValue = normalizeOptionalString(label);
       const documentExists = rowValue(
         context.db
-          .prepare("SELECT COUNT(*) AS value FROM studio_documents WHERE id = ?")
+          .prepare("SELECT COUNT(*) AS value FROM studio_documents WHERE id = ? AND deleted_at IS NULL")
           .get(document),
         "value",
       );
@@ -205,6 +208,20 @@ function createStudioLinkBackend(context) {
           : Math.max(1, Math.round(Number(pdfPageInput)));
       if (pdfPageValue !== null && !Number.isFinite(pdfPageValue))
         throw new Error("invalid PDF page");
+      const activeLink = context.db
+        .prepare(
+          `
+          SELECT links.id
+          FROM studio_document_page_links links
+          JOIN studio_documents documents ON documents.id = links.document_id
+          JOIN pages ON pages.id = links.page_id
+          WHERE links.id = ?
+            AND documents.deleted_at IS NULL
+            AND pages.is_deleted = 0
+        `,
+        )
+        .get(id);
+      if (!activeLink) throw new Error("link not found");
       const result = context.db
         .prepare(
           `
@@ -223,6 +240,20 @@ function createStudioLinkBackend(context) {
     },
 
     unlinkStudioDocumentPage({ id }) {
+      const activeLink = context.db
+        .prepare(
+          `
+          SELECT links.id
+          FROM studio_document_page_links links
+          JOIN studio_documents documents ON documents.id = links.document_id
+          JOIN pages ON pages.id = links.page_id
+          WHERE links.id = ?
+            AND documents.deleted_at IS NULL
+            AND pages.is_deleted = 0
+        `,
+        )
+        .get(id);
+      if (!activeLink) throw new Error("link not found");
       const result = context.db
         .prepare("DELETE FROM studio_document_page_links WHERE id = ?")
         .run(id);

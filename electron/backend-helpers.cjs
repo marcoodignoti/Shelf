@@ -168,6 +168,8 @@ function runMigrations(db) {
     "is_deleted",
     "ALTER TABLE pages ADD COLUMN is_deleted INTEGER DEFAULT 0",
   );
+  addPageColumn("deleted_at", "ALTER TABLE pages ADD COLUMN deleted_at TEXT");
+  addPageColumn("trash_root_id", "ALTER TABLE pages ADD COLUMN trash_root_id TEXT");
   addPageColumn(
     "is_favorite",
     "ALTER TABLE pages ADD COLUMN is_favorite INTEGER DEFAULT 0",
@@ -238,6 +240,26 @@ function runMigrations(db) {
       updated_at TEXT NOT NULL,
       UNIQUE(document_id, page_id)
     );
+
+    CREATE TABLE IF NOT EXISTS page_versions (
+      id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL
+        REFERENCES pages(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      snapshot_json TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- Project deletion intentionally leaves its contents available at the
+    -- workspace root. Keep enough relationship state to put those contents
+    -- back if the project itself is restored from Trash.
+    CREATE TABLE IF NOT EXISTS trash_project_memberships (
+      trash_root_id TEXT NOT NULL,
+      member_type TEXT NOT NULL,
+      member_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (trash_root_id, member_type, member_id)
+    );
   `);
 
   if (!hasColumn(db, "studio_documents", "title")) {
@@ -264,6 +286,12 @@ function runMigrations(db) {
   if (!hasColumn(db, "studio_documents", "project_id")) {
     db.exec("ALTER TABLE studio_documents ADD COLUMN project_id TEXT");
   }
+  if (!hasColumn(db, "studio_documents", "deleted_at")) {
+    db.exec("ALTER TABLE studio_documents ADD COLUMN deleted_at TEXT");
+  }
+  if (!hasColumn(db, "studio_projects", "deleted_at")) {
+    db.exec("ALTER TABLE studio_projects ADD COLUMN deleted_at TEXT");
+  }
   db.exec(`
     UPDATE studio_documents
     SET title = 'Imported PDF'
@@ -271,6 +299,10 @@ function runMigrations(db) {
     UPDATE studio_documents
     SET note_page_id = id
     WHERE note_page_id IS NULL OR TRIM(note_page_id) = '';
+    UPDATE pages
+    SET deleted_at = COALESCE(deleted_at, updated_at, CURRENT_TIMESTAMP),
+        trash_root_id = COALESCE(trash_root_id, id)
+    WHERE is_deleted = 1;
   `);
 
   db.exec(`
@@ -288,6 +320,16 @@ function runMigrations(db) {
       ON pages (is_deleted, parent_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_pages_active_updated_at
       ON pages (is_deleted, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_pages_trash_root
+      ON pages (is_deleted, trash_root_id, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_page_versions_page_created
+      ON page_versions (page_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_trash_project_memberships_root
+      ON trash_project_memberships (trash_root_id);
+    CREATE INDEX IF NOT EXISTS idx_studio_documents_deleted
+      ON studio_documents (deleted_at, last_opened_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_studio_projects_deleted
+      ON studio_projects (deleted_at, parent_id, sort_order);
   `);
 
   try {
@@ -667,6 +709,12 @@ function validatePageUpdateInput(updates) {
 
   const safeUpdates = {};
   for (const [field, value] of Object.entries(updates)) {
+    // Deletion needs a root id, a timestamp, a version snapshot, and FTS
+    // maintenance. Allowing a generic update to flip this flag would create
+    // an unrecoverable hidden page, so callers must use delete_page instead.
+    if (field === "is_deleted") {
+      throw new Error("use delete_page to move a page to trash");
+    }
     if (PAGE_BOOLEAN_FIELDS.has(field)) {
       safeUpdates[field] = normalizePageBoolean(value, field);
       continue;

@@ -41,6 +41,20 @@ test.beforeEach(async ({ page }) => {
     const resetKey = "opennotion-e2e-studio-reset";
     const load = <T,>(key: string): T[] => JSON.parse(window.localStorage.getItem(key) ?? "[]");
     const save = <T,>(key: string, value: T[]) => window.localStorage.setItem(key, JSON.stringify(value));
+    const pageTreeIds = (items: any[], rootId: string) => {
+      const ids = new Set([rootId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const item of items) {
+          if (item.parent_id && ids.has(item.parent_id) && !ids.has(item.id)) {
+            ids.add(item.id);
+            changed = true;
+          }
+        }
+      }
+      return ids;
+    };
 
     if (window.sessionStorage.getItem(resetKey) !== "done") {
       window.localStorage.removeItem(documentsKey);
@@ -53,10 +67,10 @@ test.beforeEach(async ({ page }) => {
 
     window.openNotion = {
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
-        if (cmd === "list_pages") return load(pagesKey).filter((item: any) => item.page_kind === "note" || item.page_kind === "studio_note");
-        if (cmd === "list_studio_documents") return load(documentsKey);
+        if (cmd === "list_pages") return load<any>(pagesKey).filter((item) => item.is_deleted === 0 && (item.page_kind === "note" || item.page_kind === "studio_note"));
+        if (cmd === "list_studio_documents") return load<any>(documentsKey).filter((item) => !item.deleted_at);
         if (cmd === "list_studio_document_page_links") {
-          const document = load<any>(documentsKey).find((candidate) => candidate.id === args.documentId);
+          const document = load<any>(documentsKey).find((candidate) => candidate.id === args.documentId && !candidate.deleted_at);
           if (!document) return [];
           const pages = load<any>(pagesKey);
           const storedLinks = load<any>(linksKey).filter((link) => link.document_id === document.id);
@@ -78,10 +92,10 @@ test.beforeEach(async ({ page }) => {
               ...link,
               page: pages.find((item) => item.id === link.page_id),
             }))
-            .filter((link) => Boolean(link.page));
+            .filter((link) => Boolean(link.page) && link.page.is_deleted === 0);
         }
         if (cmd === "list_all_studio_document_page_links") {
-          const documents = load<any>(documentsKey);
+          const documents = load<any>(documentsKey).filter((document) => !document.deleted_at);
           const pages = load<any>(pagesKey);
           const unlinkedPrimaryPageIds = new Set(load<string>(unlinkedPrimaryLinksKey));
           const links = documents.flatMap((document) => {
@@ -103,7 +117,7 @@ test.beforeEach(async ({ page }) => {
                 ...link,
                 page: pages.find((item) => item.id === link.page_id),
               }))
-              .filter((link) => Boolean(link.page));
+              .filter((link) => Boolean(link.page) && link.page.is_deleted === 0);
           });
           return links;
         }
@@ -272,39 +286,28 @@ test.beforeEach(async ({ page }) => {
         }
         if (cmd === "delete_page") {
           const pages = load<any>(pagesKey);
-          const deleteIds = new Set<string>([args.id as string]);
-          let changed = true;
-          while (changed) {
-            changed = false;
-            for (const item of pages) {
-              if (item.parent_id && deleteIds.has(item.parent_id) && !deleteIds.has(item.id)) {
-                deleteIds.add(item.id);
-                changed = true;
-              }
-            }
-          }
-          save(pagesKey, pages.filter((item) => !deleteIds.has(item.id)));
-          save(linksKey, load<any>(linksKey).filter((link) => !deleteIds.has(link.page_id)));
+          const deletedAt = args.deletedAt as string || new Date().toISOString();
+          const deleteIds = pageTreeIds(pages, args.id as string);
+          save(pagesKey, pages.map((item) => deleteIds.has(item.id)
+            ? { ...item, is_deleted: 1, deleted_at: deletedAt, trash_root_id: args.id, updated_at: deletedAt }
+            : item,
+          ));
           return null;
         }
         if (cmd === "delete_studio_document") {
-          const document = load<any>(documentsKey).find((candidate) => candidate.id === args.id);
+          const document = load<any>(documentsKey).find((candidate) => candidate.id === args.id && !candidate.deleted_at);
           if (!document) throw new Error("document not found");
           const pages = load<any>(pagesKey);
-          const deleteIds = new Set<string>([document.note_page_id]);
-          let changed = true;
-          while (changed) {
-            changed = false;
-            for (const item of pages) {
-              if (item.parent_id && deleteIds.has(item.parent_id) && !deleteIds.has(item.id)) {
-                deleteIds.add(item.id);
-                changed = true;
-              }
-            }
-          }
-          save(documentsKey, load<any>(documentsKey).filter((candidate) => candidate.id !== args.id));
-          save(pagesKey, pages.filter((item) => !deleteIds.has(item.id)));
-          save(linksKey, load<any>(linksKey).filter((link) => link.document_id !== args.id && !deleteIds.has(link.page_id)));
+          const deletedAt = args.deletedAt as string || new Date().toISOString();
+          const deleteIds = pageTreeIds(pages, document.note_page_id);
+          save(documentsKey, load<any>(documentsKey).map((candidate) => deleteIds.has(candidate.note_page_id)
+            ? { ...candidate, deleted_at: deletedAt, updated_at: deletedAt }
+            : candidate,
+          ));
+          save(pagesKey, pages.map((item) => deleteIds.has(item.id)
+            ? { ...item, is_deleted: 1, deleted_at: deletedAt, trash_root_id: document.note_page_id, updated_at: deletedAt }
+            : item,
+          ));
           return null;
         }
         if (cmd === "search_pages") return [];
@@ -414,22 +417,23 @@ test("deletes a unified Studio PDF from the private page tree", async ({ page })
   const importedPdfRow = page.locator(`[data-page-id='${documentId}']`);
   await expect(importedPdfRow).toBeVisible();
   await importedPdfRow.click({ button: "right" });
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByText('Delete "civil-law" and its PDF permanently?')).toBeVisible();
-  await page.locator(".on-delete-dialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await expect(page.getByText('Move "civil-law" and its PDF to Trash? They can be restored for 30 days.')).toBeVisible();
+  await page.locator(".on-delete-dialog").getByRole("button", { name: "Move to Trash" }).click();
 
   await expect(importedPdfRow).toBeHidden();
-  await expect(page.getByText("Studio document deleted.")).toBeVisible();
+  await expect(page.getByText("Studio document moved to Trash.")).toBeVisible();
   await expect(page.getByText("delete the Studio document before deleting its primary note")).toBeHidden();
   await expect.poll(async () => page.evaluate(({ documentId, linkedNoteId }) => {
-    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as unknown[];
-    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ id: string }>;
+    const documents = JSON.parse(window.localStorage.getItem("opennotion-e2e-studio-documents") ?? "[]") as Array<{ deleted_at?: string | null }>;
+    const pages = JSON.parse(window.localStorage.getItem("opennotion-e2e-pages") ?? "[]") as Array<{ id: string; is_deleted: number }>;
     return {
-      documents: documents.length,
-      hasDocumentPage: pages.some((item) => item.id === documentId),
-      hasLinkedNote: pages.some((item) => item.id === linkedNoteId),
+      storedDocuments: documents.length,
+      activeDocuments: documents.filter((item) => !item.deleted_at).length,
+      hasDocumentPage: pages.some((item) => item.id === documentId && item.is_deleted === 0),
+      hasLinkedNote: pages.some((item) => item.id === linkedNoteId && item.is_deleted === 0),
     };
-  }, { documentId, linkedNoteId })).toEqual({ documents: 0, hasDocumentPage: false, hasLinkedNote: false });
+  }, { documentId, linkedNoteId })).toEqual({ storedDocuments: 1, activeDocuments: 0, hasDocumentPage: false, hasLinkedNote: false });
 });
 
 test("creates multiple linked notes and PDF bookmarks for a Studio document", async ({ page }) => {

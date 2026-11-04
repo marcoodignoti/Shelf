@@ -58,7 +58,7 @@ describe("SubpageActionsMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
     fireEvent.click(screen.getByRole("button", { name: "Add to Favorites" }));
     fireEvent.click(screen.getByRole("button", { name: "Use as Template" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
 
     expect(onDuplicate).toHaveBeenCalledWith(subpage);
     expect(onToggleFavorite).toHaveBeenCalledWith(subpage);

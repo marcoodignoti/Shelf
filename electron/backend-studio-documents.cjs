@@ -10,7 +10,6 @@ const {
   validatedPdfFile,
   safeStorageId,
   validateManagedStudioDocumentPath,
-  removeStoredStudioDocumentFile,
   pageSearchIndexAvailable,
   syncPageSearchIndexEntry,
 } = require("./backend-helpers.cjs");
@@ -20,7 +19,7 @@ function createStudioDocumentBackend(context) {
     listStudioDocuments() {
       return context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents ORDER BY last_opened_at DESC, created_at DESC`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE deleted_at IS NULL ORDER BY last_opened_at DESC, created_at DESC`,
         )
         .all();
     },
@@ -158,7 +157,7 @@ function createStudioDocumentBackend(context) {
       validatePageIdValue("document id", id);
       const current = context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
       if (!current) throw new Error("document not found");
@@ -188,12 +187,12 @@ function createStudioDocumentBackend(context) {
       }
       context.db
         .prepare(
-          "UPDATE studio_documents SET original_filename = ?, stored_file_path = ?, updated_at = ? WHERE id = ?",
+          "UPDATE studio_documents SET original_filename = ?, stored_file_path = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
         )
         .run(path.basename(source), destination, updatedAt ?? updated_at, id);
       return context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
     },
@@ -201,7 +200,7 @@ function createStudioDocumentBackend(context) {
     updateStudioDocumentViewerState({ id, updates, updatedAt, updated_at }) {
       const current = context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
       if (!current) throw new Error("document not found");
@@ -221,7 +220,7 @@ function createStudioDocumentBackend(context) {
           `
         UPDATE studio_documents
         SET viewer_zoom = ?, viewer_page = ?, panel_layout = ?, last_opened_at = ?, updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND deleted_at IS NULL
       `,
         )
         .run(
@@ -239,21 +238,27 @@ function createStudioDocumentBackend(context) {
       if (!trimmed) throw new Error("title cannot be empty");
       const current = context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
       if (!current) throw new Error("document not found");
       const updated = updatedAt ?? updated_at;
       context.withTransaction(() => {
+        const notePage = context.db
+          .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0`)
+          .get(current.note_page_id);
+        if (notePage) {
+          context.createPageVersionSnapshot?.(notePage, { reason: "update", createdAt: updated });
+        }
         context.db
           .prepare(
-            "UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ?",
+            "UPDATE studio_documents SET title = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
           )
           .run(trimmed, updated, id);
         const pageTitle =
           current.id === current.note_page_id ? trimmed : `${trimmed} Notes`;
         context.db
-          .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?")
+          .prepare("UPDATE pages SET title = ?, updated_at = ? WHERE id = ? AND is_deleted = 0")
           .run(pageTitle, updated, current.note_page_id);
         syncPageSearchIndexEntry(context.db, current.note_page_id);
       });
@@ -261,7 +266,7 @@ function createStudioDocumentBackend(context) {
 
     getStudioDocumentStoredFilePath(id) {
       const row = context.db
-        .prepare("SELECT stored_file_path FROM studio_documents WHERE id = ?")
+        .prepare("SELECT stored_file_path FROM studio_documents WHERE id = ? AND deleted_at IS NULL")
         .get(id);
       if (!row) throw new Error("document not found");
       return row.stored_file_path;
@@ -289,53 +294,58 @@ function createStudioDocumentBackend(context) {
       context.revealPath(storedPath);
     },
 
-    deleteStudioDocument({ id }) {
+    deleteStudioDocument({ id, deletedAt, deleted_at }) {
+      const deleted = deletedAt ?? deleted_at ?? new Date().toISOString();
       const current = context.db
         .prepare(
-          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ?`,
+          `SELECT ${STUDIO_DOCUMENT_COLUMNS} FROM studio_documents WHERE id = ? AND deleted_at IS NULL`,
         )
         .get(id);
       if (!current) throw new Error("document not found");
       context.withTransaction(() => {
-        if (pageSearchIndexAvailable(context.db)) {
-          context.db
-            .prepare(
-              `
+        const descendants = context.db
+          .prepare(
+            `
             WITH RECURSIVE descendants(id) AS (
-              SELECT id FROM pages WHERE id = ?
+              SELECT id FROM pages WHERE id = ? AND is_deleted = 0
               UNION ALL
               SELECT pages.id FROM pages
               JOIN descendants ON pages.parent_id = descendants.id
+              WHERE pages.is_deleted = 0
             )
-            DELETE FROM page_search_fts
-            WHERE page_id IN (SELECT id FROM descendants)
+            SELECT ${PAGE_COLUMNS} FROM pages WHERE id IN (SELECT id FROM descendants)
           `,
-            )
-            .run(current.note_page_id);
+          )
+          .all(current.note_page_id);
+        if (descendants.length === 0) throw new Error("document note not found");
+        for (const page of descendants) {
+          context.createPageVersionSnapshot?.(page, { reason: "trash", createdAt: deleted, force: true });
         }
-        context.db
-          .prepare("DELETE FROM studio_document_page_links WHERE document_id = ?")
-          .run(id);
-        context.db.prepare("DELETE FROM studio_documents WHERE id = ?").run(id);
+        const pageIds = descendants.map((page) => page.id);
         context.db
           .prepare(
-            `
-          WITH RECURSIVE descendants(id) AS (
-            SELECT id FROM pages WHERE id = ?
-            UNION ALL
-            SELECT pages.id FROM pages
-            JOIN descendants ON pages.parent_id = descendants.id
+            `UPDATE pages
+             SET is_deleted = 1, deleted_at = ?, trash_root_id = ?, updated_at = ?
+             WHERE id IN (${pageIds.map(() => "?").join(", ")})`,
           )
-          DELETE FROM pages
-          WHERE id IN (SELECT id FROM descendants)
-        `,
+          .run(deleted, current.note_page_id, deleted, ...pageIds);
+        context.db
+          .prepare("UPDATE studio_documents SET deleted_at = ?, updated_at = ? WHERE id = ?")
+          .run(deleted, deleted, id);
+        context.db
+          .prepare(
+            `UPDATE studio_documents
+             SET deleted_at = ?, updated_at = ?
+             WHERE note_page_id IN (${pageIds.map(() => "?").join(", ")})
+               AND deleted_at IS NULL`,
           )
-          .run(current.note_page_id);
+          .run(deleted, deleted, ...pageIds);
+        for (const pageId of pageIds) {
+          if (pageSearchIndexAvailable(context.db)) {
+            context.db.prepare("DELETE FROM page_search_fts WHERE page_id = ?").run(pageId);
+          }
+        }
       });
-      removeStoredStudioDocumentFile(
-        current.stored_file_path,
-        studioDocumentBackend.studioDocumentsRoot(),
-      );
     },
   };
 

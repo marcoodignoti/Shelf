@@ -1,4 +1,4 @@
-import type { Page, SearchResult } from "./db";
+import type { Page, PageVersion, SearchResult, TrashPage } from "./db";
 import type { WorkspaceProfile } from "./profile";
 import type {
   StudioDocument,
@@ -20,6 +20,11 @@ export const DESKTOP_COMMAND_NAMES = [
   "update_page",
   "delete_page",
   "delete_project",
+  "list_trash_pages",
+  "restore_page",
+  "empty_trash",
+  "list_page_versions",
+  "restore_page_version",
   "move_page",
   "reorder_pages",
   "import_pages",
@@ -76,8 +81,13 @@ export interface DesktopCommandMap {
   create_page: { args: { id: string; title?: string; parentId?: string | null; parent_id?: string | null; createdAt?: string; created_at?: string }; result: Page };
   create_project: { args: { id: string; title?: string; createdAt?: string; created_at?: string }; result: Page };
   update_page: { args: { id: string; updates: Partial<Page>; updatedAt?: string; updated_at?: string }; result: void };
-  delete_page: { args: { id: string }; result: void };
+  delete_page: { args: { id: string; deletedAt?: string; deleted_at?: string }; result: void };
   delete_project: { args: { id: string; updatedAt?: string; updated_at?: string }; result: void };
+  list_trash_pages: { args: undefined; result: TrashPage[] };
+  restore_page: { args: { id: string; restoredAt?: string; restored_at?: string }; result: Page };
+  empty_trash: { args: undefined; result: number };
+  list_page_versions: { args: { pageId?: string; page_id?: string }; result: PageVersion[] };
+  restore_page_version: { args: { id: string; restoredAt?: string; restored_at?: string }; result: Page };
   move_page: { args: { id: string; parentId?: string | null; parent_id?: string | null; updatedAt?: string; updated_at?: string }; result: void };
   reorder_pages: { args: { parentId?: string | null; parent_id?: string | null; orderedIds?: string[]; ordered_ids?: string[]; updatedAt?: string; updated_at?: string }; result: void };
   import_pages: { args: { pages: Page[] }; result: number };
@@ -101,7 +111,7 @@ export interface DesktopCommandMap {
   rename_studio_document: { args: { id: string; title: string; updatedAt?: string; updated_at?: string }; result: void };
   open_studio_document_file: { args: { id: string }; result: void };
   reveal_studio_document_file: { args: { id: string }; result: void };
-  delete_studio_document: { args: { id: string }; result: void };
+  delete_studio_document: { args: { id: string; deletedAt?: string; deleted_at?: string }; result: void };
   toggle_favorite: { args: { id: string; isFavorite?: boolean; is_favorite?: boolean }; result: void };
   toggle_template: { args: { id: string; isTemplate?: boolean; is_template?: boolean }; result: void };
   create_page_from_template: { args: { id: string; templateId?: string; template_id?: string; parentId?: string | null; parent_id?: string | null; createdAt?: string; created_at?: string }; result: Page };
