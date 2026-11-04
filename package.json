@@ -111,6 +111,7 @@
     "@blocknote/react": "0.51.4",
     "@mantine/core": "9.3.2",
     "@mantine/hooks": "9.3.2",
+    "@tanstack/react-virtual": "^3.14.5",
     "katex": "0.17.0",
     "lucide-react": "1.21.0",
     "pdfjs-dist": "6.0.227",

@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../store/useUIStore';
@@ -33,6 +34,7 @@ import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.mjs';
 import { Page } from '../lib/db';
 import { moveTargetPages, visiblePageIds } from '../lib/pageTree';
 import { buildSidebarSections, sortSidebarPages } from '../lib/sidebarProjects';
+import { buildSidebarRows, type SidebarRow } from '../lib/sidebarRows';
 import { buildStudioNoteDocuments, type StudioNoteDocument, type StudioNoteEntry } from '../lib/sidebarStudioNotes';
 import { HOME_PAGE_ID } from '../lib/navigation';
 import { normalizePageTitle } from '../lib/pageTitle';
@@ -64,6 +66,35 @@ type DragSession = {
   startY: number;
   active: boolean;
 };
+
+type PageItemActions = Pick<ReturnType<typeof useAppStore.getState>,
+  | 'setCurrentPageId'
+  | 'setCurrentStudioDocumentId'
+  | 'addPage'
+  | 'duplicatePageAction'
+  | 'movePageAction'
+  | 'renamePageAction'
+  | 'toggleFavoriteAction'
+  | 'toggleTemplateAction'
+  | 'importStudioPdfAction'
+>;
+
+const SIDEBAR_VIRTUAL_OVERSCAN = 12;
+
+function estimateSidebarRowSize(row: SidebarRow): number {
+  switch (row.kind) {
+    case 'section':
+      return row.isFirst ? 42 : 50;
+    case 'empty':
+      return 30;
+    case 'studio-content':
+      return 120;
+    case 'loading':
+      return 44;
+    default:
+      return 35;
+  }
+}
 
 const THEME_CHOICES: Theme[] = ['system', 'light', 'dark'];
 
@@ -107,10 +138,6 @@ function storeExpandedState(pageId: string, expanded: boolean) {
   localStorage.setItem(`opennotion-page-expanded-${pageId}`, String(expanded));
 }
 
-function expandedPageIds(pages: Page[]): Set<string> {
-  return new Set(pages.filter(page => storedExpandedState(page.id)).map(page => page.id));
-}
-
 function sortPages(pages: Page[]): Page[] {
   return [...pages].sort((first, second) => {
     if (first.sort_order !== second.sort_order) {
@@ -132,79 +159,44 @@ function isDescendantPage(pagesById: Map<string, Page>, pageId: string, possible
   return false;
 }
 
-function PageItem({
+const PageItem = memo(function PageItem({
   page,
-  childrenByParentId,
-  allPages,
+  moveCandidatePages,
   projectMoveTargets,
   studioContextsByPageId,
   depth = 0,
+  hasChildren,
+  isExpanded,
+  isActive,
+  actions,
+  onSelectPage,
+  onExpandedChange,
   onRequestDelete,
   draggedPageId,
   dropTarget,
-  forcedExpandedPageId,
-  forcedCollapsedPageId,
   renameRequestedPageId,
   onRenameHandled,
   onPointerDownPage
 }: {
   page: Page,
-  childrenByParentId: Map<string | null, Page[]>,
-  allPages: Page[],
+  moveCandidatePages: Page[],
   projectMoveTargets: Page[],
   studioContextsByPageId: Map<string, PageStudioContext[]>,
   depth?: number,
+  hasChildren: boolean,
+  isExpanded: boolean,
+  isActive: boolean,
+  actions: PageItemActions,
+  onSelectPage: (id: string) => void,
+  onExpandedChange: (pageId: string, expanded: boolean) => void,
   onRequestDelete: (pendingDelete: PendingDelete) => void,
   draggedPageId: string | null,
   dropTarget: DropTarget | null,
-  forcedExpandedPageId: string | null,
-  forcedCollapsedPageId: string | null,
   renameRequestedPageId: string | null,
   onRenameHandled: () => void,
   onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void
 }) {
-  const {
-    currentPageId,
-    setCurrentPageId,
-    setCurrentStudioDocumentId,
-    addPage,
-    duplicatePageAction,
-    movePageAction,
-    renamePageAction,
-    toggleFavoriteAction,
-    toggleTemplateAction,
-    importStudioPdfAction,
-    secondaryPageId,
-    activePane,
-    setSecondaryPageId
-  } = useAppStore(useShallow((s) => ({
-    currentPageId: s.currentPageId,
-    setCurrentPageId: s.setCurrentPageId,
-    setCurrentStudioDocumentId: s.setCurrentStudioDocumentId,
-    addPage: s.addPage,
-    duplicatePageAction: s.duplicatePageAction,
-    movePageAction: s.movePageAction,
-    renamePageAction: s.renamePageAction,
-    toggleFavoriteAction: s.toggleFavoriteAction,
-    toggleTemplateAction: s.toggleTemplateAction,
-    importStudioPdfAction: s.importStudioPdfAction,
-    secondaryPageId: s.secondaryPageId,
-    activePane: s.activePane,
-    setSecondaryPageId: s.setSecondaryPageId
-  })));
   const t = useT();
-  // In split view the sidebar highlights and targets the pane that currently has focus.
-  const effectiveActivePageId = secondaryPageId
-    ? (activePane === "secondary" ? secondaryPageId : currentPageId)
-    : currentPageId;
-  const handleRowSelect = (id: string) => {
-    if (secondaryPageId && activePane === "secondary") {
-      setSecondaryPageId(id);
-    } else {
-      setCurrentPageId(id);
-    }
-  };
-  const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(page.id));
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [moveQuery, setMoveQuery] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
@@ -215,8 +207,6 @@ function PageItem({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const moveMenuRef = useRef<HTMLDivElement>(null);
 
-  const childPages = childrenByParentId.get(page.id) ?? [];
-  const hasChildren = childPages.length > 0;
   const studioContexts = useMemo(() => studioContextsByPageId.get(page.id) ?? [], [studioContextsByPageId, page.id]);
   const primaryStudioContext = studioContexts[0] ?? null;
   const studioBadgeTitle = useMemo(() => {
@@ -225,20 +215,23 @@ function PageItem({
       : `Open linked PDFs: ${studioContexts.map((context) => context.document.title || t("sidebar.untitled")).join(', ')}`;
   }, [studioContexts, primaryStudioContext, t]);
   const moveTargets = useMemo(() => {
-    return moveTargetPages(allPages, page.id).filter(target =>
+    if (!isMoveOpen) return [];
+
+    return moveTargetPages(moveCandidatePages, page.id).filter(target =>
       (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
     );
-  }, [allPages, page.id, moveQuery]);
+  }, [isMoveOpen, moveCandidatePages, page.id, moveQuery]);
   const moveProjectTargets = useMemo(() => {
+    if (!isMoveOpen) return [];
+
     return projectMoveTargets.filter(target =>
       target.id !== page.id &&
       (target.title || 'Untitled').toLowerCase().includes(moveQuery.trim().toLowerCase())
     );
-  }, [projectMoveTargets, page.id, moveQuery]);
+  }, [isMoveOpen, projectMoveTargets, page.id, moveQuery]);
 
   const setExpanded = (expanded: boolean) => {
-    storeExpandedState(page.id, expanded);
-    setIsExpanded(expanded);
+    onExpandedChange(page.id, expanded);
   };
 
   useEffect(() => {
@@ -253,18 +246,6 @@ function PageItem({
       renameInputRef.current?.select();
     }
   }, [isRenaming]);
-
-  useEffect(() => {
-    if (forcedExpandedPageId === page.id) {
-      setExpanded(true);
-    }
-  }, [forcedExpandedPageId, page.id]);
-
-  useEffect(() => {
-    if (forcedCollapsedPageId === page.id) {
-      setExpanded(false);
-    }
-  }, [forcedCollapsedPageId, page.id]);
 
   useEffect(() => {
     if (renameRequestedPageId === page.id) {
@@ -334,7 +315,7 @@ function PageItem({
   const handleAddSubpage = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setExpanded(true);
-    await addPage('Untitled', page.id);
+    await actions.addPage('Untitled', page.id);
   };
 
   const handleDeletePage = (e: React.MouseEvent) => {
@@ -346,42 +327,42 @@ function PageItem({
     event.stopPropagation();
     if (!primaryStudioContext) return;
     if (primaryStudioContext.document.id === primaryStudioContext.document.note_page_id) {
-      setCurrentPageId(primaryStudioContext.document.id);
+      actions.setCurrentPageId(primaryStudioContext.document.id);
       return;
     }
-    setCurrentStudioDocumentId(primaryStudioContext.document.id);
+    actions.setCurrentStudioDocumentId(primaryStudioContext.document.id);
   };
 
   const handleToggleFavorite = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
-    await toggleFavoriteAction(page.id, page.is_favorite !== 1);
+    await actions.toggleFavoriteAction(page.id, page.is_favorite !== 1);
   };
 
   const handleToggleTemplate = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
-    await toggleTemplateAction(page.id, page.is_template !== 1);
+    await actions.toggleTemplateAction(page.id, page.is_template !== 1);
   };
 
   const handleImportPdf = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
-    setIsExpanded(true);
-    await importStudioPdfAction(page.id);
+    setExpanded(true);
+    await actions.importStudioPdfAction(page.id);
   };
 
   const handleDuplicatePage = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
-    const duplicated = await duplicatePageAction(page.id);
+    const duplicated = await actions.duplicatePageAction(page.id);
     if (duplicated) {
-      setCurrentPageId(duplicated.id);
+      actions.setCurrentPageId(duplicated.id);
     }
   };
 
   const handleMovePage = async (nextParentId: string | null) => {
-    await movePageAction(page.id, nextParentId);
+    await actions.movePageAction(page.id, nextParentId);
     setIsMoveOpen(false);
     setMoveQuery('');
     setMoveMenuPosition(null);
@@ -402,7 +383,7 @@ function PageItem({
     setDraftTitle(nextTitle);
 
     if (nextTitle !== page.title) {
-      await renamePageAction(page.id, nextTitle);
+      await actions.renamePageAction(page.id, nextTitle);
     }
   };
 
@@ -422,7 +403,7 @@ function PageItem({
     event.preventDefault();
     event.stopPropagation();
     closeOpenOverlays();
-    setCurrentPageId(page.id);
+    actions.setCurrentPageId(page.id);
     setIsMoveOpen(false);
     setMoveMenuPosition(null);
     setContextMenuPosition(
@@ -442,9 +423,10 @@ function PageItem({
     <div>
       <div
         data-page-id={page.id}
-        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${effectiveActivePageId === page.id ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
+        data-parent-page-id={page.parent_id ?? undefined}
+        className={`group on-shell-row on-sidebar-page-row mb-[1px] cursor-pointer justify-between py-[2px] text-[13.5px] select-none ${isActive ? 'on-shell-row-active' : ''} ${dropClass} ${draggedPageId === page.id ? 'opacity-45' : ''}`}
         style={{ paddingLeft: `${(depth * 12) + 5}px`, paddingRight: '6px' }}
-        onClick={() => handleRowSelect(page.id)}
+        onClick={() => onSelectPage(page.id)}
         onDoubleClick={startRename}
         onContextMenu={handleContextMenu}
         onPointerDown={(event) => onPointerDownPage(event, page)}
@@ -646,87 +628,47 @@ function PageItem({
         document.body
       )}
 
-      {isExpanded && hasChildren && (
-        <div>
-          {childPages.map(child => (
-            <PageItem
-              key={child.id}
-              page={child}
-              childrenByParentId={childrenByParentId}
-              allPages={allPages}
-              projectMoveTargets={projectMoveTargets}
-              studioContextsByPageId={studioContextsByPageId}
-              depth={depth + 1}
-              onRequestDelete={onRequestDelete}
-              draggedPageId={draggedPageId}
-              dropTarget={dropTarget}
-              forcedExpandedPageId={forcedExpandedPageId}
-              forcedCollapsedPageId={forcedCollapsedPageId}
-              renameRequestedPageId={renameRequestedPageId}
-              onRenameHandled={onRenameHandled}
-              onPointerDownPage={onPointerDownPage}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
-}
+});
 
-function ProjectItem({
+const ProjectItem = memo(function ProjectItem({
   project,
-  children,
-  contentPages,
-  childrenByParentId,
-  projectMoveTargets,
-  studioContextsByPageId,
   depth = 0,
+  hasChildren,
+  isExpanded,
+  actions,
+  onExpandedChange,
   onRequestDelete,
   draggedPageId,
   dropTarget,
-  forcedExpandedPageId,
-  forcedCollapsedPageId,
   renameRequestedPageId,
   onRenameHandled,
   onRequestRenamePage,
-  onPointerDownPage,
 }: {
   project: Page;
-  children: Page[];
-  contentPages: Page[];
-  childrenByParentId: Map<string | null, Page[]>;
-  projectMoveTargets: Page[];
-  studioContextsByPageId: Map<string, PageStudioContext[]>;
   depth?: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  actions: PageItemActions;
+  onExpandedChange: (pageId: string, expanded: boolean) => void;
   onRequestDelete: (pendingDelete: PendingDelete) => void;
   draggedPageId: string | null;
   dropTarget: DropTarget | null;
-  forcedExpandedPageId: string | null;
-  forcedCollapsedPageId: string | null;
   renameRequestedPageId: string | null;
   onRenameHandled: () => void;
   onRequestRenamePage: (pageId: string) => void;
-  onPointerDownPage: (event: React.PointerEvent<HTMLDivElement>, page: Page) => void;
 }) {
-  const { addPage, importStudioPdfAction, renamePageAction, toggleFavoriteAction } = useAppStore(useShallow((s) => ({
-    addPage: s.addPage,
-    importStudioPdfAction: s.importStudioPdfAction,
-    renamePageAction: s.renamePageAction,
-    toggleFavoriteAction: s.toggleFavoriteAction,
-  })));
   const t = useT();
-  const [isExpanded, setIsExpanded] = useState(() => storedExpandedState(project.id));
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState(project.title || t("sidebar.untitled"));
   const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
-  const hasChildren = children.length > 0;
   const ProjectFolderIcon = isExpanded ? FolderOpen : Folder;
 
   const setExpanded = (expanded: boolean) => {
-    storeExpandedState(project.id, expanded);
-    setIsExpanded(expanded);
+    onExpandedChange(project.id, expanded);
   };
 
   useEffect(() => {
@@ -741,18 +683,6 @@ function ProjectItem({
       renameInputRef.current?.select();
     }
   }, [isRenaming]);
-
-  useEffect(() => {
-    if (forcedExpandedPageId === project.id) {
-      setExpanded(true);
-    }
-  }, [forcedExpandedPageId, project.id]);
-
-  useEffect(() => {
-    if (forcedCollapsedPageId === project.id) {
-      setExpanded(false);
-    }
-  }, [forcedCollapsedPageId, project.id]);
 
   useEffect(() => {
     if (renameRequestedPageId === project.id) {
@@ -794,7 +724,7 @@ function ProjectItem({
     setDraftTitle(nextTitle);
 
     if (nextTitle !== project.title) {
-      await renamePageAction(project.id, nextTitle);
+      await actions.renamePageAction(project.id, nextTitle);
     }
   };
 
@@ -822,14 +752,14 @@ function ProjectItem({
   const handleToggleFavorite = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
-    await toggleFavoriteAction(project.id, project.is_favorite !== 1);
+    await actions.toggleFavoriteAction(project.id, project.is_favorite !== 1);
   };
 
   const handleAddPage = async (event: React.MouseEvent) => {
     event.stopPropagation();
     setContextMenuPosition(null);
     setExpanded(true);
-    const created = await addPage(t("sidebar.untitled"), project.id);
+    const created = await actions.addPage(t("sidebar.untitled"), project.id);
     if (created) onRequestRenamePage(created.id);
   };
 
@@ -837,7 +767,7 @@ function ProjectItem({
     event.stopPropagation();
     setContextMenuPosition(null);
     setExpanded(true);
-    await importStudioPdfAction(project.id);
+    await actions.importStudioPdfAction(project.id);
   };
 
   const handleDeleteProject = (event: React.MouseEvent) => {
@@ -946,37 +876,9 @@ function ProjectItem({
         document.body
       )}
 
-      {hasChildren && (
-        <div
-          className={`on-sidebar-project-children ${isExpanded ? 'on-sidebar-project-children-open' : ''}`}
-          aria-hidden={!isExpanded}
-        >
-          <div className="on-sidebar-project-children-inner">
-            {children.map(child => (
-              <PageItem
-                key={child.id}
-                page={child}
-                childrenByParentId={childrenByParentId}
-                allPages={contentPages}
-                projectMoveTargets={projectMoveTargets}
-                studioContextsByPageId={studioContextsByPageId}
-                depth={depth + 1}
-                onRequestDelete={onRequestDelete}
-                draggedPageId={draggedPageId}
-                dropTarget={dropTarget}
-                forcedExpandedPageId={forcedExpandedPageId}
-                forcedCollapsedPageId={forcedCollapsedPageId}
-                renameRequestedPageId={renameRequestedPageId}
-                onRenameHandled={onRenameHandled}
-                onPointerDownPage={onPointerDownPage}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+});
 
 function storedStudioTreeExpanded(key: string): boolean {
   return localStorage.getItem(`opennotion-${key}-expanded`) !== 'false';
@@ -1099,6 +1001,9 @@ export function Sidebar() {
     reorderPagesAction,
     currentPageId,
     setCurrentPageId,
+    secondaryPageId,
+    activePane,
+    setSecondaryPageId,
     isLoading,
     openCommandPalette,
     studioDocuments,
@@ -1106,6 +1011,10 @@ export function Sidebar() {
     fetchStudioDocuments,
     setCurrentStudioDocumentId,
     importStudioPdfAction,
+    duplicatePageAction,
+    renamePageAction,
+    toggleFavoriteAction,
+    toggleTemplateAction,
     deleteStudioDocumentAction,
     createProjectAction,
     removeProjectAction,
@@ -1121,6 +1030,9 @@ export function Sidebar() {
     reorderPagesAction: s.reorderPagesAction,
     currentPageId: s.currentPageId,
     setCurrentPageId: s.setCurrentPageId,
+    secondaryPageId: s.secondaryPageId,
+    activePane: s.activePane,
+    setSecondaryPageId: s.setSecondaryPageId,
     isLoading: s.isLoading,
     openCommandPalette: s.openCommandPalette,
     studioDocuments: s.studioDocuments,
@@ -1128,6 +1040,10 @@ export function Sidebar() {
     fetchStudioDocuments: s.fetchStudioDocuments,
     setCurrentStudioDocumentId: s.setCurrentStudioDocumentId,
     importStudioPdfAction: s.importStudioPdfAction,
+    duplicatePageAction: s.duplicatePageAction,
+    renamePageAction: s.renamePageAction,
+    toggleFavoriteAction: s.toggleFavoriteAction,
+    toggleTemplateAction: s.toggleTemplateAction,
     deleteStudioDocumentAction: s.deleteStudioDocumentAction,
     createProjectAction: s.createProjectAction,
     removeProjectAction: s.removeProjectAction,
@@ -1154,8 +1070,7 @@ export function Sidebar() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const [forcedExpandedPageId, setForcedExpandedPageId] = useState<string | null>(null);
-  const [forcedCollapsedPageId, setForcedCollapsedPageId] = useState<string | null>(null);
+  const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => new Set());
   const [renameRequestedPageId, setRenameRequestedPageId] = useState<string | null>(null);
   const dropTargetRef = useRef<DropTarget | null>(null);
   const dragSessionRef = useRef<DragSession | null>(null);
@@ -1173,6 +1088,39 @@ export function Sidebar() {
   useEffect(() => {
     void fetchProfile();
   }, [fetchProfile]);
+
+  useEffect(() => {
+    const livePageIds = new Set(pages.map((page) => page.id));
+
+    setExpandedPageIds((currentIds) => {
+      const nextIds = new Set([...currentIds].filter((id) => livePageIds.has(id)));
+      for (const page of pages) {
+        if (!nextIds.has(page.id) && storedExpandedState(page.id)) {
+          nextIds.add(page.id);
+        }
+      }
+
+      if (nextIds.size === currentIds.size && [...nextIds].every((id) => currentIds.has(id))) {
+        return currentIds;
+      }
+      return nextIds;
+    });
+  }, [pages]);
+
+  const setPageExpanded = useCallback((pageId: string, expanded: boolean) => {
+    storeExpandedState(pageId, expanded);
+    setExpandedPageIds((currentIds) => {
+      if (currentIds.has(pageId) === expanded) return currentIds;
+
+      const nextIds = new Set(currentIds);
+      if (expanded) {
+        nextIds.add(pageId);
+      } else {
+        nextIds.delete(pageId);
+      }
+      return nextIds;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isSettingsMenuOpen) return;
@@ -1264,7 +1212,6 @@ export function Sidebar() {
     };
   }, [pages, studioDocumentPageLinks, studioDocuments]);
   const {
-    pinnedProjects,
     pinnedPages,
     projects,
     rootRegularPages,
@@ -1279,6 +1226,78 @@ export function Sidebar() {
     ungroupedStudioNotes,
     templatePages,
   } = sidebarModel;
+  const pageItemActions = useMemo<PageItemActions>(() => ({
+    setCurrentPageId,
+    setCurrentStudioDocumentId,
+    addPage,
+    duplicatePageAction,
+    movePageAction,
+    renamePageAction,
+    toggleFavoriteAction,
+    toggleTemplateAction,
+    importStudioPdfAction,
+  }), [
+    addPage,
+    duplicatePageAction,
+    importStudioPdfAction,
+    movePageAction,
+    renamePageAction,
+    setCurrentPageId,
+    setCurrentStudioDocumentId,
+    toggleFavoriteAction,
+    toggleTemplateAction,
+  ]);
+  const effectiveActivePageId = secondaryPageId
+    ? (activePane === 'secondary' ? secondaryPageId : currentPageId)
+    : currentPageId;
+  const selectSidebarPage = useCallback((pageId: string) => {
+    if (secondaryPageId && activePane === 'secondary') {
+      setSecondaryPageId(pageId);
+      return;
+    }
+    setCurrentPageId(pageId);
+  }, [activePane, secondaryPageId, setCurrentPageId, setSecondaryPageId]);
+  const hasStudioContent = studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
+  const sidebarRows = useMemo(() => buildSidebarRows({
+    isLoading,
+    pinnedProjectGroups,
+    pinnedPages,
+    projects,
+    rootRegularPages,
+    childrenByParentId: unpinnedChildrenByParentId,
+    expandedPageIds,
+    hasStudioContent,
+  }), [
+    expandedPageIds,
+    hasStudioContent,
+    isLoading,
+    pinnedPages,
+    pinnedProjectGroups,
+    projects,
+    rootRegularPages,
+    unpinnedChildrenByParentId,
+  ]);
+  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: sidebarRows.length,
+    getScrollElement: () => scrollAreaRef.current,
+    estimateSize: (index) => estimateSidebarRowSize(sidebarRows[index]),
+    getItemKey: (index) => sidebarRows[index]?.id ?? index,
+    overscan: SIDEBAR_VIRTUAL_OVERSCAN,
+    paddingStart: 12,
+    paddingEnd: 24,
+  });
+  const rowIndexByPageId = useMemo(() => {
+    const indexByPageId = new Map<string, number>();
+    sidebarRows.forEach((row, index) => {
+      if (row.kind === 'page') indexByPageId.set(row.page.id, index);
+    });
+    return indexByPageId;
+  }, [sidebarRows]);
+  useEffect(() => {
+    if (!currentPageId) return;
+    const index = rowIndexByPageId.get(currentPageId);
+    if (index !== undefined) rowVirtualizer.scrollToIndex(index, { align: 'auto' });
+  }, [currentPageId, rowIndexByPageId, rowVirtualizer]);
   useEffect(() => {
     sidebarModelRef.current = sidebarModel;
   }, [sidebarModel]);
@@ -1364,17 +1383,13 @@ export function Sidebar() {
     setPendingDelete(null);
   };
 
-  const requestExpand = (pageId: string) => {
-    storeExpandedState(pageId, true);
-    setForcedCollapsedPageId(null);
-    setForcedExpandedPageId(pageId);
-  };
+  const requestExpand = useCallback((pageId: string) => {
+    setPageExpanded(pageId, true);
+  }, [setPageExpanded]);
 
-  const requestCollapse = (pageId: string) => {
-    storeExpandedState(pageId, false);
-    setForcedExpandedPageId(null);
-    setForcedCollapsedPageId(pageId);
-  };
+  const requestCollapse = useCallback((pageId: string) => {
+    setPageExpanded(pageId, false);
+  }, [setPageExpanded]);
 
   const handleSidebarKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const activeElement = event.target as HTMLElement;
@@ -1385,7 +1400,7 @@ export function Sidebar() {
     if (!currentPage) return;
 
     const childPages = unpinnedChildrenByParentId.get(currentPage.id) ?? [];
-    const expandedIds = expandedPageIds(regularNotePages);
+    const expandedIds = expandedPageIds;
     const visibleIds = visiblePageIds(regularNotePages, expandedIds);
     const currentIndex = visibleIds.indexOf(currentPage.id);
 
@@ -1450,7 +1465,7 @@ export function Sidebar() {
     if (!draggedPage || !targetPage) return;
 
     if (target.position === 'inside') {
-      setForcedExpandedPageId(targetPage.id);
+      setPageExpanded(targetPage.id, true);
       await movePageAction(sourceId, targetPage.id);
       return;
     }
@@ -1581,10 +1596,12 @@ export function Sidebar() {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
-  const hasPageContent = rootRegularPages.length > 0 || studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0;
+  const handleRenameHandled = useCallback(() => {
+    setRenameRequestedPageId(null);
+  }, []);
   const deleteTitle = pendingDelete?.page.title || t("sidebar.untitled");
   const deleteMessage = pendingDeleteStudioDocument
-    ? `Delete "${deleteTitle}" and its PDF permanently? This cannot be undone.`
+    ? t("sidebar.deleteStudioDocumentDialogBody", { title: deleteTitle })
     : pendingDelete?.kind === 'project'
     ? t("sidebar.deleteProjectDialogBody", { title: deleteTitle })
     : pendingDelete?.hasChildren
@@ -1708,152 +1725,145 @@ export function Sidebar() {
           <span>{t("sidebar.chat")}</span>
         </button>
       </div>
-      <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto pt-3">
-        {isLoading && (
-          <div className="px-5 py-4 text-xs text-muted-foreground">{t("sidebar.loadingPages")}</div>
-        )}
-        <div className="pl-3 pr-1 pb-6">
-          <section className="on-sidebar-section">
-            <div className="on-section-label">{t("sidebar.sectionPinned")}</div>
-            {pinnedProjectGroups.map(({ project, children }) => (
-              <ProjectItem
-                key={`pinned-project-${project.id}`}
-                project={project}
-                children={children}
-                contentPages={unpinnedContentPages}
-                childrenByParentId={unpinnedChildrenByParentId}
-                projectMoveTargets={projectMoveTargets}
-                studioContextsByPageId={studioContextsByPageId}
-                onRequestDelete={setPendingDelete}
-                draggedPageId={draggedPageId}
-                dropTarget={dropTarget}
-                forcedExpandedPageId={forcedExpandedPageId}
-                forcedCollapsedPageId={forcedCollapsedPageId}
-                renameRequestedPageId={renameRequestedPageId}
-                onRenameHandled={() => setRenameRequestedPageId(null)}
-                onRequestRenamePage={setRenameRequestedPageId}
-                onPointerDownPage={handlePointerDownPage}
-              />
-            ))}
-            {pinnedPages.map(page => (
-              <PageItem
-                key={`pinned-${page.id}`}
-                page={page}
-                childrenByParentId={unpinnedChildrenByParentId}
-                allPages={unpinnedContentPages}
-                projectMoveTargets={projectMoveTargets}
-                studioContextsByPageId={studioContextsByPageId}
-                onRequestDelete={setPendingDelete}
-                draggedPageId={draggedPageId}
-                dropTarget={dropTarget}
-                forcedExpandedPageId={forcedExpandedPageId}
-                forcedCollapsedPageId={forcedCollapsedPageId}
-                renameRequestedPageId={renameRequestedPageId}
-                onRenameHandled={() => setRenameRequestedPageId(null)}
-                onPointerDownPage={handlePointerDownPage}
-              />
-            ))}
-            {!isLoading && pinnedProjects.length === 0 && pinnedPages.length === 0 && (
-              <div className="on-sidebar-empty">{t("sidebar.noPinnedPages")}</div>
-            )}
-          </section>
+      <div ref={scrollAreaRef} className="on-scroll-fade on-scroll-fade-sidebar flex-1 overflow-y-auto">
+        <div
+          ref={rowVirtualizer.containerRef}
+          className="relative"
+          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = sidebarRows[virtualRow.index];
+            if (!row) return null;
 
-          <section className="on-sidebar-section">
-            <div className="on-sidebar-section-heading">
-              <div className="on-section-label">{t("sidebar.sectionProjects")}</div>
-              <button
-                type="button"
-                className="on-sidebar-section-action"
-                title={t("sidebar.createProject")}
-                aria-label={t("sidebar.createProject")}
-                onClick={() => void handleCreateProject()}
+            return (
+              <div
+                key={virtualRow.key}
+                ref={rowVirtualizer.measureElement}
+                data-index={virtualRow.index}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: '0.75rem',
+                  right: '0.25rem',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
               >
-                <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
-              </button>
-            </div>
-            {projects.map(({ project, children }) => (
-              <ProjectItem
-                key={project.id}
-                project={project}
-                children={children}
-                contentPages={unpinnedContentPages}
-                childrenByParentId={unpinnedChildrenByParentId}
-                projectMoveTargets={projectMoveTargets}
-                studioContextsByPageId={studioContextsByPageId}
-                onRequestDelete={setPendingDelete}
-                draggedPageId={draggedPageId}
-                dropTarget={dropTarget}
-                forcedExpandedPageId={forcedExpandedPageId}
-                forcedCollapsedPageId={forcedCollapsedPageId}
-                renameRequestedPageId={renameRequestedPageId}
-                onRenameHandled={() => setRenameRequestedPageId(null)}
-                onRequestRenamePage={setRenameRequestedPageId}
-                onPointerDownPage={handlePointerDownPage}
-              />
-            ))}
-            {!isLoading && projects.length === 0 && (
-              <div className="on-sidebar-empty">{t("sidebar.noProjects")}</div>
-            )}
-          </section>
+                {row.kind === 'loading' && (
+                  <div className="px-5 py-4 text-xs text-muted-foreground">{t("sidebar.loadingPages")}</div>
+                )}
 
-          <section className="on-sidebar-section">
-            <div className="on-section-label">{t("sidebar.sectionPages")}</div>
-            {!isLoading && !hasPageContent && (
-              <div className="on-sidebar-empty">{t("sidebar.noPages")}</div>
-            )}
-            {rootRegularPages.map(page => (
-              <PageItem
-                key={page.id}
-                page={page}
-                childrenByParentId={unpinnedChildrenByParentId}
-                allPages={unpinnedContentPages}
-                projectMoveTargets={projectMoveTargets}
-                studioContextsByPageId={studioContextsByPageId}
-                onRequestDelete={setPendingDelete}
-                draggedPageId={draggedPageId}
-                dropTarget={dropTarget}
-                forcedExpandedPageId={forcedExpandedPageId}
-                forcedCollapsedPageId={forcedCollapsedPageId}
-                renameRequestedPageId={renameRequestedPageId}
-                onRenameHandled={() => setRenameRequestedPageId(null)}
-                onPointerDownPage={handlePointerDownPage}
-              />
-            ))}
-            {(studioNoteDocuments.length > 0 || ungroupedStudioNotes.length > 0) && (
-            <div className="mt-1">
-              {studioNoteDocuments.length > 0 && (
-                <StudioNotesTree
-                  documents={studioNoteDocuments}
-                  currentPageId={currentPageId}
-                  onSelectPage={setCurrentPageId}
-                  onSelectDocument={setCurrentStudioDocumentId}
-                />
-              )}
-              {ungroupedStudioNotes.length > 0 && (
-                <div className="mt-2">
-                  {ungroupedStudioNotes.map((page) => (
-                    <button
-                      key={`studio-note-orphan-${page.id}`}
-                      type="button"
-                      data-studio-note-id={page.id}
-                      className={`group on-studio-note-tree-row ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
-                      style={{ paddingLeft: 12 }}
-                      onClick={() => setCurrentPageId(page.id)}
-                      title="Open Studio note in Notes"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        {page.icon && (
-                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13.5px]">{page.icon}</span>
-                        )}
-                        <span className="truncate">{page.title || t("sidebar.untitled")}</span>
+                {row.kind === 'section' && (
+                  <div
+                    className="on-sidebar-section"
+                    style={{ marginTop: 0, paddingTop: row.isFirst ? '0.62rem' : '1.12rem' }}
+                  >
+                    {row.section === 'projects' ? (
+                      <div className="on-sidebar-section-heading">
+                        <div className="on-section-label">{t("sidebar.sectionProjects")}</div>
+                        <button
+                          type="button"
+                          className="on-sidebar-section-action"
+                          title={t("sidebar.createProject")}
+                          aria-label={t("sidebar.createProject")}
+                          onClick={() => void handleCreateProject()}
+                        >
+                          <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
+                        </button>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
-          </section>
+                    ) : (
+                      <div className="on-section-label">
+                        {row.section === 'pinned' ? t("sidebar.sectionPinned") : t("sidebar.sectionPages")}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {row.kind === 'empty' && (
+                  <div className="on-sidebar-empty">
+                    {row.section === 'pinned'
+                      ? t("sidebar.noPinnedPages")
+                      : row.section === 'projects'
+                      ? t("sidebar.noProjects")
+                      : t("sidebar.noPages")}
+                  </div>
+                )}
+
+                {row.kind === 'project' && (
+                  <ProjectItem
+                    project={row.page}
+                    depth={row.depth}
+                    hasChildren={row.hasChildren}
+                    isExpanded={row.isExpanded}
+                    actions={pageItemActions}
+                    onExpandedChange={setPageExpanded}
+                    onRequestDelete={setPendingDelete}
+                    draggedPageId={draggedPageId}
+                    dropTarget={dropTarget}
+                    renameRequestedPageId={renameRequestedPageId}
+                    onRenameHandled={handleRenameHandled}
+                    onRequestRenamePage={setRenameRequestedPageId}
+                  />
+                )}
+
+                {row.kind === 'page' && (
+                  <PageItem
+                    page={row.page}
+                    moveCandidatePages={unpinnedContentPages}
+                    projectMoveTargets={projectMoveTargets}
+                    studioContextsByPageId={studioContextsByPageId}
+                    depth={row.depth}
+                    hasChildren={row.hasChildren}
+                    isExpanded={row.isExpanded}
+                    isActive={effectiveActivePageId === row.page.id}
+                    actions={pageItemActions}
+                    onSelectPage={selectSidebarPage}
+                    onExpandedChange={setPageExpanded}
+                    onRequestDelete={setPendingDelete}
+                    draggedPageId={draggedPageId}
+                    dropTarget={dropTarget}
+                    renameRequestedPageId={renameRequestedPageId}
+                    onRenameHandled={handleRenameHandled}
+                    onPointerDownPage={handlePointerDownPage}
+                  />
+                )}
+
+                {row.kind === 'studio-content' && (
+                  <div className="mt-1">
+                    {studioNoteDocuments.length > 0 && (
+                      <StudioNotesTree
+                        documents={studioNoteDocuments}
+                        currentPageId={currentPageId}
+                        onSelectPage={setCurrentPageId}
+                        onSelectDocument={setCurrentStudioDocumentId}
+                      />
+                    )}
+                    {ungroupedStudioNotes.length > 0 && (
+                      <div className="mt-2">
+                        {ungroupedStudioNotes.map((page) => (
+                          <button
+                            key={`studio-note-orphan-${page.id}`}
+                            type="button"
+                            data-studio-note-id={page.id}
+                            className={`group on-studio-note-tree-row ${currentPageId === page.id ? 'on-shell-row-active' : ''}`}
+                            style={{ paddingLeft: 12 }}
+                            onClick={() => setCurrentPageId(page.id)}
+                            title="Open Studio note in Notes"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              {page.icon && (
+                                <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[13.5px]">{page.icon}</span>
+                              )}
+                              <span className="truncate">{page.title || t("sidebar.untitled")}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
       {deleteDialog}
@@ -1889,6 +1899,10 @@ export function Sidebar() {
           <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('data')}>
             <FolderInput className="h-[18px] w-[18px]" strokeWidth={1.9} />
             <span>{t("settings.nav.data")}</span>
+          </button>
+          <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('trash')}>
+            <Trash2 className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span>{t("settings.nav.trash")}</span>
           </button>
           <button type="button" className="on-settings-quick-action" onClick={() => openSettingsSection('updates')}>
             <RefreshCw className="h-[18px] w-[18px]" strokeWidth={1.9} />

@@ -243,15 +243,13 @@ test("adds a page inside a project via context menu", async ({ page }) => {
   await newPageMenuItem.click();
 
   // The project should expand and a child page rename input should appear
-  const childRenameInput = page.locator(".on-sidebar-project-children .on-sidebar-rename-input");
+  const childRenameInput = page.locator(".on-sidebar-page-row:not(.on-sidebar-project-row) .on-sidebar-rename-input");
   await expect(childRenameInput).toBeVisible({ timeout: 5_000 });
   await childRenameInput.fill("Chapter 1");
   await childRenameInput.press("Enter");
 
   // Verify the child page is shown inside the project
-  const projectChildren = page.locator(".on-sidebar-project-children-open");
-  await expect(projectChildren).toBeVisible();
-  await expect(projectChildren.getByText("Chapter 1")).toBeVisible();
+  await expect(sidebarPageRow(page, "Chapter 1")).toBeVisible();
 
   // Verify mock storage: child page has parent_id = project id
   const childParent = await page.evaluate((key) => {
@@ -316,20 +314,20 @@ test("deletes a project and reparents children to root", async ({ page }) => {
   // Add a page inside
   await projectRow(page, "Doomed Project").click({ button: "right" });
   await page.locator(".on-menu-item", { hasText: "New page" }).click();
-  const childRenameInput = page.locator(".on-sidebar-project-children .on-sidebar-rename-input");
+  const childRenameInput = page.locator(".on-sidebar-page-row:not(.on-sidebar-project-row) .on-sidebar-rename-input");
   await expect(childRenameInput).toBeVisible({ timeout: 5_000 });
   await childRenameInput.fill("Orphan Page");
   await childRenameInput.press("Enter");
 
   // Verify child is inside the project
-  await expect(page.locator(".on-sidebar-project-children-open").getByText("Orphan Page")).toBeVisible();
+  await expect(sidebarPageRow(page, "Orphan Page")).toBeVisible();
 
   // Right-click project → Delete
   await projectRow(page, "Doomed Project").click({ button: "right" });
   await page.locator(".on-menu-item-danger").click();
 
   // Confirm delete dialog
-  const confirmButton = page.getByRole("button", { name: "Delete" });
+  const confirmButton = page.getByRole("button", { name: "Move to Trash" });
   await expect(confirmButton).toBeVisible({ timeout: 3_000 });
   await confirmButton.click();
 
@@ -389,7 +387,7 @@ test("move page into project via page context menu", async ({ page }) => {
   // Right-click the loose page → Move
   const pageRow = sidebarPageRow(page, "Loose Page");
   await pageRow.click({ button: "right" });
-  await page.locator(".on-page-action-popover .on-menu-item", { hasText: "Move" }).click();
+  await page.getByRole("button", { name: "Move", exact: true }).click();
 
   // The move popover should show the project as target
   // The move menu is a separate portal with class `on-popover` (z-[130])
@@ -407,3 +405,39 @@ test("move page into project via page context menu", async ({ page }) => {
   expect(movedParent.parentId).toBe(movedParent.projectId);
 });
 
+test("virtualizes a large page workspace", async ({ page }) => {
+  await page.addInitScript((key) => {
+    const pages = Array.from({ length: 1_000 }, (_, index): MockPage => ({
+      id: `virtual-page-${index}`,
+      title: `Virtual page ${String(index).padStart(4, "0")}`,
+      parent_id: null,
+      content: null,
+      search_text: null,
+      icon: null,
+      cover_url: null,
+      is_deleted: 0,
+      is_favorite: 0,
+      is_template: 0,
+      is_database: 0,
+      database_schema: null,
+      properties: null,
+      sort_order: index,
+      page_kind: "note",
+      created_at: "2026-06-14T10:00:00.000Z",
+      updated_at: "2026-06-14T10:00:00.000Z",
+    }));
+    window.localStorage.setItem(key, JSON.stringify(pages));
+  }, storageKey);
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator('[data-page-id="virtual-page-0"]')).toBeVisible();
+
+  const mountedRows = await page.locator("[data-page-id]").count();
+  expect(mountedRows).toBeLessThan(100);
+
+  const scrollArea = page.locator(".on-scroll-fade-sidebar");
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.locator('[data-page-id="virtual-page-999"]')).toBeVisible({ timeout: 5_000 });
+});
