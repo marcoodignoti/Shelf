@@ -10,6 +10,11 @@ const {
   STUDIO_DOCUMENT_COLUMNS,
   STUDIO_DOCUMENT_PAGE_LINK_COLUMNS,
   STUDIO_PROJECT_COLUMNS,
+  allowedCoverExtension,
+  allowedEditorVideoExtension,
+  coverExtensionFromMagic,
+  isIsoBaseMediaVideo,
+  isWebmVideo,
   decodeAppAssetPath,
   encodeAppAssetPath,
   ensurePrivateDirectory,
@@ -459,11 +464,49 @@ function buildPortableImportPlan(context, manifest, extractedAssets, importedAt)
   };
 }
 
+function readFileHeader(filePath, length) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(length);
+    const bytesRead = fs.readSync(fd, header, 0, length, 0);
+    return header.subarray(0, bytesRead);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// Imported archives are untrusted: apply the same extension allowlists and
+// magic-byte checks as the regular import paths, so a crafted backup cannot
+// plant HTML/SVG/script files in managed asset storage.
+function validatePortableAssetContent(asset, sourcePath) {
+  const header = readFileHeader(sourcePath, 64);
+  const fileName = `asset${asset.extension}`;
+  if (asset.kind === "studio-documents") {
+    if (!header.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+      throw new Error("portable backup Studio document is not a PDF");
+    }
+    return;
+  }
+  if (asset.kind === "editor-videos") {
+    const extension = allowedEditorVideoExtension(fileName);
+    const valid =
+      extension === "webm" ? isWebmVideo(header) : extension ? isIsoBaseMediaVideo(header) : false;
+    if (!valid) throw new Error("portable backup video asset is not a supported video");
+    return;
+  }
+  // covers, editor-images, avatars
+  const extension = allowedCoverExtension(fileName);
+  if (!extension || coverExtensionFromMagic(header) !== extension) {
+    throw new Error("portable backup image asset is not a supported image");
+  }
+}
+
 function stagePortableAssets(context, plan, stageDir) {
   for (const asset of plan.assetsById.values()) {
     const sourcePath = plan.extractedAssets.get(asset.id);
     const targetPath = plan.targetPaths.get(asset.id);
     if (!sourcePath || !targetPath) throw new Error("portable backup asset is missing during import");
+    validatePortableAssetContent(asset, sourcePath);
     const relativeTarget = path.relative(context.appConfigDir, targetPath);
     if (!relativeTarget || relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
       throw new Error("portable backup asset target is invalid");

@@ -616,9 +616,14 @@ async function handleAppProtocolRequest(request) {
   if (parsed.hostname === APP_ASSET_HOST) {
     try {
       const assetToken = parsed.pathname.replace(/^\/+/, "");
-      return await fileResponse(
+      const response = await fileResponse(
         createBackend().resolveManagedAssetPath(assetToken),
+        // Managed assets are only ever images, videos or PDFs: never let one
+        // execute as a document even if it were opened directly.
+        "default-src 'none'; sandbox",
       );
+      response.headers.set("X-Content-Type-Options", "nosniff");
+      return response;
     } catch {
       return plainTextResponse(404, "Not found");
     }

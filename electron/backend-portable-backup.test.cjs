@@ -9,6 +9,8 @@ const {
   createPortableArchive,
   extractPortableArchive,
   removePortableArchiveStaging,
+  checksumForManifest,
+  sha256File,
 } = require("./portable-backup-archive.cjs");
 
 const APP_ASSET_URL_PREFIX = "opennotion-app://asset/";
@@ -251,6 +253,39 @@ test("portable import verifies asset checksums before writing workspace data", a
     source.backend.close();
     target.close();
     manifestTarget.close();
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("portable import rejects assets whose content does not match their kind", async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-portable-content-"));
+  const archivePath = path.join(rootDir, "valid.shelf");
+  const craftedArchivePath = path.join(rootDir, "crafted.shelf");
+  const source = await buildPortableFixture(rootDir);
+  const target = createBackend(path.join(rootDir, "target-workspace"));
+
+  try {
+    await source.backend.exportBackup({ path: archivePath, exportedAt: now });
+    await rewriteArchive(archivePath, craftedArchivePath, async ({ manifest, tempDir }) => {
+      const image = manifest.assets.find((asset) => asset.kind === "editor-images");
+      assert.ok(image);
+      const assetPath = path.join(tempDir, image.archive_path);
+      fs.writeFileSync(assetPath, "<script>alert(1)</script>");
+      image.extension = ".png";
+      image.size = fs.statSync(assetPath).size;
+      image.sha256 = await sha256File(assetPath);
+      manifest.checksum = checksumForManifest(manifest);
+    });
+
+    await assert.rejects(
+      target.importBackup({ path: craftedArchivePath, importedAt: now }),
+      /not a supported image/,
+    );
+    assert.equal(target.listAllPages().length, 0);
+    assert.deepEqual(portableImportDirectories(target.appConfigDir), []);
+  } finally {
+    source.backend.close();
+    target.close();
     fs.rmSync(rootDir, { recursive: true, force: true });
   }
 });
