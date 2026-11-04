@@ -20,7 +20,7 @@ import {
 } from "@blocknote/react";
 import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, ChevronUp, Columns2, Copy, Download, FileText, FolderInput, GripVertical, History, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropTargetFromPoint, BlockDropTarget, clearBlockDropIndicator, moveEditorBlock } from "../lib/editorBlockDrag";
 import {
@@ -221,6 +221,13 @@ function ShelfDragHandleButton() {
   );
 }
 
+type ShelfBlockTypeItem = {
+  name: string;
+  type: string;
+  props?: Record<string, boolean | number | string>;
+  icon: ComponentType<{ size?: number }>;
+};
+
 function ShelfBlockTypeSelect() {
   const t = useT();
   const editor = useBlockNoteEditor<any, any, any>();
@@ -236,8 +243,8 @@ function ShelfBlockTypeSelect() {
   const firstSelectedBlock = selectedBlocks[0];
 
   const items = useMemo(
-    () => [
-      ...blockTypeSelectItems(editor.dictionary),
+    (): ShelfBlockTypeItem[] => [
+      ...blockTypeSelectItems(editor),
       {
         name: "Formula",
         type: "formula",
@@ -431,6 +438,7 @@ function ShelfBlockTypeSelect() {
         anchorElement={buttonRef.current}
         open={isOpen}
         onOpenChange={setIsOpen}
+        editor={editor}
         placement="bottom-start"
         width={230}
         zIndex={240}
@@ -1893,25 +1901,25 @@ function EditorSurface({
             formattingToolbar={false}
             slashMenu={false}
             sideMenu={false}
-            portalElements={{ default: null }}
             onChange={handleEditorChange}
           >
+            {/* Floating UI portals into the editor's own bn-container by
+                default. Do not pass `null` as a portal target: since
+                BlockNote 0.56 that mounts into a detached node (invisible). */}
             <FormattingToolbarController formattingToolbar={ShelfFormattingToolbar} />
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={slashMenuItems}
-              portalElement={null}
               floatingUIOptions={slashMenuFloatingOptions}
             />
             <SuggestionMenuController
               triggerCharacter="@"
               getItems={pageLinkItems}
-              portalElement={null}
               floatingUIOptions={slashMenuFloatingOptions}
             />
             <SideMenuController
               sideMenu={ShelfSideMenu}
-              portalElement={isStudioVariant ? sideMenuPortalEl : undefined}
+              portalElement={isStudioVariant ? (sideMenuPortalEl ?? undefined) : undefined}
             />
           </BlockNoteView>
         </div>

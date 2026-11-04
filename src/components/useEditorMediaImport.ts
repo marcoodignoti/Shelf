@@ -58,7 +58,7 @@ export function handleEditorPasteWithMedia(
   { event, editor, defaultPasteHandler }: EditorPasteHandlerArgs,
   pageId: string,
   showError: ShowError,
-): boolean | void {
+): boolean | undefined {
   const mediaFiles = Array.from(event.clipboardData?.files ?? []).filter((file) => editorMediaKindForFile(file));
   const pastedText = event.clipboardData?.getData("text/plain") ?? "";
   const useBlockNoteMarkdownPaste = mediaFiles.length === 0 && shouldUseBlockNoteMarkdownPaste(pastedText);

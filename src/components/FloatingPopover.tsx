@@ -12,6 +12,16 @@ type FloatingPopoverProps = {
   placement?: FloatingPlacement;
   zIndex?: number;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Editor whose floating UI opened this popover. The popover is portalled
+   * to document.body, outside the editor DOM; registering it keeps BlockNote
+   * (>= 0.56) from treating focus inside it as leaving the editor, which
+   * would hide the formatting toolbar that owns it.
+   */
+  editor?: {
+    registerPortalElement: (element: HTMLElement) => void;
+    unregisterPortalElement: (element: HTMLElement) => void;
+  };
 };
 
 export function FloatingPopover({
@@ -23,9 +33,17 @@ export function FloatingPopover({
   placement = "bottom-start",
   zIndex = 160,
   onOpenChange,
+  editor,
 }: FloatingPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    const element = popoverRef.current;
+    if (!open || !anchorElement || !editor || !element) return;
+    editor.registerPortalElement(element);
+    return () => editor.unregisterPortalElement(element);
+  }, [anchorElement, editor, open]);
 
   const setPositionStyle = (position: ReturnType<typeof computeFloatingPosition>) => {
     const nextStyle: CSSProperties = {

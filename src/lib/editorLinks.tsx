@@ -16,7 +16,7 @@ type PageLinkProps = {
   pageId: string;
   title: string;
   icon: string;
-  iconOverride?: string;
+  iconOverride: string;
   kind: string;
   label: string;
 };
