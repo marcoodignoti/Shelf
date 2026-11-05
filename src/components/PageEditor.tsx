@@ -9,15 +9,15 @@ import { AlertTriangle, ArrowLeftRight, Check, Columns2, Copy, Download, FileTex
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
-import { activeElementIsNativeTextInput, disableSpellcheck, headingItemsFromBlocks, isNativeTextInput, keepEditorCaretInView } from "../lib/editorDom";
+import { disableSpellcheck, headingItemsFromBlocks, isNativeTextInput } from "../lib/editorDom";
 import { pageBreadcrumb } from "../lib/breadcrumb";
 import { showCharacterPalette } from "../lib/desktop";
 import { coverImageSrc, getPage, importCoverImageFromDialog, Page } from "../lib/db";
 import { databaseParentPageForEditor, templatePagesForEditor } from "../lib/editorPageCollections";
 import { saveStatusLabel } from "../lib/editorSaveState";
 import { useLocale, useT } from "../lib/i18n";
-import { OPEN_PAGE_LINK_EVENT, syncPageLinkInlineContentInEditor } from "../lib/editorLinks";
-import { normalizeMathInlineContentInEditor, openNotionEditorSchema } from "../lib/editorMath";
+import { OPEN_PAGE_LINK_EVENT } from "../lib/editorLinks";
+import { openNotionEditorSchema } from "../lib/editorMath";
 import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { readPendingPageUpdates } from "../lib/pendingPageSaves";
@@ -26,10 +26,12 @@ import { PageHeadingRail } from "./editor/PageHeadingRail";
 import { useHeadingScrollSpy } from "./editor/useHeadingScrollSpy";
 import { ShelfFormattingToolbar, ShelfSideMenu } from "./editor/EditorToolbars";
 import { SubpageCreateMenu } from "./editor/SubpageCreateMenu";
+import { useEditorContentSync } from "./editor/useEditorContentSync";
+import { useSlashMenuScrollLock } from "./editor/useSlashMenuScrollLock";
 import { titleBeforeInputAction, titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
 import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
-import { eventPathIncludesSelector, openNotionPageLinkItems, openNotionSlashMenuItems, slashMenuElement } from "../lib/editorSlashMenu";
+import { openNotionPageLinkItems, openNotionSlashMenuItems } from "../lib/editorSlashMenu";
 import { useAppStore } from "../store/useAppStore";
 import { useUIStore } from "../store/useUIStore";
 import { FloatingPopover } from "./FloatingPopover";
@@ -100,11 +102,9 @@ function EditorSurface({
   variant?: "page" | "studio";
   inSplit?: boolean;
 }) {
-  const isNormalizingMathRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const [sideMenuPortalEl, setSideMenuPortalEl] = useState<HTMLElement | null>(null);
-  const slashMenuLockedScrollTopRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const titleEnterModifierRef = useRef(false);
   const lastInteractionTypeRef = useRef<"pointer" | "keyboard">("pointer");
@@ -124,7 +124,6 @@ function EditorSurface({
   const [subpageMenuOpen, setSubpageMenuOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [isPageHistoryOpen, setIsPageHistoryOpen] = useState(false);
-  const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
   const [isSplitMenuOpen, setIsSplitMenuOpen] = useState(false);
   const splitButtonRef = useRef<HTMLButtonElement>(null);
   const secondaryPageId = useAppStore((state) => state.secondaryPageId);
@@ -438,77 +437,15 @@ function EditorSurface({
   }, [resizeTitleInput, title]);
 
 
-  useEffect(() => {
-    const handleWheel = (event: WheelEvent) => {
-      const slashMenu = slashMenuElement();
-      if (!slashMenu || eventPathIncludesSelector(event, ".bn-suggestion-menu")) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    document.addEventListener("wheel", handleWheel, { capture: true, passive: false });
-    return () => document.removeEventListener("wheel", handleWheel, { capture: true });
-  }, []);
-
-  useEffect(() => {
-    const updateSlashMenuOpen = () => {
-      const isOpen = Boolean(slashMenuElement());
-      setIsSlashMenuOpen(isOpen);
-
-      if (!isOpen) {
-        slashMenuLockedScrollTopRef.current = null;
-        return;
-      }
-
-      if (slashMenuLockedScrollTopRef.current === null) {
-        slashMenuLockedScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? null;
-      }
-    };
-
-    updateSlashMenuOpen();
-    const observer = new MutationObserver(updateSlashMenuOpen);
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return undefined;
-
-    const keepSlashMenuScrollLocked = () => {
-      if (!slashMenuElement()) return;
-
-      const lockedScrollTop = slashMenuLockedScrollTopRef.current;
-      if (lockedScrollTop === null) {
-        slashMenuLockedScrollTopRef.current = scrollContainer.scrollTop;
-        return;
-      }
-
-      if (Math.abs(scrollContainer.scrollTop - lockedScrollTop) >= 1) {
-        scrollContainer.scrollTop = lockedScrollTop;
-      }
-    };
-
-    scrollContainer.addEventListener("scroll", keepSlashMenuScrollLocked, { passive: true });
-    return () => scrollContainer.removeEventListener("scroll", keepSlashMenuScrollLocked);
-  }, []);
-
-  const handleEditorChange = () => {
-    if (!isNormalizingMathRef.current) {
-      isNormalizingMathRef.current = true;
-      const normalized = normalizeMathInlineContentInEditor(editor);
-      isNormalizingMathRef.current = false;
-
-      if (normalized) return;
-    }
-
-    queueContentSave();
-    if (activeElementIsNativeTextInput()) return;
-    if (lastInteractionTypeRef.current !== "keyboard") return;
-    keepEditorCaretInView(editor, scrollContainerRef.current);
-  };
+  const isSlashMenuOpen = useSlashMenuScrollLock({ scrollContainerRef });
+  const { handleEditorChange } = useEditorContentSync({
+    editor,
+    pageId: page.id,
+    pages,
+    queueContentSave,
+    lastInteractionTypeRef,
+    scrollContainerRef,
+  });
 
   useEffect(() => {
     disableSpellcheck(editor.domElement ?? null);
@@ -518,37 +455,6 @@ function EditorSurface({
     observer.observe(editor.domElement, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [editor]);
-
-  useEffect(() => {
-    isNormalizingMathRef.current = true;
-    const normalized = normalizeMathInlineContentInEditor(editor);
-    isNormalizingMathRef.current = false;
-
-    if (!normalized) return;
-
-    queueContentSave();
-  }, [editor, page.id, queueContentSave]);
-
-  // Re-sync inline page links only when a page's identity fields change, not
-  // on every pages-array identity change (e.g. our own debounced content
-  // flush): the sync walks the whole document.
-  const pagesRef = useRef(pages);
-  pagesRef.current = pages;
-  const pageLinkSyncSignature = useMemo(
-    () =>
-      pages
-        .map((candidate) => [candidate.id, candidate.title ?? "", candidate.icon ?? "", candidate.page_kind ?? ""].join("\u0000"))
-        .join("\u0001"),
-    [pages]
-  );
-
-  useEffect(() => {
-    const synced = syncPageLinkInlineContentInEditor(editor, pagesRef.current);
-    if (!synced) return;
-
-    queueContentSave();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pagesRef tracks pages; pageLinkSyncSignature captures the fields the sync reads
-  }, [editor, pageLinkSyncSignature, queueContentSave]);
 
   const handleIconChange = (value: string) => {
     const nextIcon = normalizePageIcon(value) || "";
