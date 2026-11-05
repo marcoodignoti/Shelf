@@ -44,6 +44,7 @@ import { formulaInputFromBlockContent, normalizeMathInlineContentInEditor, openN
 import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { readPendingPageUpdates } from "../lib/pendingPageSaves";
+import { initialEditorFields } from "../lib/pageEditorInitialFields";
 import { titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
 import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
@@ -609,20 +610,10 @@ function EditorSurface({
   // A failed autosave is restored from localStorage before the editor is
   // created, so a reload immediately shows the user's last local edits.
   const pendingPageUpdates = useMemo(() => readPendingPageUpdates(page.id), [page.id]);
-  const hasPendingField = (field: keyof Page) =>
-    pendingPageUpdates !== null && Object.prototype.hasOwnProperty.call(pendingPageUpdates, field);
-  const pendingTitle = hasPendingField("title") && typeof pendingPageUpdates?.title === "string"
-    ? pendingPageUpdates.title
-    : page.title;
-  const pendingIcon = hasPendingField("icon")
-    ? (typeof pendingPageUpdates?.icon === "string" ? pendingPageUpdates.icon : null)
-    : page.icon;
-  const pendingCoverUrl = hasPendingField("cover_url")
-    ? (typeof pendingPageUpdates?.cover_url === "string" ? pendingPageUpdates.cover_url : null)
-    : page.cover_url;
-  const [title, setTitle] = useState(pendingTitle || "");
-  const [icon, setIcon] = useState(pendingIcon || "");
-  const [coverUrl, setCoverUrl] = useState(pendingCoverUrl || "");
+  const initialFields = initialEditorFields(page, pendingPageUpdates);
+  const [title, setTitle] = useState(initialFields.title);
+  const [icon, setIcon] = useState(initialFields.icon);
+  const [coverUrl, setCoverUrl] = useState(initialFields.coverUrl);
   const [isIconMenuOpen, setIsIconMenuOpen] = useState(false);
   const [isCoverInputOpen, setIsCoverInputOpen] = useState(false);
   const [subpageMenuOpen, setSubpageMenuOpen] = useState(false);
@@ -663,7 +654,7 @@ function EditorSurface({
   // `locale` is a dependency because a language change recreates the editor:
   // re-parse the latest store content so the new editor does not reset the
   // document to the snapshot taken when the page was opened.
-  const pendingContent = typeof pendingPageUpdates?.content === "string" ? pendingPageUpdates.content : null;
+  const pendingContent = initialFields.content;
   const initialContent = useMemo(
     () => parsePageBlocks(pendingContent ?? page.content),
     [page.id, locale, pendingContent],
@@ -847,15 +838,15 @@ function EditorSurface({
   }, [onSelectPage]);
 
   useEffect(() => {
-    setTitle(pendingTitle || "");
-    setIcon(pendingIcon || "");
-    setCoverUrl(pendingCoverUrl || "");
+    setTitle(initialFields.title);
+    setIcon(initialFields.icon);
+    setCoverUrl(initialFields.coverUrl);
     setIsIconMenuOpen(false);
     setIsCoverInputOpen(false);
     setSubpageMenuOpen(false);
     setPageMenuOpen(false);
     setIsPageHistoryOpen(false);
-  }, [page.id, pendingCoverUrl, pendingIcon, pendingTitle]);
+  }, [page.id, initialFields.coverUrl, initialFields.icon, initialFields.title]);
 
   useEffect(() => {
     if (!isIconMenuOpen) return;
