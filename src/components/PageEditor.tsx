@@ -45,7 +45,7 @@ import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { readPendingPageUpdates } from "../lib/pendingPageSaves";
 import { initialEditorFields } from "../lib/pageEditorInitialFields";
-import { titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
+import { titleBeforeInputAction, titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
 import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
 import {
@@ -911,20 +911,22 @@ function EditorSurface({
 
   const handleTitleBeforeInput = (event: React.FormEvent<HTMLTextAreaElement>) => {
     const nativeEvent = event.nativeEvent as InputEvent;
-    if (nativeEvent.inputType !== "insertLineBreak") return;
-
-    if (!titleEnterModifierRef.current) {
-      event.preventDefault();
-      event.currentTarget.blur();
-      focusEditorBody();
-      return;
+    switch (titleBeforeInputAction(nativeEvent.inputType, titleEnterModifierRef.current)) {
+      case "ignore":
+        return;
+      case "focus-body":
+        event.preventDefault();
+        event.currentTarget.blur();
+        focusEditorBody();
+        return;
+      case "insert-newline":
+        requestAnimationFrame(() => {
+          handleTitleChange(event.currentTarget.value);
+          resizeTitleInput();
+          titleEnterModifierRef.current = false;
+        });
+        return;
     }
-
-    requestAnimationFrame(() => {
-      handleTitleChange(event.currentTarget.value);
-      resizeTitleInput();
-      titleEnterModifierRef.current = false;
-    });
   };
 
   useEffect(() => {
