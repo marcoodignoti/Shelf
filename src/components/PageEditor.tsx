@@ -18,17 +18,15 @@ import {
   useEditorState,
   useExtensionState,
 } from "@blocknote/react";
-import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, ChevronUp, Columns2, Copy, Download, FileText, FolderInput, GripVertical, History, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, Columns2, Copy, Download, FileText, FolderInput, GripVertical, History, Image, MoreHorizontal, PlusCircle, Sigma, Smile, Star, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { DatabaseRowPropertiesPanel, DatabaseTableView } from "./DatabaseTableView";
 import { blockDropTargetFromPoint, BlockDropTarget, clearBlockDropIndicator, moveEditorBlock } from "../lib/editorBlockDrag";
 import {
   activeElementIsNativeTextInput,
-  blockElementSelector,
   disableSpellcheck,
   headingItemsFromBlocks,
-  HeadingRailItem,
   isNativeTextInput,
   keepEditorCaretInView,
   preserveEditorScroll,
@@ -45,6 +43,8 @@ import { parsePageBlocks } from "../lib/pageContent";
 import { normalizeCoverUrl, normalizePageIcon } from "../lib/pageMetadata";
 import { readPendingPageUpdates } from "../lib/pendingPageSaves";
 import { initialEditorFields } from "../lib/pageEditorInitialFields";
+import { PageHeadingRail } from "./editor/PageHeadingRail";
+import { useHeadingScrollSpy } from "./editor/useHeadingScrollSpy";
 import { titleBeforeInputAction, titleEnterShouldInsertNewline } from "../lib/editorTitleInput";
 import { childPagesForParent } from "../lib/pageTree";
 import { subpageSectionMode } from "../lib/subpageSection";
@@ -74,75 +74,6 @@ function ShelfSideMenu() {
       <AddBlockButton />
       <ShelfDragHandleButton />
     </SideMenu>
-  );
-}
-
-function PageHeadingRail({
-  items,
-  activeId,
-  onSelect,
-}: {
-  items: HeadingRailItem[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const t = useT();
-  const activeIndex = Math.max(0, items.findIndex((item) => item.id === activeId));
-  const previousItem = items[Math.max(0, activeIndex - 1)] ?? null;
-  const nextItem = items[Math.min(items.length - 1, activeIndex + 1)] ?? null;
-
-  if (items.length === 0) return null;
-
-  return (
-    <nav
-      aria-label={t("editor.pageSections")}
-      className="group/rail absolute bottom-16 right-3 top-20 z-[70] hidden w-14 flex-col items-center justify-center overflow-visible xl:flex"
-    >
-      <div className="flex h-full max-h-[34rem] flex-col items-center justify-between gap-2 rounded-full py-1 text-muted-foreground/70 opacity-45 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          className="on-heading-rail-arrow"
-          aria-label={t("editor.previousSection")}
-          disabled={!previousItem || previousItem.id === activeId}
-          onClick={() => previousItem && onSelect(previousItem.id)}
-        >
-          <ChevronUp className="h-4 w-4" />
-        </button>
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-visible py-1">
-          {items.map((item) => {
-            const isActive = item.id === activeId;
-            const tickWidth = item.level <= 1 ? "w-8" : item.level === 2 ? "w-6" : "w-4";
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className="group/railitem relative flex h-3 w-10 items-center justify-end rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label={t("editor.goToSection", { title: item.title || t("editor.untitledSection") })}
-                aria-current={isActive ? "true" : undefined}
-                onClick={() => onSelect(item.id)}
-              >
-                <span
-                  className={`${tickWidth} h-px rounded-full transition-all ${isActive ? "h-0.5 bg-foreground" : "bg-muted-foreground/70 group-hover/railitem:bg-foreground"}`}
-                />
-                <span className={`on-heading-rail-preview pointer-events-none absolute right-12 top-1/2 z-10 max-w-80 -translate-y-1/2 translate-x-1 truncate px-4 py-2 text-sm font-semibold leading-tight text-popover-foreground opacity-0 transition-all duration-150 group-hover/railitem:pointer-events-auto group-hover/railitem:translate-x-0 group-hover/railitem:opacity-100 group-hover/railitem:text-foreground group-focus-visible/railitem:pointer-events-auto group-focus-visible/railitem:translate-x-0 group-focus-visible/railitem:opacity-100 ${isActive ? "text-foreground" : ""}`}>
-                  {item.title || t("editor.untitledSection")}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          className="on-heading-rail-arrow"
-          aria-label={t("editor.nextSection")}
-          disabled={!nextItem || nextItem.id === activeId}
-          onClick={() => nextItem && onSelect(nextItem.id)}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </button>
-      </div>
-    </nav>
   );
 }
 
@@ -812,8 +743,7 @@ function EditorSurface({
     // every caret move.
     on: "change",
   }) ?? [];
-  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(headingItems[0]?.id ?? null);
-  const pendingHeadingScrollRef = useRef<{ id: string; clearTimer: number } | null>(null);
+  const { activeHeadingId, scrollToHeading } = useHeadingScrollSpy({ editor, scrollContainerRef, headingItems });
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -933,89 +863,6 @@ function EditorSurface({
     resizeTitleInput();
   }, [resizeTitleInput, title]);
 
-  const scrollToHeading = useCallback((headingId: string) => {
-    const scrollContainer = scrollContainerRef.current;
-    const headingElement = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(headingId));
-    if (!scrollContainer || !headingElement) return;
-
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const headingRect = headingElement.getBoundingClientRect();
-    const top = scrollContainer.scrollTop + headingRect.top - containerRect.top - 96;
-
-    // Keep the clicked section active while the smooth scroll is in flight:
-    // without this the scroll spy flips the highlight back to the previous
-    // section on the first intermediate scroll event, and if the animation
-    // is interrupted it never reaches the target section at all. The spy
-    // resumes on scrollend (with a timer fallback for environments that
-    // never fire it).
-    if (pendingHeadingScrollRef.current) {
-      window.clearTimeout(pendingHeadingScrollRef.current.clearTimer);
-    }
-    pendingHeadingScrollRef.current = {
-      id: headingId,
-      clearTimer: window.setTimeout(() => {
-        pendingHeadingScrollRef.current = null;
-      }, 1_500),
-    };
-
-    setActiveHeadingId(headingId);
-    scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  }, [editor]);
-
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer || headingItems.length === 0) {
-      setActiveHeadingId(null);
-      return;
-    }
-
-    let frame = 0;
-
-    const updateActiveHeading = () => {
-      frame = 0;
-      if (pendingHeadingScrollRef.current) return;
-      const containerTop = scrollContainer.getBoundingClientRect().top;
-      let current = headingItems[0]?.id ?? null;
-
-      for (const item of headingItems) {
-        const element = editor.domElement?.querySelector<HTMLElement>(blockElementSelector(item.id));
-        if (!element) continue;
-
-        if (element.getBoundingClientRect().top <= containerTop + 140) {
-          current = item.id;
-        } else {
-          break;
-        }
-      }
-
-      setActiveHeadingId((previous) => previous === current ? previous : current);
-    };
-
-    const queueUpdate = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(updateActiveHeading);
-    };
-
-    const handleScrollEnd = () => {
-      if (pendingHeadingScrollRef.current) {
-        window.clearTimeout(pendingHeadingScrollRef.current.clearTimer);
-        pendingHeadingScrollRef.current = null;
-      }
-      queueUpdate();
-    };
-
-    updateActiveHeading();
-    scrollContainer.addEventListener("scroll", queueUpdate, { passive: true });
-    scrollContainer.addEventListener("scrollend", handleScrollEnd, { passive: true });
-    window.addEventListener("resize", queueUpdate);
-
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      scrollContainer.removeEventListener("scroll", queueUpdate);
-      scrollContainer.removeEventListener("scrollend", handleScrollEnd);
-      window.removeEventListener("resize", queueUpdate);
-    };
-  }, [editor, headingItems]);
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
