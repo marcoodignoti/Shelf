@@ -308,7 +308,7 @@ function createStudioDocumentBackend(context) {
             `
             WITH RECURSIVE descendants(id) AS (
               SELECT id FROM pages WHERE id = ? AND is_deleted = 0
-              UNION ALL
+              UNION
               SELECT pages.id FROM pages
               JOIN descendants ON pages.parent_id = descendants.id
               WHERE pages.is_deleted = 0

@@ -270,7 +270,9 @@ function isPathInside(rootPath, candidatePath) {
   const relative = path.relative(rootPath, candidatePath);
   return (
     relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
   );
 }
 
