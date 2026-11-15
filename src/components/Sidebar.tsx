@@ -1293,10 +1293,20 @@ export function Sidebar() {
     });
     return indexByPageId;
   }, [sidebarRows]);
+  // Reveal the active page once per selection. rowIndexByPageId changes on
+  // every page edit (title keystrokes, autosaves), and re-scrolling then would
+  // yank the sidebar away from wherever the user scrolled it.
+  const revealedPageIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!currentPageId) return;
+    if (!currentPageId) {
+      revealedPageIdRef.current = null;
+      return;
+    }
+    if (revealedPageIdRef.current === currentPageId) return;
     const index = rowIndexByPageId.get(currentPageId);
-    if (index !== undefined) rowVirtualizer.scrollToIndex(index, { align: 'auto' });
+    if (index === undefined) return;
+    revealedPageIdRef.current = currentPageId;
+    rowVirtualizer.scrollToIndex(index, { align: 'auto' });
   }, [currentPageId, rowIndexByPageId, rowVirtualizer]);
   useEffect(() => {
     sidebarModelRef.current = sidebarModel;

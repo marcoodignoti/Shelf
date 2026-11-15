@@ -366,6 +366,55 @@ test("keeps sidebar page context menu open while scrolling with the mouse", asyn
   await expect(menu.getByText("Move to Trash")).toBeVisible();
 });
 
+test("keeps the sidebar scroll position while editing the current page", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 420 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.evaluate((key) => {
+    const now = new Date().toISOString();
+    const pages = Array.from({ length: 40 }, (_, index) => ({
+      id: `scroll-page-${index}`,
+      title: `Scroll page ${index}`,
+      parent_id: null,
+      content: null,
+      search_text: "",
+      icon: null,
+      cover_url: null,
+      is_deleted: 0,
+      is_favorite: 0,
+      is_template: 0,
+      is_database: 0,
+      database_schema: null,
+      properties: null,
+      sort_order: index,
+      page_kind: "note",
+      created_at: now,
+      updated_at: now,
+    }));
+    window.localStorage.setItem(key, JSON.stringify(pages));
+    window.localStorage.setItem("opennotion-current-page-id", "scroll-page-0");
+  }, storageKey);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const title = page.locator("textarea[placeholder='Untitled']");
+  await expect(title).toHaveValue("Scroll page 0");
+
+  const sidebar = page.locator(".on-scroll-fade-sidebar");
+  await expect.poll(() => sidebar.evaluate((element) => element.scrollHeight > element.clientHeight * 2)).toBe(true);
+  await sidebar.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => sidebar.evaluate((element) => element.scrollTop)).toBeGreaterThan(200);
+  const scrolledTop = await sidebar.evaluate((element) => element.scrollTop);
+
+  // Editing the active page re-renders the sidebar rows; that must not snap
+  // the sidebar back to the active row the user scrolled away from.
+  await title.fill("Scroll page 0 renamed");
+  await expect
+    .poll(() => page.evaluate((key) => window.localStorage.getItem(key) ?? "", storageKey))
+    .toContain("Scroll page 0 renamed");
+  await page.waitForTimeout(300);
+  expect(await sidebar.evaluate((element) => element.scrollTop)).toBe(scrolledTop);
+});
+
 test("keeps custom icon input focused and selected when opening the native picker", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
