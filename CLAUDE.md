@@ -24,7 +24,7 @@ npm run perf:native    # macOS release-binary RSS + startup profiling (perf/prof
 - **e2e runs against the built `dist/`**, served by `scripts/serve-dist.cjs` on :1420 (not the Vite dev server). After changing `src/`, run `npm run build` before `npx playwright test ...`, or you are testing stale code. Playwright reuses an already-running server on :1420.
 - e2e uses a mocked `window.openNotion` (`tests/e2e/helpers/mockBridge.ts`) backed by localStorage; backend changes need matching mock changes and are covered by `test:scripts` instead.
 - Running the whole e2e suite can produce flaky `page.goto("/")` timeouts under load — re-run a failing spec in isolation before treating it as a regression.
-- Visual baselines live in `tests/e2e/visual.e2e.ts-snapshots/`; after an intentional UI change, `npx playwright test tests/e2e/visual.e2e.ts --update-snapshots`. 1–2 pixel diffs are pre-existing noise.
+- Visual baselines live in `tests/e2e/visual.e2e.ts-snapshots/`; after an intentional UI change, `npx playwright test tests/e2e/visual.e2e.ts --update-snapshots`. `playwright.config.ts` tolerates up to 50 differing pixels per screenshot to absorb antialiasing noise between macOS versions.
 - Electron smoke tests fail on **any** renderer console warning at first launch (e.g. library deprecation warnings), not just errors.
 - `check` audits production dependencies only (`npm audit --omit=dev`); the remaining dev advisories are in electron-builder's build toolchain.
 - Perf specs use a separate `playwright.perf.config.ts`. Reference baselines/budgets are tracked in the repo — update them deliberately when a regression is intentional.

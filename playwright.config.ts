@@ -7,6 +7,9 @@ export default defineConfig({
   timeout: 90_000,
   expect: {
     timeout: 15_000,
+    // Font antialiasing differs by a few pixels between macOS runner images;
+    // real layout regressions change thousands of pixels.
+    toHaveScreenshot: { maxDiffPixels: 50 },
   },
   workers: 1,
   fullyParallel: false,
