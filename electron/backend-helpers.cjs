@@ -747,10 +747,14 @@ function normalizeImportedPageFlag(page, field) {
 
 function normalizeImportedPageRecord(page) {
   validateImportedPage(page);
+  // Title and timestamps are optional in backups, but the pages columns must
+  // never be bound to `undefined` (node:sqlite rejects it).
+  const fallbackTimestamp = new Date().toISOString();
+  const createdAt = page.created_at ?? fallbackTimestamp;
   return {
     ...page,
+    title: page.title ?? "",
     parent_id: page.parent_id ?? null,
-    content: page.content ?? null,
     search_text: page.search_text ?? null,
     icon: page.icon ?? null,
     cover_url: normalizeImportedCoverUrl(page.cover_url),
@@ -762,8 +766,33 @@ function normalizeImportedPageRecord(page) {
     properties: page.properties ?? null,
     sort_order: Number.isInteger(page.sort_order) ? page.sort_order : 0,
     page_kind: normalizePageKind(page.page_kind),
-    content: sanitizeImportedPageContent(page.content),
+    content: sanitizeImportedPageContent(page.content) ?? null,
+    created_at: createdAt,
+    updated_at: page.updated_at ?? createdAt,
   };
+}
+
+// Detaches any page whose parent chain (within this batch) loops back to
+// itself. Cyclic parent_id links would make the page unreachable from the
+// root and break recursive tree queries.
+function breakImportedParentCycles(pages) {
+  const parentById = new Map(pages.map((page) => [page.id, page.parent_id ?? null]));
+  return pages.map((page) => {
+    const seen = new Set([page.id]);
+    let cursor = parentById.get(page.id);
+    while (cursor && parentById.has(cursor)) {
+      if (cursor === page.id) {
+        parentById.set(page.id, null);
+        return { ...page, parent_id: null };
+      }
+      // The chain joins a cycle that does not include this page; that cycle
+      // is broken when one of its own members is visited.
+      if (seen.has(cursor)) break;
+      seen.add(cursor);
+      cursor = parentById.get(cursor);
+    }
+    return page;
+  });
 }
 
 function validateImportedPagesArray(pages) {
@@ -1107,7 +1136,9 @@ function isPathInside(rootPath, candidatePath) {
   const relative = path.relative(rootPath, candidatePath);
   return (
     relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
   );
 }
 
@@ -1354,6 +1385,7 @@ module.exports = {
   sanitizeImportedBlockMedia,
   sanitizeImportedPageContent,
   sanitizeImportedPageRecord,
+  breakImportedParentCycles,
   validateImportedPage,
   readImportedBackup,
   parseImportedBackup,

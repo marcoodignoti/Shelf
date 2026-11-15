@@ -9,6 +9,7 @@ const {
   validatePageUpdateInput,
   validateImportedPagesArray,
   sanitizeImportedPageRecord,
+  breakImportedParentCycles,
   normalizeOptionalString,
   rowValue,
   own,
@@ -124,7 +125,7 @@ function createPageBackend(context) {
         `
         WITH RECURSIVE descendants(id) AS (
           SELECT id FROM pages WHERE id = ? AND is_deleted = 0
-          UNION ALL
+          UNION
           SELECT pages.id
           FROM pages
           JOIN descendants ON pages.parent_id = descendants.id
@@ -138,6 +139,17 @@ function createPageBackend(context) {
       )
       .all(rootId, rootId);
 
+  const assertValidParent = (pageId, parentId) => {
+    if (!parentId) return;
+    if (parentId === pageId) throw new Error("page cannot be moved under itself");
+    const parentExists = context.db
+      .prepare("SELECT id FROM pages WHERE id = ? AND is_deleted = 0")
+      .get(parentId);
+    if (!parentExists) throw new Error("target parent page does not exist");
+    if (parentWouldCreateCycle(pageId, parentId))
+      throw new Error("page cannot be moved under one of its descendants");
+  };
+
   const parentWouldCreateCycle = (pageId, parentId) => {
     if (!parentId || pageId === parentId) return Boolean(parentId);
     return Boolean(
@@ -146,7 +158,7 @@ function createPageBackend(context) {
           `
           WITH RECURSIVE descendants(id) AS (
             SELECT id FROM pages WHERE id = ? AND is_deleted = 0
-            UNION ALL
+            UNION
             SELECT pages.id
             FROM pages
             JOIN descendants ON pages.parent_id = descendants.id
@@ -327,7 +339,7 @@ function createPageBackend(context) {
         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, ?, 'note', ?, ?)
       `,
         )
-        .run(id, title, parent, sortOrder, created, created);
+        .run(id, title ?? "", parent, sortOrder, created, created);
       syncPageSearchIndexEntry(context.db, id);
       return pageBackend.getPage({ id });
     },
@@ -394,6 +406,7 @@ function createPageBackend(context) {
         }
 
         if (own(safeUpdates, "parent_id")) {
+          assertValidParent(id, safeUpdates.parent_id);
           setClauses.push("parent_id = ?");
           values.push(safeUpdates.parent_id);
         }
@@ -844,15 +857,7 @@ function createPageBackend(context) {
         .prepare(`SELECT ${PAGE_SELECT_COLUMNS} FROM pages WHERE id = ? AND is_deleted = 0`)
         .get(id);
       if (!current) throw new Error("page does not exist");
-      if (parent) {
-        if (parent === id) throw new Error("page cannot be moved under itself");
-        const parentExists = context.db
-          .prepare("SELECT id FROM pages WHERE id = ? AND is_deleted = 0")
-          .get(parent);
-        if (!parentExists) throw new Error("target parent page does not exist");
-        if (parentWouldCreateCycle(id, parent))
-          throw new Error("page cannot be moved under one of its descendants");
-      }
+      assertValidParent(id, parent);
       context.withTransaction(() => {
         if (current.parent_id !== parent) {
           createPageVersionSnapshot(current, { reason: "update", createdAt: updated });
@@ -920,8 +925,10 @@ function createPageBackend(context) {
           INSERT INTO pages (${PAGE_COLUMNS})
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
-        for (const page of pages) {
-          const sanitizedPage = sanitizeImportedPageRecord(page);
+        const sanitizedPages = breakImportedParentCycles(
+          pages.map(sanitizeImportedPageRecord),
+        );
+        for (const sanitizedPage of sanitizedPages) {
           importedCount += insert.run(
             sanitizedPage.id,
             sanitizedPage.title,

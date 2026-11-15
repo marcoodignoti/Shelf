@@ -193,7 +193,7 @@ function createStudioProjectBackend(context) {
               `
           WITH RECURSIVE ancestors(id, parent_id) AS (
             SELECT id, parent_id FROM studio_projects WHERE id = ? AND deleted_at IS NULL
-            UNION ALL
+            UNION
             SELECT studio_projects.id, studio_projects.parent_id
             FROM studio_projects
             INNER JOIN ancestors ON studio_projects.id = ancestors.parent_id

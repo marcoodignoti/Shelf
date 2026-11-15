@@ -251,3 +251,105 @@ test("page backend trashes and restores trees, retains versions, and purges afte
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("page import accepts minimal records whose optional fields are omitted", () => {
+  const { createPageBackend } = require("./backend-pages.cjs");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-pages-"));
+  const db = openDatabase(dataDir, "0.0.1-test");
+  const pages = createPageBackend({
+    appConfigDir: dataDir,
+    db,
+    withTransaction: (work) => withTransaction(db, work),
+  });
+
+  try {
+    // validateImportedPage allows title/content/timestamps to be omitted, so
+    // the insert must not bind `undefined` (node:sqlite rejects it).
+    const count = pages.importPageRecords([
+      { id: "minimal" },
+      {
+        id: "with-created",
+        title: "Has created",
+        created_at: "2026-02-01T00:00:00.000Z",
+      },
+    ]);
+    assert.equal(count, 2);
+
+    const minimal = pages.getPage({ id: "minimal" });
+    assert.equal(minimal.title, "");
+    assert.equal(minimal.content, null);
+    assert.equal(minimal.page_kind, "note");
+    assert.ok(minimal.created_at, "fills created_at");
+    assert.ok(minimal.updated_at, "fills updated_at");
+
+    const withCreated = pages.getPage({ id: "with-created" });
+    assert.equal(withCreated.created_at, "2026-02-01T00:00:00.000Z");
+    assert.equal(withCreated.updated_at, "2026-02-01T00:00:00.000Z");
+
+    const untitled = pages.createPage({
+      id: "untitled",
+      parentId: null,
+      createdAt: "2026-02-02T00:00:00.000Z",
+    });
+    assert.equal(untitled.title, "");
+  } finally {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("page backend never stores parent cycles and tree queries survive legacy cycles", () => {
+  const { createPageBackend } = require("./backend-pages.cjs");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shelf-pages-"));
+  const db = openDatabase(dataDir, "0.0.1-test");
+  const pages = createPageBackend({
+    appConfigDir: dataDir,
+    db,
+    withTransaction: (work) => withTransaction(db, work),
+  });
+
+  try {
+    pages.importPageRecords([
+      { id: "self", title: "Self", parent_id: "self" },
+      { id: "loop-a", title: "A", parent_id: "loop-b" },
+      { id: "loop-b", title: "B", parent_id: "loop-a" },
+      { id: "tail", title: "Tail", parent_id: "loop-a" },
+    ]);
+    assert.equal(pages.getPage({ id: "self" }).parent_id, null);
+    const a = pages.getPage({ id: "loop-a" });
+    const b = pages.getPage({ id: "loop-b" });
+    assert.ok(
+      a.parent_id === null || b.parent_id === null,
+      "a two-page cycle is broken on import",
+    );
+    assert.equal(pages.getPage({ id: "tail" }).parent_id, "loop-a");
+
+    const root = pages.createPage({ id: "root", title: "Root", parentId: null, createdAt: "2026-01-01T00:00:00.000Z" });
+    const child = pages.createPage({ id: "child", title: "Child", parentId: root.id, createdAt: "2026-01-01T00:00:01.000Z" });
+    assert.throws(
+      () => pages.updatePage({ id: root.id, updates: { parent_id: root.id } }),
+      /under itself/,
+    );
+    assert.throws(
+      () => pages.updatePage({ id: root.id, updates: { parent_id: child.id } }),
+      /descendants/,
+    );
+    assert.throws(
+      () => pages.updatePage({ id: root.id, updates: { parent_id: "missing" } }),
+      /does not exist/,
+    );
+    pages.updatePage({ id: child.id, updates: { parent_id: null } });
+    assert.equal(pages.getPage({ id: child.id }).parent_id, null);
+
+    // Databases written before cycle checks existed may still contain loops;
+    // recursive tree queries must terminate instead of hanging the app.
+    db.prepare("UPDATE pages SET parent_id = 'root' WHERE id = 'child'").run();
+    db.prepare("UPDATE pages SET parent_id = 'child' WHERE id = 'root'").run();
+    pages.deletePage({ id: root.id, deletedAt: "2026-01-02T00:00:00.000Z" });
+    assert.equal(pages.getPage({ id: root.id }).is_deleted, 1);
+    assert.equal(pages.getPage({ id: child.id }).is_deleted, 1);
+  } finally {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
